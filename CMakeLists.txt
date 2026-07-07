@@ -80,7 +80,7 @@ set(VERSION_DATE  "05/05/2025") # DD/MM/YYYY format
 set(OCPN_MIN_VERSION "ov58")
 
 set(OCPN_API_VERSION_MAJOR "1")
-set(OCPN_API_VERSION_MINOR "20")
+set(OCPN_API_VERSION_MINOR "21")
 set(TP_COMMENT "  * Release using CI")
 
 set(PARENT "opencpn")
@@ -189,6 +189,7 @@ SET(SRCS
             src/Boat.cpp
             src/RouteMap.cpp
             src/RouteMapOverlay.cpp
+            src/RouteWaypointExtractor.cpp
             src/RoutingTablePanel.cpp
             src/Utilities.cpp
             src/LineBufferOverlay.cpp
@@ -225,6 +226,7 @@ SET (HDRS
             include/Boat.h
             include/RouteMap.h
             include/RouteMapOverlay.h
+            include/RouteWaypointExtractor.h
             include/RoutingTablePanel.h
             include/Utilities.h
             include/LineBufferOverlay.h
@@ -281,7 +283,15 @@ if (NOT OCPN_FLATPAK_CONFIG)
     target_link_libraries(${PACKAGE_NAME} windows::headers)
   endif (WIN32)
 
-  add_subdirectory(opencpn-libs/api-${OCPN_API_VERSION_MINOR})
+  if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_API_VERSION_MINOR}/CMakeLists.txt")
+    add_subdirectory(opencpn-libs/api-${OCPN_API_VERSION_MINOR})
+  elseif (EXISTS "${CMAKE_SOURCE_DIR}/include/ocpn_plugin.h")
+    add_library(OCPN_API_LOCAL INTERFACE)
+    add_library(ocpn::api ALIAS OCPN_API_LOCAL)
+    target_include_directories(OCPN_API_LOCAL INTERFACE "${CMAKE_SOURCE_DIR}/include")
+  else ()
+    message(FATAL_ERROR "Missing opencpn-libs/api-${OCPN_API_VERSION_MINOR}")
+  endif ()
   target_link_libraries(${PACKAGE_NAME} ocpn::api)
 
   add_subdirectory(opencpn-libs/tinyxml)

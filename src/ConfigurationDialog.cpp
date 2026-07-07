@@ -43,6 +43,48 @@
 
 #include <algorithm>
 
+namespace {
+
+bool GetWaypointByGuid(const wxString& guid, PlugIn_Waypoint* waypoint) {
+  return !guid.IsEmpty() && GetSingleWaypoint(guid, waypoint);
+}
+
+bool FindWaypointByName(const wxString& name, PlugIn_Waypoint* waypoint,
+                        wxString* guid = nullptr) {
+  wxArrayString waypoint_guids = GetWaypointGUIDArray();
+  for (const auto& waypoint_guid : waypoint_guids) {
+    PlugIn_Waypoint candidate;
+    if (!GetSingleWaypoint(waypoint_guid, &candidate)) continue;
+    if (candidate.m_MarkName != name) continue;
+
+    if (waypoint) *waypoint = candidate;
+    if (guid) *guid = waypoint_guid;
+    return true;
+  }
+  return false;
+}
+
+wxString WaypointNameForGuid(const wxString& guid) {
+  PlugIn_Waypoint waypoint;
+  if (GetWaypointByGuid(guid, &waypoint)) return waypoint.m_MarkName;
+  return wxEmptyString;
+}
+
+wxString GetWaypointGuidForSelection(wxComboBox* combo) {
+  if (!combo) return wxEmptyString;
+
+  int selection = combo->GetSelection();
+  wxArrayString waypoint_guids = GetWaypointGUIDArray();
+  if (selection >= 0 && selection < (int)waypoint_guids.GetCount())
+    return waypoint_guids[selection];
+
+  wxString guid;
+  FindWaypointByName(combo->GetValue(), nullptr, &guid);
+  return guid;
+}
+
+}  // namespace
+
 ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
 #ifndef __WXOSX__
     : ConfigurationDialogBase(&weatherrouting),
@@ -105,7 +147,26 @@ void ConfigurationDialog::OnStartFromBoat(wxCommandEvent& event) {
 }
 
 void ConfigurationDialog::OnStartFromPosition(wxCommandEvent& event) {
+  AddPositions(true);
   m_cStart->Enable(m_rbStartPositionSelection->GetValue());
+  Update();
+}
+
+void ConfigurationDialog::OnStartFromWaypoint(wxCommandEvent& event) {
+  AddWaypoints(true);
+  m_cStart->Enable(m_rbStartWaypointSelection->GetValue());
+  Update();
+}
+
+void ConfigurationDialog::OnEndAtPosition(wxCommandEvent& event) {
+  AddPositions(false);
+  m_cEnd->Enable(m_rbEndPositionSelection->GetValue());
+  Update();
+}
+
+void ConfigurationDialog::OnEndAtWaypoint(wxCommandEvent& event) {
+  AddWaypoints(false);
+  m_cEnd->Enable(m_rbEndWaypointSelection->GetValue());
   Update();
 }
 
@@ -203,7 +264,12 @@ void ConfigurationDialog::SetConfigurations(
 
   m_edited_controls.clear();
 
-  SET_CHOICE(Start);
+  if (configurations.empty()) {
+    m_bBlockUpdate = false;
+    return;
+  }
+
+  std::list<RouteMapConfiguration>::iterator it = configurations.begin();
 
   bool ult = m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue();
 #define STARTTIME (ult ? it->StartTime.FromUTC() : it->StartTime)
@@ -213,6 +279,13 @@ void ConfigurationDialog::SetConfigurations(
   SET_CONTROL_VALUE(STARTTIME, m_tpTime, SetValue, wxDateTime, wxDateTime());
 
   SET_CHECKBOX(UseCurrentTime);
+  SET_CHECKBOX(DepartureTimeOptimizationEnabled);
+  SET_SPIN_VALUE(DepartureTimeOptimizationRangeHours,
+                 (*it).DepartureTimeOptimizationRangeMinutes / 60);
+  SET_SPIN_VALUE(DepartureTimeOptimizationStepHours,
+                 (*it).DepartureTimeOptimizationStepMinutes / 60);
+  SET_SPIN_VALUE(DepartureTimeOptimizationStepMinutes,
+                 (*it).DepartureTimeOptimizationStepMinutes % 60);
 
   bool timeButtonsEnabled = m_tpTime->IsEnabled() &&
                             m_dpStartDate->IsEnabled() &&
@@ -229,13 +302,14 @@ void ConfigurationDialog::SetConfigurations(
   long l = m_tBoat->GetValue().Length();
   m_tBoat->SetSelection(l, l);
 
-  SET_CHOICE(End);
-
   // if there's a Route GUID it's an OpenCPN route, in that case disable start
   // and end.
   bool oRoute = false;
   bool allStartFromBoat = true;
   bool allStartFromPosition = true;
+  bool allStartFromWaypoint = true;
+  bool allEndAtPosition = true;
+  bool allEndAtWaypoint = true;
   for (auto it : configurations) {
     if (!it.RouteGUID.IsEmpty()) {
       oRoute = true;
@@ -245,11 +319,47 @@ void ConfigurationDialog::SetConfigurations(
       allStartFromBoat = false;
     if (it.StartType != RouteMapConfiguration::START_FROM_POSITION)
       allStartFromPosition = false;
+    if (it.StartType != RouteMapConfiguration::START_FROM_WAYPOINT)
+      allStartFromWaypoint = false;
+    if (it.EndType != RouteMapConfiguration::END_AT_POSITION)
+      allEndAtPosition = false;
+    if (it.EndType != RouteMapConfiguration::END_AT_WAYPOINT)
+      allEndAtWaypoint = false;
   }
+
+  if (allStartFromWaypoint)
+    AddWaypoints(true);
+  else
+    AddPositions(true);
+  if (allEndAtWaypoint)
+    AddWaypoints(false);
+  else
+    AddPositions(false);
+
+  wxString start = (*it).Start;
+  if (allStartFromWaypoint && !(*it).StartGUID.IsEmpty()) {
+    wxString waypoint_name = WaypointNameForGuid((*it).StartGUID);
+    if (!waypoint_name.IsEmpty()) start = waypoint_name;
+  }
+  SET_CHOICE_VALUE(Start, start);
+
+  wxString end = (*it).End;
+  if (allEndAtWaypoint && !(*it).EndGUID.IsEmpty()) {
+    wxString waypoint_name = WaypointNameForGuid((*it).EndGUID);
+    if (!waypoint_name.IsEmpty()) end = waypoint_name;
+  }
+  SET_CHOICE_VALUE(End, end);
+
   m_rbStartFromBoat->Enable(!oRoute);
   m_rbStartPositionSelection->Enable(!oRoute);
+  m_rbStartWaypointSelection->Enable(!oRoute);
+  m_rbEndPositionSelection->Enable(!oRoute);
+  m_rbEndWaypointSelection->Enable(!oRoute);
   m_rbStartFromBoat->SetValue(allStartFromBoat);
   m_rbStartPositionSelection->SetValue(allStartFromPosition);
+  m_rbStartWaypointSelection->SetValue(allStartFromWaypoint);
+  m_rbEndPositionSelection->SetValue(allEndAtPosition);
+  m_rbEndWaypointSelection->SetValue(allEndAtWaypoint);
 
   m_cStart->Enable(!oRoute && !m_rbStartFromBoat->GetValue());
   m_cEnd->Enable(!oRoute);
@@ -308,21 +418,46 @@ void ConfigurationDialog::SetConfigurations(
 }
 
 void ConfigurationDialog::AddSource(wxString name) {
-  m_cStart->Append(name);
-  m_cEnd->Append(name);
+  if (m_rbStartPositionSelection->GetValue()) m_cStart->Append(name);
+  if (m_rbEndPositionSelection->GetValue()) m_cEnd->Append(name);
 }
 
 void ConfigurationDialog::RemoveSource(wxString name) {
   int i = m_cStart->FindString(name, true);
-  if (i >= 0) {
-    m_cStart->Delete(i);
-    m_cEnd->Delete(i);
-  }
+  if (i >= 0) m_cStart->Delete(i);
+  i = m_cEnd->FindString(name, true);
+  if (i >= 0) m_cEnd->Delete(i);
 }
 
 void ConfigurationDialog::ClearSources() {
   m_cStart->Clear();
   m_cEnd->Clear();
+}
+
+void ConfigurationDialog::AddWaypoints(const bool toStart) {
+  wxComboBox* combo = toStart ? m_cStart : m_cEnd;
+  wxString value = combo->GetValue();
+  combo->Clear();
+
+  wxArrayString waypoint_guids = GetWaypointGUIDArray();
+  for (const auto& guid : waypoint_guids) {
+    PlugIn_Waypoint waypoint;
+    if (GetSingleWaypoint(guid, &waypoint))
+      combo->Append(waypoint.m_MarkName);
+  }
+
+  if (!value.IsEmpty()) combo->SetValue(value);
+}
+
+void ConfigurationDialog::AddPositions(const bool toStart) {
+  wxComboBox* combo = toStart ? m_cStart : m_cEnd;
+  wxString value = combo->GetValue();
+  combo->Clear();
+
+  for (const auto& position : RouteMap::Positions)
+    combo->Append(position.Name);
+
+  if (!value.IsEmpty()) combo->SetValue(value);
 }
 
 void ConfigurationDialog::SetBoatFilename(wxString path) {
@@ -410,9 +545,8 @@ void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
 void ConfigurationDialog::Update() {
   if (m_bBlockUpdate) return;
 
-  // Ensure the combobox is properly enabled/disabled based on radio button
-  // selection
   m_cStart->Enable(!m_rbStartFromBoat->GetValue());
+  m_cEnd->Enable(true);
 
   bool refresh = false;
   RouteMapConfiguration configuration;
@@ -425,16 +559,53 @@ void ConfigurationDialog::Update() {
     // Set the start type based on the radio button selection
     if (m_rbStartFromBoat->GetValue()) {
       configuration.StartType = RouteMapConfiguration::START_FROM_BOAT;
+      configuration.StartGUID = wxEmptyString;
+    } else if (m_rbStartWaypointSelection->GetValue()) {
+      configuration.StartType = RouteMapConfiguration::START_FROM_WAYPOINT;
+      GET_CHOICE(Start);
+      configuration.StartGUID = GetWaypointGuidForSelection(m_cStart);
     } else {
       configuration.StartType = RouteMapConfiguration::START_FROM_POSITION;
+      GET_CHOICE(Start);
+      configuration.StartGUID = wxEmptyString;
     }
 
-    // Only get start position choice if not using boat position
-    if (configuration.StartType == RouteMapConfiguration::START_FROM_POSITION)
-      GET_CHOICE(Start);
-    GET_CHOICE(End);
+    if (m_rbEndWaypointSelection->GetValue()) {
+      configuration.EndType = RouteMapConfiguration::END_AT_WAYPOINT;
+      GET_CHOICE(End);
+      configuration.EndGUID = GetWaypointGuidForSelection(m_cEnd);
+    } else {
+      configuration.EndType = RouteMapConfiguration::END_AT_POSITION;
+      GET_CHOICE(End);
+      configuration.EndGUID = wxEmptyString;
+    }
 
     GET_CHECKBOX(UseCurrentTime);
+    GET_CHECKBOX(DepartureTimeOptimizationEnabled);
+    if (NO_EDITED_CONTROLS ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  (wxObject*)m_sDepartureTimeOptimizationRangeHours) !=
+            m_edited_controls.end()) {
+      configuration.DepartureTimeOptimizationRangeMinutes =
+          60 * m_sDepartureTimeOptimizationRangeHours->GetValue();
+      m_sDepartureTimeOptimizationRangeHours->SetForegroundColour(
+          wxColour(0, 0, 0));
+    }
+    if (NO_EDITED_CONTROLS ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  (wxObject*)m_sDepartureTimeOptimizationStepHours) !=
+            m_edited_controls.end() ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  (wxObject*)m_sDepartureTimeOptimizationStepMinutes) !=
+            m_edited_controls.end()) {
+      configuration.DepartureTimeOptimizationStepMinutes =
+          60 * m_sDepartureTimeOptimizationStepHours->GetValue() +
+          m_sDepartureTimeOptimizationStepMinutes->GetValue();
+      m_sDepartureTimeOptimizationStepHours->SetForegroundColour(
+          wxColour(0, 0, 0));
+      m_sDepartureTimeOptimizationStepMinutes->SetForegroundColour(
+          wxColour(0, 0, 0));
+    }
 
     if (NO_EDITED_CONTROLS ||
         std::find(m_edited_controls.begin(), m_edited_controls.end(),

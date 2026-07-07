@@ -100,7 +100,11 @@ protected:
   wxMenu* m_mView;
   wxMenu* m_mHelp;
   wxMenuItem* m_mEdit1;
+  wxMenuItem* m_mEditMultiLegGroupSettings1;
+  wxMenuItem* m_mShowRoutingStatus1;
   wxMenuItem* m_mCompute1;
+  wxMenuItem* m_mComputeMultiLegSequence1;
+  wxMenuItem* m_mOptimizeMultiLegDeparture1;
   wxMenuItem* m_mComputeAll1;
   wxMenuItem* m_mDelete1;
   wxMenuItem* m_mGoTo1;
@@ -150,6 +154,10 @@ protected:
   virtual void OnNew(wxCommandEvent& event) { event.Skip(); }
   virtual void OnBatch(wxCommandEvent& event) { event.Skip(); }
   virtual void OnEditConfiguration(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnEditMultiLegGroupSettings(wxCommandEvent& event) {
+    event.Skip();
+  }
+  virtual void OnShowRoutingStatus(wxCommandEvent& event) { event.Skip(); }
   virtual void OnGoTo(wxCommandEvent& event) { event.Skip(); }
   virtual void OnDelete(wxCommandEvent& event) { event.Skip(); }
   virtual void OnDeleteAll(wxCommandEvent& event) { event.Skip(); }
@@ -165,6 +173,12 @@ protected:
    * signature)
    */
   virtual void OnCompute(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnComputeMultiLegSequence(wxCommandEvent& event) {
+    event.Skip();
+  }
+  virtual void OnOptimizeMultiLegDeparture(wxCommandEvent& event) {
+    event.Skip();
+  }
   virtual void OnComputeAll(wxCommandEvent& event) { event.Skip(); }
   virtual void OnStop(wxCommandEvent& event) { event.Skip(); }
   virtual void OnResetAll(wxCommandEvent& event) { event.Skip(); }
@@ -357,6 +371,7 @@ protected:
   /** Radio buttons for start selection */
   wxRadioButton* m_rbStartFromBoat;
   wxRadioButton* m_rbStartPositionSelection;
+  wxRadioButton* m_rbStartWaypointSelection;
   /** The starting point of the route. */
   wxComboBox* m_cStart;
   wxStaticText* m_staticText28;
@@ -388,6 +403,15 @@ protected:
    * begins.
    */
   wxButton* m_bCurrentTime;
+  wxCheckBox* m_cbDepartureTimeOptimizationEnabled;
+  wxStaticText* m_staticTextDepartureRange;
+  wxSpinCtrl* m_sDepartureTimeOptimizationRangeHours;
+  wxStaticText* m_staticTextDepartureRangeHours;
+  wxStaticText* m_staticTextDepartureStep;
+  wxSpinCtrl* m_sDepartureTimeOptimizationStepHours;
+  wxStaticText* m_staticTextDepartureStepHours;
+  wxSpinCtrl* m_sDepartureTimeOptimizationStepMinutes;
+  wxStaticText* m_staticTextDepartureStepMinutes;
   wxTextCtrl* m_tBoat;
   wxButton* m_bBoatFilename;
   wxButton* m_bEditBoat;
@@ -403,6 +427,8 @@ protected:
   wxStaticText* m_staticText27;
   wxSpinCtrlDouble* m_sMaxSwellMeters;
   wxStaticText* m_staticText129;
+  wxRadioButton* m_rbEndPositionSelection;
+  wxRadioButton* m_rbEndWaypointSelection;
   /** The end point of the route. */
   wxComboBox* m_cEnd;
   wxSpinCtrl* m_sTimeStepHours;
@@ -459,6 +485,9 @@ protected:
   // Virtual event handlers, overide them in your derived class
   virtual void OnStartFromBoat(wxCommandEvent& event) { event.Skip(); }
   virtual void OnStartFromPosition(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnStartFromWaypoint(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnEndAtPosition(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnEndAtWaypoint(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUpdate(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUpdateDate(wxDateEvent& event) { event.Skip(); }
   virtual void OnUseCurrentTime(wxCommandEvent& event) { event.Skip(); }

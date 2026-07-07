@@ -23,6 +23,10 @@
 #include <wx/treectrl.h>
 #include <wx/fileconf.h>
 #include <wx/collpane.h>
+#include <wx/listctrl.h>
+
+#include <map>
+#include <vector>
 
 #ifdef __OCPN__ANDROID__
 #include <wx/qt/private/wxQtGesture.h>
@@ -254,6 +258,7 @@ public:
   void OnLeftDown(wxMouseEvent& event);
   void OnLeftUp(wxMouseEvent& event);
   void OnDownTimer(wxTimerEvent&);
+  void OnRightUp(wxMouseEvent& event);
 
   void Reset();
 
@@ -322,8 +327,13 @@ public:
    * - Performing batch operations on multiple routes
    */
   std::list<WeatherRoute*> m_WeatherRoutes;
+  std::list<RouteMapOverlay*> m_DepartureOptimizationRoutes;
 
   void GenerateBatch();
+  bool ComputeDepartureTimeOptimization(RouteMapOverlay* routemapoverlay);
+  void ShowDepartureTimeOptimizationResults(
+      const std::list<RouteMapOverlay*>& routemapoverlays,
+      const wxDateTime& nominalStartTime);
   bool Show(bool show);
 
   void UpdateDisplaySettings();
@@ -372,6 +382,9 @@ public:
    */
   void AddPosition(double lat, double lon, wxString name, wxString GUID);
   void AddRoute(wxString& GUID);
+  bool CreateMultiLegConfigurationsFromRoute(const wxString& routeGuid);
+  bool ComputeMultiLegSequence(RouteMapOverlay* selectedRoute);
+  bool EditMultiLegGroupSettings(RouteMapOverlay* selectedRoute);
 
   void CursorRouteChanged();
   void UpdateColumns();
@@ -466,6 +479,10 @@ private:
   void OnWeatherRoutesListLeftDown(wxMouseEvent& event);
   void UpdateComputeState();
   void OnCompute(wxCommandEvent& event);
+  void OnEditMultiLegGroupSettings(wxCommandEvent& event);
+  void OnShowRoutingStatus(wxCommandEvent& event);
+  void OnComputeMultiLegSequence(wxCommandEvent& event);
+  void OnOptimizeMultiLegDeparture(wxCommandEvent& event);
   void OnComputeAll(wxCommandEvent& event);
   void OnStop(wxCommandEvent& event);
   void OnResetAll(wxCommandEvent& event);
@@ -573,6 +590,67 @@ private:
   /* Stop the computation of all routes. */
   void StopAll();
 
+  void CancelMultiLegSequence();
+  void AdvanceMultiLegSequence(RouteMapOverlay* completedRoute);
+  bool StartMultiLegSequenceLeg(RouteMapOverlay* routemapoverlay);
+  std::vector<RouteMapOverlay*> GetMultiLegGroupRoutes(
+      const wxString& groupId);
+  bool RouteMapIsWaitingOrRunning(RouteMapOverlay* routemapoverlay) const;
+  bool RouteMapIsManaged(RouteMapOverlay* routemapoverlay) const;
+  wxString SafeMultiLegFailureReason(RouteMapOverlay* routemapoverlay) const;
+  void SelectMultiLegGroup(const wxString& groupId);
+  void BeginMultiLegGroupSettingsEdit(const wxString& groupId);
+  void PreserveMultiLegLegFields(RouteMapOverlay* routemapoverlay,
+                                 RouteMapConfiguration& configuration) const;
+  void ShowRoutingStatus(RouteMapOverlay* selectedRoute);
+  bool ComputeMultiLegDepartureOptimization(RouteMapOverlay* selectedRoute);
+  void CancelMultiLegDepartureOptimization(bool cleanupCandidates = true);
+  bool StartNextMultiLegOptimizationCandidate();
+  bool StartMultiLegOptimizationLeg(RouteMapOverlay* routemapoverlay);
+  void AdvanceMultiLegDepartureOptimization(RouteMapOverlay* completedRoute);
+  void ShowMultiLegDepartureOptimizationResults();
+  void DeleteMultiLegOptimizationCandidateRows();
+
+public:
+  bool ApplyMultiLegOptimizationCandidate(int candidateIndex);
+  bool ApplyBestMultiLegOptimizationCandidate();
+  struct MultiLegOptimizationCandidate {
+    int offsetMinutes;
+    wxDateTime departureTime;
+    wxDateTime finalEta;
+    long totalElapsedSeconds;
+    double totalDistance;
+    int completedLegs;
+    int totalLegs;
+    int failedLegIndex;
+    wxString failedLegName;
+    wxString state;
+    wxString reason;
+    bool complete;
+    bool failed;
+    bool running;
+    bool best;
+    bool applied;
+    std::vector<RouteMapOverlay*> routes;
+  };
+
+  const std::vector<MultiLegOptimizationCandidate>&
+  MultiLegOptimizationCandidates() const {
+    return m_MultiLegOptimizationCandidates;
+  }
+  bool MultiLegDepartureOptimizationActive() const {
+    return m_ActiveMultiLegDepartureOptimization;
+  }
+  void CloseMultiLegDepartureOptimizationResults() {
+    CancelMultiLegDepartureOptimization(true);
+  }
+  int AppliedMultiLegOptimizationCandidateIndex() const {
+    return m_AppliedMultiLegOptimizationCandidateIndex;
+  }
+  bool HasCompleteMultiLegOptimizationCandidate() const;
+
+private:
+
   void DeleteRouteMaps(std::list<RouteMapOverlay*> routemapoverlays);
   RouteMapConfiguration DefaultConfiguration();
 
@@ -596,6 +674,20 @@ private:
 
   int m_RoutesToRun;
   bool m_bSkipUpdateCurrentItems;
+  wxString m_ActiveMultiLegGroupId;
+  int m_ActiveMultiLegCurrentLegIndex;
+  bool m_ActiveMultiLegSequence;
+  bool m_ApplyingMultiLegGroupSettings;
+  wxString m_MultiLegSettingsGroupId;
+  std::map<RouteMapOverlay*, RouteMapConfiguration> m_MultiLegLegSnapshots;
+  wxString m_ActiveMultiLegOptimizationId;
+  wxString m_MultiLegOptimizationBaseGroupId;
+  int m_ActiveMultiLegOptimizationCandidateIndex;
+  int m_ActiveMultiLegOptimizationLegIndex;
+  int m_AppliedMultiLegOptimizationCandidateIndex;
+  bool m_ActiveMultiLegDepartureOptimization;
+  std::vector<MultiLegOptimizationCandidate>
+      m_MultiLegOptimizationCandidates;
 
   bool m_bShowConfiguration;
   bool m_bShowConfigurationBatch;

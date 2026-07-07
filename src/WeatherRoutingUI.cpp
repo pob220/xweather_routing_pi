@@ -245,11 +245,35 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                             wxEmptyString, wxITEM_NORMAL);
   m_mContextMenu->Append(m_mEdit1);
 
+  m_mEditMultiLegGroupSettings1 =
+      new wxMenuItem(m_mContextMenu, wxID_ANY,
+                     wxString(_("Edit Multi-leg Group Settings...")),
+                     wxEmptyString, wxITEM_NORMAL);
+  m_mContextMenu->Append(m_mEditMultiLegGroupSettings1);
+
+  m_mShowRoutingStatus1 =
+      new wxMenuItem(m_mContextMenu, wxID_ANY,
+                     wxString(_("Show Routing Status...")), wxEmptyString,
+                     wxITEM_NORMAL);
+  m_mContextMenu->Append(m_mShowRoutingStatus1);
+
   m_mCompute1 =
       new wxMenuItem(m_mContextMenu, wxID_ANY,
                      wxString(_("&Compute")) + wxT('\t') + wxT("Ctrl+C"),
                      wxEmptyString, wxITEM_NORMAL);
   m_mContextMenu->Append(m_mCompute1);
+
+  m_mComputeMultiLegSequence1 =
+      new wxMenuItem(m_mContextMenu, wxID_ANY,
+                     wxString(_("Compute Multi-leg Sequence")), wxEmptyString,
+                     wxITEM_NORMAL);
+  m_mContextMenu->Append(m_mComputeMultiLegSequence1);
+
+  m_mOptimizeMultiLegDeparture1 = new wxMenuItem(
+      m_mContextMenu, wxID_ANY,
+      wxString(_("Optimise Multi-leg Departure Time...")), wxEmptyString,
+      wxITEM_NORMAL);
+  m_mContextMenu->Append(m_mOptimizeMultiLegDeparture1);
 
   m_mComputeAll1 =
       new wxMenuItem(m_mContextMenu, wxID_ANY,
@@ -450,9 +474,25 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
       wxEVT_COMMAND_MENU_SELECTED,
       wxCommandEventHandler(WeatherRoutingBase::OnEditConfiguration), this,
       m_mEdit1->GetId());
+  m_mContextMenu->Bind(
+      wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnEditMultiLegGroupSettings),
+      this, m_mEditMultiLegGroupSettings1->GetId());
+  m_mContextMenu->Bind(
+      wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnShowRoutingStatus), this,
+      m_mShowRoutingStatus1->GetId());
   m_mContextMenu->Bind(wxEVT_COMMAND_MENU_SELECTED,
                        wxCommandEventHandler(WeatherRoutingBase::OnCompute),
                        this, m_mCompute1->GetId());
+  m_mContextMenu->Bind(
+      wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnComputeMultiLegSequence),
+      this, m_mComputeMultiLegSequence1->GetId());
+  m_mContextMenu->Bind(
+      wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnOptimizeMultiLegDeparture),
+      this, m_mOptimizeMultiLegDeparture1->GetId());
   m_mContextMenu->Bind(wxEVT_COMMAND_MENU_SELECTED,
                        wxCommandEventHandler(WeatherRoutingBase::OnComputeAll),
                        this, m_mComputeAll1->GetId());
@@ -1132,12 +1172,20 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
 
   m_rbStartPositionSelection =
-      new wxRadioButton(sbStart->GetStaticBox(), wxID_ANY, _("Start position"),
+      new wxRadioButton(sbStart->GetStaticBox(), wxID_ANY, _("Position"),
                         wxDefaultPosition, wxDefaultSize);
   m_rbStartPositionSelection->SetToolTip(
       _("Select a predefined position as the starting point"));
   m_rbStartPositionSelection->SetValue(true);  // Default to position selection
   startSelectionSizer->Add(m_rbStartPositionSelection, 0,
+                           wxALL | wxALIGN_CENTER_VERTICAL, 5);
+
+  m_rbStartWaypointSelection =
+      new wxRadioButton(sbStart->GetStaticBox(), wxID_ANY, _("Waypoint"),
+                        wxDefaultPosition, wxDefaultSize);
+  m_rbStartWaypointSelection->SetToolTip(
+      _("Select an OpenCPN waypoint as the starting point"));
+  startSelectionSizer->Add(m_rbStartWaypointSelection, 0,
                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
 
   fgSizer60->Add(startSelectionSizer, 0, wxEXPAND, 5);
@@ -1203,6 +1251,88 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
                   5);
 
   fgSizer60->Add(fgSizer111, 1, wxEXPAND, 5);
+
+  m_cbDepartureTimeOptimizationEnabled =
+      new wxCheckBox(sbStart->GetStaticBox(), wxID_ANY,
+                     _("Optimise departure time"), wxDefaultPosition,
+                     wxDefaultSize, wxCHK_3STATE);
+  m_cbDepartureTimeOptimizationEnabled->SetToolTip(_(
+      "Compute this route for alternative departure times around the selected "
+      "start time."));
+  fgSizer60->Add(m_cbDepartureTimeOptimizationEnabled, 0, wxALL, 5);
+
+  wxFlexGridSizer* fgSizerDepartureOptimization;
+  fgSizerDepartureOptimization = new wxFlexGridSizer(0, 4, 0, 0);
+  fgSizerDepartureOptimization->SetFlexibleDirection(wxBOTH);
+  fgSizerDepartureOptimization->SetNonFlexibleGrowMode(
+      wxFLEX_GROWMODE_SPECIFIED);
+
+  m_staticTextDepartureRange =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY,
+                       _("Range before/after start time +/-"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  m_staticTextDepartureRange->Wrap(-1);
+  fgSizerDepartureOptimization->Add(
+      m_staticTextDepartureRange, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  m_sDepartureTimeOptimizationRangeHours = new wxSpinCtrl(
+      sbStart->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 168, 6);
+  m_sDepartureTimeOptimizationRangeHours->SetToolTip(_(
+      "Hours before and after the nominal departure time to test."));
+  fgSizerDepartureOptimization->Add(
+      m_sDepartureTimeOptimizationRangeHours, 0, wxALL, 5);
+
+  m_staticTextDepartureRangeHours =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY, _("h"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  m_staticTextDepartureRangeHours->Wrap(-1);
+  fgSizerDepartureOptimization->Add(
+      m_staticTextDepartureRangeHours, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  fgSizerDepartureOptimization->Add(0, 0, 1, wxEXPAND, 5);
+
+  m_staticTextDepartureStep =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY, _("Step"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  m_staticTextDepartureStep->Wrap(-1);
+  fgSizerDepartureOptimization->Add(
+      m_staticTextDepartureStep, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  m_sDepartureTimeOptimizationStepHours = new wxSpinCtrl(
+      sbStart->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 168, 1);
+  m_sDepartureTimeOptimizationStepHours->SetToolTip(_(
+      "Hours between alternative departure time calculations."));
+  fgSizerDepartureOptimization->Add(m_sDepartureTimeOptimizationStepHours, 0,
+                                    wxALL, 5);
+
+  m_staticTextDepartureStepHours =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY, _("h"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  m_staticTextDepartureStepHours->Wrap(-1);
+  fgSizerDepartureOptimization->Add(
+      m_staticTextDepartureStepHours, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  wxBoxSizer* bSizerDepartureStepMinutes = new wxBoxSizer(wxHORIZONTAL);
+  m_sDepartureTimeOptimizationStepMinutes = new wxSpinCtrl(
+      sbStart->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 59, 0);
+  m_sDepartureTimeOptimizationStepMinutes->SetToolTip(_(
+      "Minutes between alternative departure time calculations."));
+  bSizerDepartureStepMinutes->Add(m_sDepartureTimeOptimizationStepMinutes, 0,
+                                  wxALL, 0);
+
+  m_staticTextDepartureStepMinutes =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY, _("m"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  m_staticTextDepartureStepMinutes->Wrap(-1);
+  bSizerDepartureStepMinutes->Add(
+      m_staticTextDepartureStepMinutes, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 5);
+  fgSizerDepartureOptimization->Add(bSizerDepartureStepMinutes, 0,
+                                    wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  fgSizer60->Add(fgSizerDepartureOptimization, 0, wxEXPAND, 5);
 
   sbStart->Add(fgSizer60, 1, wxEXPAND | wxALL, 5);
 
@@ -1355,6 +1485,27 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   wxStaticBoxSizer* sbEnd;
   sbEnd = new wxStaticBoxSizer(new wxStaticBox(m_pBasic, wxID_ANY, _("End")),
                                wxVERTICAL);
+
+  wxBoxSizer* endSelectionSizer = new wxBoxSizer(wxHORIZONTAL);
+
+  m_rbEndPositionSelection =
+      new wxRadioButton(sbEnd->GetStaticBox(), wxID_ANY, _("Position"),
+                        wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
+  m_rbEndPositionSelection->SetToolTip(
+      _("Select a predefined position as the end point"));
+  m_rbEndPositionSelection->SetValue(true);
+  endSelectionSizer->Add(m_rbEndPositionSelection, 0,
+                         wxALL | wxALIGN_CENTER_VERTICAL, 5);
+
+  m_rbEndWaypointSelection =
+      new wxRadioButton(sbEnd->GetStaticBox(), wxID_ANY, _("Waypoint"),
+                        wxDefaultPosition, wxDefaultSize);
+  m_rbEndWaypointSelection->SetToolTip(
+      _("Select an OpenCPN waypoint as the end point"));
+  endSelectionSizer->Add(m_rbEndWaypointSelection, 0,
+                         wxALL | wxALIGN_CENTER_VERTICAL, 5);
+
+  sbEnd->Add(endSelectionSizer, 0, wxEXPAND, 5);
 
   m_cEnd =
       new wxComboBox(sbEnd->GetStaticBox(), wxID_ANY, wxEmptyString,
@@ -2067,6 +2218,10 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_COMMAND_RADIOBUTTON_SELECTED,
       wxCommandEventHandler(ConfigurationDialogBase::OnStartFromPosition), NULL,
       this);
+  m_rbStartWaypointSelection->Connect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnStartFromWaypoint), NULL,
+      this);
   m_cStart->Connect(wxEVT_COMMAND_COMBOBOX_SELECTED,
                     wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                     NULL, this);
@@ -2090,6 +2245,18 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnCurrentTime), NULL,
       this);
+  m_cbDepartureTimeOptimizationEnabled->Connect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_sDepartureTimeOptimizationRangeHours->Connect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationStepHours->Connect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationStepMinutes->Connect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_tBoat->Connect(wxEVT_COMMAND_TEXT_UPDATED,
                    wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                    NULL, this);
@@ -2250,6 +2417,14 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_sMaxSwellMeters->Connect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_rbEndPositionSelection->Connect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnEndAtPosition), NULL,
+      this);
+  m_rbEndWaypointSelection->Connect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnEndAtWaypoint), NULL,
+      this);
   m_cEnd->Connect(wxEVT_COMMAND_COMBOBOX_SELECTED,
                   wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                   NULL, this);
@@ -2671,6 +2846,10 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_COMMAND_RADIOBUTTON_SELECTED,
       wxCommandEventHandler(ConfigurationDialogBase::OnStartFromPosition), NULL,
       this);
+  m_rbStartWaypointSelection->Disconnect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnStartFromWaypoint), NULL,
+      this);
   m_cStart->Disconnect(wxEVT_COMMAND_COMBOBOX_SELECTED,
                        wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                        NULL, this);
@@ -2694,6 +2873,18 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnCurrentTime), NULL,
       this);
+  m_cbDepartureTimeOptimizationEnabled->Disconnect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_sDepartureTimeOptimizationRangeHours->Disconnect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationStepHours->Disconnect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationStepMinutes->Disconnect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_tBoat->Disconnect(wxEVT_COMMAND_TEXT_UPDATED,
                       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                       NULL, this);
@@ -2855,6 +3046,14 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_sMaxSwellMeters->Disconnect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_rbEndPositionSelection->Disconnect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnEndAtPosition), NULL,
+      this);
+  m_rbEndWaypointSelection->Disconnect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnEndAtWaypoint), NULL,
+      this);
   m_cEnd->Disconnect(wxEVT_COMMAND_COMBOBOX_SELECTED,
                      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                      NULL, this);

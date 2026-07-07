@@ -33,6 +33,7 @@
 #include "RoutePoint.h"
 #include "RouteMap.h"
 #include "RouteMapOverlay.h"
+#include "RouteWaypointExtractor.h"
 #include "WeatherRouting.h"
 #include "weather_routing_pi.h"
 
@@ -82,7 +83,7 @@ extern "C" DECL_EXP void destroy_pi(opencpn_plugin* p) { delete p; }
 #include "icons.h"
 
 weather_routing_pi::weather_routing_pi(void* ppimgr)
-    : opencpn_plugin_118(ppimgr) {
+    : opencpn_plugin_121(ppimgr) {
   // Create the PlugIn icons
   initialize_images();
 
@@ -159,6 +160,14 @@ int weather_routing_pi::Init() {
       new wxMenuItem(&dummy_menu, -1, _("Weather Route Analysis")), this,
       "Route");
   // SetCanvasMenuItemViz(m_route_menu_id, false, "Route");
+
+  m_route_multileg_menu_id = AddCanvasMenuItem(
+      new wxMenuItem(&dummy_menu, -1, _("Create Weather Routing Legs...")),
+      this,
+      "Route");
+  wxLogMessage(
+      "WeatherRouting route context menu ids: analysis=%d multileg=%d",
+      m_route_menu_id, m_route_multileg_menu_id);
 
   //    And load the configuration items
   LoadConfig();
@@ -460,6 +469,11 @@ void weather_routing_pi::OnToolbarToolCallback(int id) {
 void weather_routing_pi::OnContextMenuItemCallback(int id) {
   if (!m_pWeather_Routing) NewWR();
 
+  wxLogMessage(
+      "WeatherRouting context menu callback: id=%d analysis_id=%d "
+      "multileg_id=%d",
+      id, m_route_menu_id, m_route_multileg_menu_id);
+
   if (id == m_position_menu_id) {
     m_pWeather_Routing->AddPosition(m_cursor_lat, m_cursor_lon);
   } else if (id == m_waypoint_menu_id) {
@@ -473,7 +487,32 @@ void weather_routing_pi::OnContextMenuItemCallback(int id) {
   } else if (id == m_route_menu_id) {
     wxString GUID = GetSelectedRouteGUID_Plugin();
 
+    std::vector<RouteWaypointInfo> route_waypoints;
+    wxString extraction_error;
+    if (ExtractOpenCPNRouteWaypoints(GUID, route_waypoints,
+                                     extraction_error)) {
+      wxLogMessage(
+          "WeatherRouting multi-leg route extraction: route=%s count=%zu",
+          GUID, route_waypoints.size());
+      for (const RouteWaypointInfo& waypoint : route_waypoints) {
+        wxLogMessage(
+            "WeatherRouting multi-leg waypoint #%d: name=%s guid=%s lat=%.8f "
+            "lon=%.8f",
+            waypoint.index, waypoint.name, waypoint.guid, waypoint.lat,
+            waypoint.lon);
+      }
+    } else {
+      wxLogMessage("WeatherRouting multi-leg route extraction failed: route=%s "
+                   "error=%s",
+                   GUID, extraction_error);
+    }
+
     m_pWeather_Routing->AddRoute(GUID);
+  } else if (id == m_route_multileg_menu_id) {
+    wxString GUID = GetSelectedRouteGUID_Plugin();
+    wxLogMessage("WeatherRouting multi-leg selected route: route=%s", GUID);
+    m_pWeather_Routing->CreateMultiLegConfigurationsFromRoute(GUID);
+    return;
   }
   m_pWeather_Routing->Reset();
 }
@@ -576,4 +615,8 @@ void weather_routing_pi::ShowMenuItems(bool show) {
   SetCanvasMenuItemViz(m_position_menu_id, show);
   SetCanvasMenuItemViz(m_waypoint_menu_id, show, "Waypoint");
   // SetCanvasMenuItemViz(m_route_menu_id, show, "Route");
+  // Route context actions remain registered and visible while the plugin is
+  // active. Toggling them here can leave one route action hidden after the
+  // Weather Routing window is closed while other route actions remain visible.
+  // SetCanvasMenuItemViz(m_route_multileg_menu_id, show, "Route");
 }

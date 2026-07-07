@@ -106,7 +106,7 @@ class WeatherRouting;
  * weather routing capabilities to OpenCPN. It handles initialization,
  * UI management, and interactions with the OpenCPN application.
  */
-class weather_routing_pi : public wxEvtHandler, public opencpn_plugin_118 {
+class weather_routing_pi : public wxEvtHandler, public opencpn_plugin_121 {
 public:
   weather_routing_pi(void* ppimgr);
   ~weather_routing_pi();
@@ -189,6 +189,7 @@ private:
   int m_position_menu_id;
   int m_waypoint_menu_id;
   int m_route_menu_id;
+  int m_route_multileg_menu_id;
 
   wxTimer m_tCursorLatLon;
 };

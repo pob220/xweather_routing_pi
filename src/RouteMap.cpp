@@ -66,6 +66,7 @@
 
 #include <stdlib.h>
 #include <math.h>
+#include <cmath>
 #include <functional>
 #include <list>
 #include <map>
@@ -90,8 +91,64 @@ Shared_GribRecordSetData::~Shared_GribRecordSetData() {
 
 weather_routing_pi* RouteMapConfiguration::s_plugin_instance = nullptr;
 
+namespace {
+
+bool ResolveWaypoint(wxString& name, wxString& guid, double& lat,
+                     double& lon) {
+  PlugIn_Waypoint waypoint;
+  if (!guid.IsEmpty() && GetSingleWaypoint(guid, &waypoint)) {
+    name = waypoint.m_MarkName;
+    lat = waypoint.m_lat;
+    lon = waypoint.m_lon;
+    return true;
+  }
+
+  wxArrayString waypoint_guids = GetWaypointGUIDArray();
+  for (const auto& waypoint_guid : waypoint_guids) {
+    if (!GetSingleWaypoint(waypoint_guid, &waypoint)) continue;
+    if (waypoint.m_MarkName != name) continue;
+
+    guid = waypoint_guid;
+    lat = waypoint.m_lat;
+    lon = waypoint.m_lon;
+    return true;
+  }
+
+  return false;
+}
+
+bool ResolvePosition(const wxString& name, double& lat, double& lon) {
+  for (const auto& position : RouteMap::Positions) {
+    if (name != position.Name) continue;
+
+    lat = position.lat;
+    lon = position.lon;
+    if (!position.GUID.IsEmpty()) {
+      PlugIn_Waypoint waypoint;
+      if (GetSingleWaypoint(position.GUID, &waypoint)) {
+        lat = waypoint.m_lat;
+        lon = waypoint.m_lon;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+}  // namespace
+
 RouteMapConfiguration::RouteMapConfiguration()
     : StartType(START_FROM_POSITION),
+      EndType(END_AT_POSITION),
+      DepartureTimeOptimizationEnabled(false),
+      DepartureTimeOptimizationRangeMinutes(360),
+      DepartureTimeOptimizationStepMinutes(60),
+      DepartureTimeOptimizationCandidate(false),
+      DepartureTimeOptimizationOffsetMinutes(0),
+      IsMultiLegGenerated(false),
+      MultiLegLegIndex(0),
+      MultiLegLegCount(0),
       UpwindEfficiency(1.),
       DownwindEfficiency(1.),
       NightCumulativeEfficiency(1.),
@@ -112,55 +169,37 @@ double RouteMapConfiguration::GetBoatLon() {
 
 bool RouteMapConfiguration::Update() {
   bool havestart = false, haveend = false;
-  PlugIn_Waypoint waypoint;
 
   if (StartType == RouteMapConfiguration::START_FROM_BOAT) {
     StartLat = GetBoatLat();
     StartLon = GetBoatLon();
-    if (StartLat != NAN && StartLon != NAN) {
+    if (!std::isnan(StartLat) && !std::isnan(StartLon)) {
       havestart = true;
     }
   }
 
   if (!RouteGUID.IsEmpty()) {
-    if (StartType == RouteMapConfiguration::START_FROM_POSITION &&
-        !StartGUID.IsEmpty() && GetSingleWaypoint(StartGUID, &waypoint)) {
-      StartLat = waypoint.m_lat;
-      StartLon = waypoint.m_lon;
+    if (StartType != RouteMapConfiguration::START_FROM_BOAT &&
+        ResolveWaypoint(Start, StartGUID, StartLat, StartLon)) {
       havestart = true;
     }
-    if (!EndGUID.IsEmpty() && GetSingleWaypoint(EndGUID, &waypoint)) {
-      EndLat = waypoint.m_lat;
-      EndLon = waypoint.m_lon;
+    if (ResolveWaypoint(End, EndGUID, EndLat, EndLon)) {
       haveend = true;
     }
   }
-  for (const auto& it : RouteMap::Positions) {
-    if (StartType == RouteMapConfiguration::START_FROM_POSITION &&
-        Start == it.Name) {
-      double lat = it.lat;
-      double lon = it.lon;
-      if (!it.GUID.IsEmpty() && GetSingleWaypoint(it.GUID, &waypoint)) {
-        lat = waypoint.m_lat;
-        lon = waypoint.m_lon;
-      }
-      StartLat = lat;
-      StartLon = lon;
 
-      havestart = true;
-    }
-    if (End == it.Name) {
-      double lat = it.lat;
-      double lon = it.lon;
-      if (!it.GUID.IsEmpty() && GetSingleWaypoint(it.GUID, &waypoint)) {
-        lat = waypoint.m_lat;
-        lon = waypoint.m_lon;
-      }
-      EndLat = lat;
-      EndLon = lon;
-      haveend = true;
-    }
+  if (!havestart &&
+      StartType == RouteMapConfiguration::START_FROM_WAYPOINT) {
+    havestart = ResolveWaypoint(Start, StartGUID, StartLat, StartLon);
   }
+  if (!havestart &&
+      StartType == RouteMapConfiguration::START_FROM_POSITION) {
+    havestart = ResolvePosition(Start, StartLat, StartLon);
+  }
+  if (EndType == RouteMapConfiguration::END_AT_WAYPOINT)
+    haveend = ResolveWaypoint(End, EndGUID, EndLat, EndLon);
+  else
+    haveend = ResolvePosition(End, EndLat, EndLon);
 
   if (!havestart || !haveend) {
     StartLat = StartLon = EndLat = EndLon = NAN;
@@ -687,6 +726,8 @@ wxString RouteMap::GetWeatherForecastStatusMessage(
 
 void RouteMap::CollectPositionErrors(Position* position,
                                      std::vector<Position*>& failed_positions) {
+  if (!position) return;
+
   // If this position has an error, add it to the list
   if (position->propagation_error != PROPAGATION_NO_ERROR) {
     failed_positions.push_back(position);
@@ -694,8 +735,8 @@ void RouteMap::CollectPositionErrors(Position* position,
 
   // Check parent positions recursively to find chain of propagation
   if (position->parent && !position->parent->propagated) {
-    CollectPositionErrors(dynamic_cast<Position*>(position->parent),
-                          failed_positions);
+    Position* parent = dynamic_cast<Position*>(position->parent);
+    if (parent) CollectPositionErrors(parent, failed_positions);
   }
 }
 
@@ -711,6 +752,11 @@ wxString RouteMap::GetRoutingErrorInfo() {
 
   // Get the most recent isochron
   IsoChron* latest = origin.back();
+  if (!latest) {
+    info = _("No routing data available.");
+    Unlock();
+    return info;
+  }
   std::vector<Position*> failed_positions;
 
   // Track error counts to find most common issues
@@ -719,15 +765,20 @@ wxString RouteMap::GetRoutingErrorInfo() {
   // Look at all positions in the latest isochron
   for (IsoRouteList::iterator it = latest->routes.begin();
        it != latest->routes.end(); ++it) {
+    if (!*it || !(*it)->skippoints || !(*it)->skippoints->point) continue;
+
     Position* p = (*it)->skippoints->point;
-    do {
+    Position* start = p;
+    int guard = 0;
+    while (p && guard++ < 100000) {
       // If this position wasn't able to propagate further, add it to analysis
       if (p->propagated && p->propagation_error != PROPAGATION_NO_ERROR) {
         failed_positions.push_back(p);
         error_counts[p->propagation_error]++;
       }
       p = p->next;
-    } while (p != (*it)->skippoints->point);
+      if (p == start) break;
+    }
   }
 
   if (failed_positions.empty()) {

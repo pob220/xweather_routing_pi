@@ -212,7 +212,16 @@ struct RouteMapConfiguration {
    */
   enum StartDataType {
     START_FROM_POSITION,  //!< Start from named position, resolved to lat/lon.
-    START_FROM_BOAT       //!< Start from boat's current position.
+    START_FROM_BOAT,      //!< Start from boat's current position.
+    START_FROM_WAYPOINT   //!< Start from OpenCPN waypoint/mark.
+  };
+
+  /**
+   * Defines the source for the destination point of the route.
+   */
+  enum EndDataType {
+    END_AT_POSITION,  //!< End at named Weather Routing position.
+    END_AT_WAYPOINT   //!< End at OpenCPN waypoint/mark.
   };
 
   RouteMapConfiguration(); /* avoid waiting forever in update longitudes */
@@ -242,12 +251,40 @@ struct RouteMapConfiguration {
   /** The name of the destination position, which is resolved to EndLat/EndLon.
    */
   wxString End;
+  /** The type of destination point, either Weather Routing position or waypoint. */
+  EndDataType EndType;
   wxString EndGUID;
 
   /** The time when the boat leaves the starting position. */
   wxDateTime StartTime;
   /** Flag to use the current time as the start time. */
   bool UseCurrentTime;
+  /** If true, compute a batch of routes around StartTime. */
+  bool DepartureTimeOptimizationEnabled;
+  /** Minutes before and after StartTime to test. */
+  int DepartureTimeOptimizationRangeMinutes;
+  /** Minutes between candidate departure times. */
+  int DepartureTimeOptimizationStepMinutes;
+  /** Runtime-only marker for generated optimization candidates. */
+  bool DepartureTimeOptimizationCandidate;
+  /** Runtime-only nominal departure used to compute displayed offsets. */
+  wxDateTime DepartureTimeOptimizationNominalStartTime;
+  /** Runtime-only candidate offset in minutes from nominal departure. */
+  int DepartureTimeOptimizationOffsetMinutes;
+  /** Runtime-only group identifier for one optimization sweep. */
+  wxString DepartureTimeOptimizationGroupId;
+  /** True for route configurations generated from an OpenCPN route leg. */
+  bool IsMultiLegGenerated;
+  /** Shared identifier for all generated legs in one OpenCPN route sequence. */
+  wxString MultiLegGroupId;
+  /** OpenCPN route GUID used to create this generated leg. */
+  wxString MultiLegParentRouteGUID;
+  /** OpenCPN route name used to create this generated leg. */
+  wxString MultiLegParentRouteName;
+  /** One-based leg index within the generated multi-leg sequence. */
+  int MultiLegLegIndex;
+  /** Total leg count within the generated multi-leg sequence. */
+  int MultiLegLegCount;
   /** Default time in seconds between propagations. */
   double DeltaTime;
   /** Time in seconds between propagations. */
@@ -814,6 +851,12 @@ public:
     m_Configuration = o;
     m_bValid = m_Configuration.Update();
     m_bFinished = false;
+    Unlock();
+  }
+  void SetConfigurationPreserveResult(const RouteMapConfiguration& o) {
+    Lock();
+    m_Configuration = o;
+    m_bValid = m_Configuration.Update();
     Unlock();
   }
   RouteMapConfiguration GetConfiguration() {
