@@ -49,6 +49,7 @@
 #include <vector>
 
 static const int MAX_DEPARTURE_OPTIMIZATION_CANDIDATES = 73;
+static bool s_loggedDetectLandGshhsWarning = false;
 
 wxString GetRouteNameForGuid(const wxString& routeGuid) {
   std::unique_ptr<PlugIn_Route> route = GetRoute_Plugin(routeGuid);
@@ -5137,7 +5138,15 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
 
   /* initialize crossing land routine from main thread as it is
      not re-entrant, and cannot be done by worker-threads later */
-  if (configuration.DetectLand) PlugIn_GSHHS_CrossesLand(0, 0, 0, 0);
+  if (configuration.DetectLand) {
+    PlugIn_GSHHS_CrossesLand(0, 0, 0, 0);
+    if (!s_loggedDetectLandGshhsWarning) {
+      wxLogMessage(
+          "WeatherRouting Detect Land: using OpenCPN GSHHS shoreline land "
+          "checks; this is not chart-based coastline validation.");
+      s_loggedDetectLandGshhsWarning = true;
+    }
+  }
 
   /* same with grib */
   if (!configuration.RouteGUID.IsEmpty() && configuration.UseGrib)

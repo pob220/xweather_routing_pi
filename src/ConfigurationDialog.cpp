@@ -96,6 +96,16 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
 #endif
       m_WeatherRouting(weatherrouting),
       m_bBlockUpdate(false) {
+  const wxString detect_land_note =
+      _("Detect Land uses OpenCPN GSHHS background shoreline data, not the "
+        "displayed chart coastline. Accuracy depends on installed GSHHS "
+        "quality.");
+  m_cbDetectLand->SetToolTip(detect_land_note);
+  m_sSafetyMarginLand->SetToolTip(
+      detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
+                           "to maintain from land during routing "
+                           "calculations."));
+
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
 
