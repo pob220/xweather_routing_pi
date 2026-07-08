@@ -315,6 +315,9 @@ bool RouteMap::Propagate() {
   for (int i = 0; i <= PROPAGATION_ANGLE_ERROR; ++i)
     configuration.rejection_counts[i] = 0;
   configuration.accepted_candidate_count = 0;
+  configuration.generated_candidate_count = 0;
+  configuration.chart_land_refinement_angles = 0;
+  configuration.chart_land_refinement_accepted = 0;
 
   // reset grib data deficient flag
   bool grib_is_data_deficient = false;
@@ -442,10 +445,14 @@ bool RouteMap::Propagate() {
     }
     wxLogMessage(
         "WeatherRouting propagation summary route=\"%s -> %s\" "
-        "accepted=%ld rejected{polar=%ld land=%ld boundary=%ld "
+        "generated=%ld accepted=%ld refinement_angles=%ld "
+        "refinement_accepted=%ld rejected{polar=%ld land=%ld boundary=%ld "
         "weather=%ld wind=%ld apparent_wind=%ld angle=%ld}",
         m_Configuration.Start, m_Configuration.End,
+        configuration.generated_candidate_count,
         configuration.accepted_candidate_count,
+        configuration.chart_land_refinement_angles,
+        configuration.chart_land_refinement_accepted,
         configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
             configuration.rejection_counts[PROPAGATION_POLAR_CONSTRAINTS],
         configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
@@ -459,6 +466,23 @@ bool RouteMap::Propagate() {
 
   // take note of possible failure reasons
   UpdateStatus(configuration);
+
+  long land_rejections =
+      configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
+      configuration.rejection_counts[PROPAGATION_LAND_SAFETY_MARGIN];
+  if (configuration.chart_land_refinement_angles > 0 &&
+      (land_rejections > 0 ||
+       configuration.chart_land_refinement_accepted > 0)) {
+    wxLogMessage(
+        "WeatherRouting detour refinement route=\"%s -> %s\" "
+        "generated=%ld accepted=%ld land_rejections=%ld "
+        "refinement_angles=%ld refinement_accepted=%ld",
+        m_Configuration.Start, m_Configuration.End,
+        configuration.generated_candidate_count,
+        configuration.accepted_candidate_count, land_rejections,
+        configuration.chart_land_refinement_angles,
+        configuration.chart_land_refinement_accepted);
+  }
 
   Unlock();
 

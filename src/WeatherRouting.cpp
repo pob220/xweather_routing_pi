@@ -1366,6 +1366,7 @@ bool WeatherRouting::RouteMapIsManaged(RouteMapOverlay* routemapoverlay) const {
 }
 
 void WeatherRouting::ShowRoutingProgress(const wxString& title) {
+  static const int kProgressTextWidth = 540;
   if (!m_RoutingProgressDialog) {
     m_RoutingProgressDialog =
         new wxDialog(this, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
@@ -1378,15 +1379,15 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
     topSizer->Add(m_RoutingProgressStage, 0, wxALL | wxEXPAND, 8);
     m_RoutingProgressDetail =
         new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString,
-                         wxDefaultPosition, wxSize(420, -1));
-    m_RoutingProgressDetail->Wrap(420);
+                         wxDefaultPosition, wxSize(kProgressTextWidth, -1));
+    m_RoutingProgressDetail->Wrap(kProgressTextWidth);
     topSizer->Add(m_RoutingProgressDetail, 0, wxLEFT | wxRIGHT | wxBOTTOM |
                                            wxEXPAND,
                   8);
     m_RoutingProgressTiming =
         new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString,
-                         wxDefaultPosition, wxSize(420, -1));
-    m_RoutingProgressTiming->Wrap(420);
+                         wxDefaultPosition, wxSize(kProgressTextWidth, -1));
+    m_RoutingProgressTiming->Wrap(kProgressTextWidth);
     topSizer->Add(m_RoutingProgressTiming, 0, wxLEFT | wxRIGHT | wxBOTTOM |
                                            wxEXPAND,
                   8);
@@ -1399,7 +1400,7 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
         m_RoutingProgressDialog, wxID_ANY,
         _("Use the Weather Routing Stop button to cancel active route "
           "computations."));
-    note->Wrap(420);
+    note->Wrap(kProgressTextWidth);
     topSizer->Add(note, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
     m_RoutingProgressDialog->SetSizerAndFit(topSizer);
     m_RoutingProgressDialog->Bind(
@@ -1447,7 +1448,7 @@ void WeatherRouting::UpdateRoutingProgress(const wxString& stage,
   if (!stage.IsEmpty()) m_RoutingProgressStage->SetLabel(stage);
 
   m_RoutingProgressDetail->SetLabel(detail);
-  m_RoutingProgressDetail->Wrap(420);
+  m_RoutingProgressDetail->Wrap(540);
   RefreshRoutingProgressTiming();
   wxLogMessage("WR_PROGRESS stage=\"%s\" detail=\"%s\" value=%d range=%d",
                stage, detail, value, range);
@@ -1494,7 +1495,7 @@ void WeatherRouting::RefreshRoutingProgressTiming() {
         m_RoutingProgressPreviousStageDuration.Format(_T("%H:%M:%S")));
   }
   m_RoutingProgressTiming->SetLabel(timing);
-  m_RoutingProgressTiming->Wrap(420);
+  m_RoutingProgressTiming->Wrap(540);
   m_RoutingProgressDialog->Layout();
 }
 

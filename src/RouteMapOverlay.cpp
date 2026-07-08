@@ -1876,7 +1876,7 @@ void RouteMapOverlay::UpdateDestination() {
             ClosestPosition(configuration.EndLat, configuration.EndLon);
         configuration.land_crossing = alternatives_rejected_by_chart > 0;
         SetFailureReason(alternatives_rejected_by_chart > 0
-                             ? _("No chart-safe final route found")
+                             ? _("No chart-safe final route found within current search limits")
                              : _("Final route did not reach destination"));
         wxLogMessage(
             "FINAL_ROUTE_SAFETY alternatives_exhausted route=\"%s -> %s\" "

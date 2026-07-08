@@ -667,6 +667,9 @@ struct RouteMapConfiguration {
   bool boundary_crossing;
   long rejection_counts[PROPAGATION_ANGLE_ERROR + 1];
   long accepted_candidate_count;
+  long generated_candidate_count;
+  long chart_land_refinement_angles;
+  long chart_land_refinement_accepted;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,

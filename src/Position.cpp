@@ -19,6 +19,11 @@
 
 #include <wx/wx.h>
 
+#include <algorithm>
+#include <cmath>
+#include <set>
+#include <vector>
+
 #include "Position.h"
 #include "RouteMap.h"
 #include "Utilities.h"
@@ -230,10 +235,51 @@ bool Position::Propagate(IsoRouteList& routelist,
     bearing2 = heading_resolve(parent_bearing + configuration.MaxSearchAngle);
   }
 
+  std::vector<std::pair<double, bool> > degree_steps;
+  degree_steps.reserve(configuration.DegreeSteps.size() * 2);
+  std::set<int> seen_angles;
+  auto add_degree_step = [&degree_steps, &seen_angles](double angle,
+                                                       bool refined) {
+    angle = heading_resolve(angle);
+    int key = static_cast<int>(std::lround(angle * 1000.0));
+    if (seen_angles.insert(key).second)
+      degree_steps.push_back(std::make_pair(angle, refined));
+  };
+
   for (auto it = configuration.DegreeSteps.begin();
        it != configuration.DegreeSteps.end(); it++) {
+    add_degree_step(*it, false);
+  }
+
+  /*
+   * Chart-backed land checks can reject the fastest landward shortcuts, but
+   * the old coarse wind-angle step can still leave too few seaward detour
+   * choices.  When chart enforcement is explicit, add one bounded half-step
+   * refinement between the user's configured true-wind course steps.  This
+   * does not relax any safety constraint; every accepted segment still passes
+   * the same chart land/depth checks below.
+   */
+  if (configuration.DetectLand &&
+      ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
+      configuration.ByDegrees > 0.2) {
+    double half_step = configuration.ByDegrees / 2.0;
+    for (double step = configuration.FromDegree + half_step;
+         step < configuration.ToDegree; step += configuration.ByDegrees) {
+      add_degree_step(step, true);
+      if (step > 0 && step < 180) add_degree_step(360 - step, true);
+    }
+  }
+
+  std::sort(degree_steps.begin(), degree_steps.end(),
+            [](const std::pair<double, bool>& a,
+               const std::pair<double, bool>& b) { return a.first < b.first; });
+
+  for (auto it = degree_steps.begin(); it != degree_steps.end(); it++) {
+    configuration.generated_candidate_count++;
     double timeseconds = configuration.UsedDeltaTime;
-    double twa = heading_resolve(*it);
+    double twa = heading_resolve(it->first);
+    const bool refined_angle = it->second;
+    if (refined_angle) configuration.chart_land_refinement_angles++;
     double ctw =
         weather_data.twdOverWater + twa; /* rotated relative to true wind */
 
@@ -392,6 +438,7 @@ bool Position::Propagate(IsoRouteList& routelist,
     }
     count++;
     configuration.accepted_candidate_count++;
+    if (refined_angle) configuration.chart_land_refinement_accepted++;
   }
 
   if (count < 3) { /* would get eliminated anyway, but save the extra steps */
