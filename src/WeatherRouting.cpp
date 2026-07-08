@@ -64,12 +64,12 @@ static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
 }
 
 static double ReadExperimentalChartSafetyPrewarmMarginNm() {
-  double margin_nm = 20.0;
+  double margin_nm = 10.0;
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
   pConf->Read(_T("ExperimentalChartSafetyPrewarmMarginNm"), &margin_nm,
-              20.0);
-  if (!std::isfinite(margin_nm)) margin_nm = 20.0;
+              10.0);
+  if (!std::isfinite(margin_nm)) margin_nm = 10.0;
   return wxMax(0.0, wxMin(60.0, margin_nm));
 }
 
@@ -103,12 +103,14 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
       configuration.SafetyMarginLand, enforce_chart_safety ? 1 : 0);
   message += wxString::Format(
       "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
-      "drying=%d unknown=%d point_queries=%d point_cache_hits=%d.",
+      "drying=%d unknown=%d point_queries=%d point_cache_hits=%d "
+      "grid_cache_size=%d grid_cache_evictions=%d.",
       result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
       result.grid_cells_total, result.grid_cells_land,
       result.grid_cells_water, result.grid_cells_drying,
       result.grid_cells_unknown, result.point_cache_misses,
-      result.point_cache_hits);
+      result.point_cache_hits, result.grid_cache_size,
+      result.grid_cache_evictions);
   wxLogMessage("%s", message.c_str());
 }
 
@@ -122,8 +124,6 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
   if (!use_chart_safety) return;
 
   bool any_detect_land = false;
-  bool initialized = false;
-  double min_lat = 0.0, max_lat = 0.0, min_lon = 0.0, max_lon = 0.0;
   double max_safety_margin_nm = 0.0;
   for (auto route : routes) {
     if (!route) continue;
@@ -132,61 +132,73 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
     any_detect_land = true;
     max_safety_margin_nm =
         wxMax(max_safety_margin_nm, configuration.SafetyMarginLand);
-    double lats[] = {configuration.StartLat, configuration.EndLat};
-    double lons[] = {configuration.StartLon, configuration.EndLon};
-    for (int i = 0; i < 2; ++i) {
-      if (!initialized) {
-        min_lat = max_lat = lats[i];
-        min_lon = max_lon = lons[i];
-        initialized = true;
-      } else {
-        min_lat = wxMin(min_lat, lats[i]);
-        max_lat = wxMax(max_lat, lats[i]);
-        min_lon = wxMin(min_lon, lons[i]);
-        max_lon = wxMax(max_lon, lons[i]);
-      }
-    }
   }
-  if (!any_detect_land || !initialized) return;
+  if (!any_detect_land) return;
 
   double envelope_margin_nm =
       ReadExperimentalChartSafetyPrewarmMarginNm() + max_safety_margin_nm;
-  double mid_lat = (min_lat + max_lat) / 2.0;
-  double lat_margin = envelope_margin_nm / 60.0;
-  double lon_margin =
-      envelope_margin_nm / (60.0 * wxMax(0.1, fabs(cos(mid_lat * M_PI / 180.0))));
-  min_lat = wxMax(-90.0, min_lat - lat_margin);
-  max_lat = wxMin(90.0, max_lat + lat_margin);
-  min_lon -= lon_margin;
-  max_lon += lon_margin;
 
-  PlugInSegmentSafetyResult result = {};
-  result.struct_size = sizeof(result);
-  if (!PlugIn_PrewarmSegmentSafetyGrid(min_lat, min_lon, max_lat, max_lon,
-                                       &result)) {
-    wxLogMessage(
-        "WeatherRouting Detect Land: chart safety optimisation envelope "
-        "prewarm failed context=%s margin_nm=%.3f bbox=[lat %.6f..%.6f "
-        "lon %.6f..%.6f].",
-        context, envelope_margin_nm, min_lat, max_lat, min_lon, max_lon);
-    return;
+  wxStopWatch timer;
+  int legs = 0;
+  int failed = 0;
+  int tile_builds = 0;
+  int tile_hits = 0;
+  int build_ms = 0;
+  int cells = 0;
+  int land = 0;
+  int water = 0;
+  int drying = 0;
+  int unknown = 0;
+  int point_queries = 0;
+  int point_cache_hits = 0;
+  int grid_cache_size = 0;
+  int grid_cache_evictions = 0;
+  bool capped = false;
+
+  for (auto route : routes) {
+    if (!route) continue;
+    RouteMapConfiguration configuration = route->GetConfiguration();
+    if (!configuration.DetectLand) continue;
+    ++legs;
+
+    PlugInSegmentSafetyResult result = {};
+    result.struct_size = sizeof(result);
+    if (!PlugIn_PrewarmSegmentSafetyGridForSegment(
+            configuration.StartLat, configuration.StartLon,
+            configuration.EndLat, configuration.EndLon, envelope_margin_nm,
+            &result)) {
+      ++failed;
+      continue;
+    }
+
+    tile_builds += result.grid_cache_misses;
+    tile_hits += result.grid_cache_hits;
+    build_ms += result.grid_build_ms;
+    cells += result.grid_cells_total;
+    land += result.grid_cells_land;
+    water += result.grid_cells_water;
+    drying += result.grid_cells_drying;
+    unknown += result.grid_cells_unknown;
+    point_queries += result.point_cache_misses;
+    point_cache_hits += result.point_cache_hits;
+    grid_cache_size = wxMax(grid_cache_size, result.grid_cache_size);
+    grid_cache_evictions =
+        wxMax(grid_cache_evictions, result.grid_cache_evictions);
+    capped = capped || wxString(result.message).Find("capped") != wxNOT_FOUND;
   }
 
   wxString message = wxString::Format(
-      "WeatherRouting Detect Land: chart safety optimisation envelope "
-      "prewarm context=%s bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
-      "margin_nm=%.3f enforce=%d ",
-      context, min_lat, max_lat, min_lon, max_lon, envelope_margin_nm,
-      enforce_chart_safety ? 1 : 0);
+      "WeatherRouting Detect Land: chart safety optimisation corridor "
+      "prewarm context=%s legs=%d failed=%d margin_nm=%.3f enforce=%d "
+      "elapsed_ms=%ld capped=%d ",
+      context, legs, failed, envelope_margin_nm, enforce_chart_safety ? 1 : 0,
+      timer.Time(), capped ? 1 : 0);
   message += wxString::Format(
       "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
       "drying=%d unknown=%d point_queries=%d point_cache_hits=%d "
-      "message=\"%s\".",
-      result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
-      result.grid_cells_total, result.grid_cells_land,
-      result.grid_cells_water, result.grid_cells_drying,
-      result.grid_cells_unknown, result.point_cache_misses,
-      result.point_cache_hits, result.message);
+      "grid_cache_size=%d grid_cache_evictions=%d.",
+      tile_builds, tile_hits, build_ms, cells, land, water, drying, unknown,
+      point_queries, point_cache_hits, grid_cache_size, grid_cache_evictions);
   wxLogMessage("%s", message.c_str());
 }
 

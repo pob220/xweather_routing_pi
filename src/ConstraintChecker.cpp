@@ -61,6 +61,11 @@ long s_gridLookups = 0;
 long s_gridLookupMs = 0;
 long s_segmentSampleCount = 0;
 long s_waterTileShortcuts = 0;
+long s_segmentCacheHits = 0;
+long s_segmentCacheMisses = 0;
+long s_segmentCacheStores = 0;
+long s_gridCacheSize = 0;
+long s_gridCacheEvictions = 0;
 long s_unexpectedTileBuilds = 0;
 long s_chartLandRejections = 0;
 long s_finalRouteValidationChecks = 0;
@@ -103,8 +108,10 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
       "grid_cells=%ld land=%ld water=%ld drying=%ld unknown=%ld "
       "grid_lookups=%ld grid_lookup_ms=%ld samples=%ld "
       "avg_samples_per_call=%.2f water_tile_shortcuts=%ld "
-      "unexpected_tile_builds=%ld chart_land_rejections=%ld "
-      "final_route_checks=%ld ",
+      "segment_cache_hits=%ld segment_cache_misses=%ld "
+      "segment_cache_stores=%ld grid_cache_size=%ld "
+      "grid_cache_evictions=%ld unexpected_tile_builds=%ld "
+      "chart_land_rejections=%ld final_route_checks=%ld ",
       s_gridCacheHits, s_gridCacheMisses, s_gridBuildMs, s_gridCellsTotal,
       s_gridCellsLand, s_gridCellsWater, s_gridCellsDrying,
       s_gridCellsUnknown, s_gridLookups, s_gridLookupMs,
@@ -112,7 +119,9 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
       s_segmentSafetyApiCalls
           ? (double)s_segmentSampleCount / (double)s_segmentSafetyApiCalls
           : 0.0,
-      s_waterTileShortcuts, s_unexpectedTileBuilds, s_chartLandRejections,
+      s_waterTileShortcuts, s_segmentCacheHits, s_segmentCacheMisses,
+      s_segmentCacheStores, s_gridCacheSize, s_gridCacheEvictions,
+      s_unexpectedTileBuilds, s_chartLandRejections,
       s_finalRouteValidationChecks);
   message += wxString::Format(
       "land_rings_seen=%ld bbox_ring_tests=%ld edge_tests=%ld "
@@ -175,6 +184,12 @@ void AccumulateSegmentSafetyDiagnostics(
   s_gridLookupMs += result.grid_lookup_ms;
   s_segmentSampleCount += result.segment_sample_count;
   s_waterTileShortcuts += result.water_tile_shortcuts;
+  s_segmentCacheHits += result.segment_cache_hits;
+  s_segmentCacheMisses += result.segment_cache_misses;
+  s_segmentCacheStores += result.segment_cache_stores;
+  s_gridCacheSize = wxMax(s_gridCacheSize, (long)result.grid_cache_size);
+  s_gridCacheEvictions =
+      wxMax(s_gridCacheEvictions, (long)result.grid_cache_evictions);
   s_unexpectedTileBuilds += result.unexpected_tile_builds;
   s_landRingTotal += result.land_ring_count;
   s_bboxRingTests += result.bbox_ring_tests;
@@ -374,8 +389,10 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
         "grid_cells=%ld land=%ld water=%ld drying=%ld unknown=%ld "
         "grid_lookups=%ld grid_lookup_ms=%ld samples=%ld "
         "avg_samples_per_call=%.2f water_tile_shortcuts=%ld "
-        "unexpected_tile_builds=%ld chart_land_rejections=%ld "
-        "final_route_checks=%ld.",
+        "segment_cache_hits=%ld segment_cache_misses=%ld "
+        "segment_cache_stores=%ld grid_cache_size=%ld "
+        "grid_cache_evictions=%ld unexpected_tile_builds=%ld "
+        "chart_land_rejections=%ld final_route_checks=%ld.",
         s_segmentSafetyApiCalls, s_chartAvailableChecks, s_gshhsSafetyCalls,
         s_chartSelectMs, s_cacheBuildMs, s_geometryCheckMs, s_pointCacheHits,
         s_pointCacheMisses, s_gridCacheHits, s_gridCacheMisses, s_gridBuildMs,
@@ -385,7 +402,9 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
         s_segmentSafetyApiCalls
             ? (double)s_segmentSampleCount / (double)s_segmentSafetyApiCalls
             : 0.0,
-        s_waterTileShortcuts, s_unexpectedTileBuilds, s_chartLandRejections,
+        s_waterTileShortcuts, s_segmentCacheHits, s_segmentCacheMisses,
+        s_segmentCacheStores, s_gridCacheSize, s_gridCacheEvictions,
+        s_unexpectedTileBuilds, s_chartLandRejections,
         s_finalRouteValidationChecks);
     wxLogMessage("%s", message.c_str());
     s_loggedExperimentalForcedFallback = true;
@@ -532,6 +551,11 @@ void ConstraintChecker::ResetSegmentSafetyDiagnostics(
   s_gridLookupMs = 0;
   s_segmentSampleCount = 0;
   s_waterTileShortcuts = 0;
+  s_segmentCacheHits = 0;
+  s_segmentCacheMisses = 0;
+  s_segmentCacheStores = 0;
+  s_gridCacheSize = 0;
+  s_gridCacheEvictions = 0;
   s_unexpectedTileBuilds = 0;
   s_chartLandRejections = 0;
   s_finalRouteValidationChecks = 0;
