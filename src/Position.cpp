@@ -267,6 +267,7 @@ bool Position::Propagate(IsoRouteList& routelist,
       if (!boat_data.GetBestPolarAndBoatSpeed(
               configuration, weather_data, twa, ctw, parent_heading, data_mask,
               this->polar, newpolar, timeseconds)) {
+        configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED]++;
         continue;
       }
 
@@ -292,6 +293,7 @@ bool Position::Propagate(IsoRouteList& routelist,
                      twa + k3_BG - boat_data.cog, configuration,
                      configuration.grib, rk_time, newpolar, k4_BG, k4_dist,
                      data_mask)) {
+          configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED]++;
           continue;
         }
 
@@ -314,10 +316,12 @@ bool Position::Propagate(IsoRouteList& routelist,
       if (configuration.positive_longitudes && dlon < 0) dlon += 360;
       if (!ConstraintChecker::CheckMaxCourseAngleConstraint(configuration, dlat,
                                                             dlon)) {
+        configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS]++;
         continue;
       }
       if (!ConstraintChecker::CheckMaxDivertedCourse(configuration, dlat,
                                                      dlon)) {
+        configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS]++;
         continue;
       }
 
@@ -325,6 +329,7 @@ bool Position::Propagate(IsoRouteList& routelist,
       if (!ConstraintChecker::CheckMaxApparentWindConstraint(
               configuration, boat_data.stw, twa, weather_data.twsOverWater,
               propagation_error)) {
+        configuration.rejection_counts[propagation_error]++;
         continue;
       }
 
@@ -350,6 +355,7 @@ bool Position::Propagate(IsoRouteList& routelist,
         if (!ConstraintChecker::CheckLandConstraint(
                 configuration, lat, lon, dlat1, dlon1, boat_data.cog)) {
           configuration.land_crossing = true;
+          configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION]++;
           continue;
         }
 
@@ -357,6 +363,7 @@ bool Position::Propagate(IsoRouteList& routelist,
         if (configuration.DetectBoundary) {
           if (EntersBoundary(dlat1, dlon1)) {
             configuration.boundary_crossing = true;
+            configuration.rejection_counts[PROPAGATION_BOUNDARY_INTERSECTION]++;
             continue;
           }
         }
@@ -364,6 +371,7 @@ bool Position::Propagate(IsoRouteList& routelist,
       /* crosses cyclone track(s)? */
       if (!ConstraintChecker::CheckCycloneTrackConstraint(configuration, lat,
                                                           lon, dlat, dlon)) {
+        configuration.rejection_counts[PROPAGATION_CYCLONE_TRACK_CROSSING]++;
         continue;
       }
 
@@ -383,6 +391,7 @@ bool Position::Propagate(IsoRouteList& routelist,
       points = rp;
     }
     count++;
+    configuration.accepted_candidate_count++;
   }
 
   if (count < 3) { /* would get eliminated anyway, but save the extra steps */
@@ -419,6 +428,7 @@ wxString Position::GetErrorText(PropagationError error) {
                                    _("Boat speed computation failed"),
                                    _("Exceeded maximum apparent wind"),
                                    _("Land intersection detected"),
+                                   _("Land safety margin exceeded"),
                                    _("Boundary intersection detected"),
                                    _("Cyclone track crossing detected"),
                                    _("No valid angles found")};

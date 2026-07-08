@@ -1573,6 +1573,26 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cbDetectLand->SetValue(true);
   fgSizer23->Add(m_cbDetectLand, 1, wxALL | wxEXPAND, 5);
 
+  m_cbUseExperimentalChartSafety = new wxCheckBox(
+      sbOptions->GetStaticBox(), wxID_ANY,
+      _("Use experimental chart-based land checks for diagnostics"),
+      wxDefaultPosition,
+      wxDefaultSize, 0);
+  m_cbUseExperimentalChartSafety->SetToolTip(
+      _("Use loaded vector/CM93 chart geometry for Detect Land. Experimental; "
+        "diagnostic only unless enforcement is enabled."));
+  fgSizer23->Add(m_cbUseExperimentalChartSafety, 1, wxALL | wxEXPAND, 5);
+
+  m_cbEnforceExperimentalChartSafety = new wxCheckBox(
+      sbOptions->GetStaticBox(), wxID_ANY,
+      _("Enforce experimental chart land checks"), wxDefaultPosition,
+      wxDefaultSize, 0);
+  m_cbEnforceExperimentalChartSafety->SetToolTip(
+      _("Allow experimental chart-based checks to reject route candidates and "
+        "fail completed routes whose final track crosses chart land. This may "
+        "false-positive and should be used only for testing."));
+  fgSizer23->Add(m_cbEnforceExperimentalChartSafety, 1, wxALL | wxEXPAND, 5);
+
   m_cbDetectBoundary =
       new wxCheckBox(sbOptions->GetStaticBox(), wxID_ANY, _("Detect Boundary"),
                      wxDefaultPosition, wxDefaultSize, wxCHK_3STATE);

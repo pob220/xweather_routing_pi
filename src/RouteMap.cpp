@@ -312,6 +312,9 @@ bool RouteMap::Propagate() {
   configuration.wind_data_status = wxEmptyString;
   configuration.boundary_crossing = false;
   configuration.land_crossing = false;
+  for (int i = 0; i <= PROPAGATION_ANGLE_ERROR; ++i)
+    configuration.rejection_counts[i] = 0;
+  configuration.accepted_candidate_count = 0;
 
   // reset grib data deficient flag
   bool grib_is_data_deficient = false;
@@ -419,8 +422,40 @@ bool RouteMap::Propagate() {
     if (update->Contains(m_Configuration.EndLat, m_Configuration.EndLon)) {
       SetFinished(true);
     }
-  } else
+  } else {
     m_bFinished = true;
+    long dominant_count = 0;
+    PropagationError dominant_error = PROPAGATION_NO_ERROR;
+    for (int i = PROPAGATION_WIND_DATA_FAILED;
+         i <= PROPAGATION_ANGLE_ERROR; ++i) {
+      if (configuration.rejection_counts[i] > dominant_count) {
+        dominant_count = configuration.rejection_counts[i];
+        dominant_error = (PropagationError)i;
+      }
+    }
+    if (dominant_count > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points; most candidates rejected by: %s"),
+          Position::GetErrorText(dominant_error));
+    } else {
+      m_FailureReason = _("No reachable route points");
+    }
+    wxLogMessage(
+        "WeatherRouting propagation summary route=\"%s -> %s\" "
+        "accepted=%ld rejected{polar=%ld land=%ld boundary=%ld "
+        "weather=%ld wind=%ld apparent_wind=%ld angle=%ld}",
+        m_Configuration.Start, m_Configuration.End,
+        configuration.accepted_candidate_count,
+        configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
+            configuration.rejection_counts[PROPAGATION_POLAR_CONSTRAINTS],
+        configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
+            configuration.rejection_counts[PROPAGATION_LAND_SAFETY_MARGIN],
+        configuration.rejection_counts[PROPAGATION_BOUNDARY_INTERSECTION],
+        configuration.rejection_counts[PROPAGATION_WIND_DATA_FAILED],
+        configuration.rejection_counts[PROPAGATION_EXCEEDED_MAX_WIND],
+        configuration.rejection_counts[PROPAGATION_EXCEEDED_APPARENT_WIND],
+        configuration.rejection_counts[PROPAGATION_ANGLE_ERROR]);
+  }
 
   // take note of possible failure reasons
   UpdateStatus(configuration);
@@ -559,6 +594,7 @@ void RouteMap::Reset() {
   m_NewTime = m_Configuration.StartTime;
   m_bNeedsGrib = m_Configuration.UseGrib && m_Configuration.RouteGUID.IsEmpty();
   m_ErrorMsg = wxEmptyString;
+  m_FailureReason = wxEmptyString;
 
   m_bReachedDestination = false;
   m_bWeatherForecastStatus = WEATHER_FORECAST_SUCCESS;

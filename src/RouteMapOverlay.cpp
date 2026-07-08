@@ -1627,6 +1627,46 @@ bool RouteMapOverlay::Updated() {
   return updated;
 }
 
+bool RouteMapOverlay::ValidateDestinationRouteLand(
+    RouteMapConfiguration& configuration) {
+  if (!configuration.DetectLand) return true;
+
+  Position* child = destination_position ? destination_position
+                                         : last_destination_position;
+  if (!child) return true;
+
+  int checked_segments = 0;
+  for (Position* parent = dynamic_cast<Position*>(child->parent);
+       parent && child && checked_segments < 100000;
+       child = parent, parent = dynamic_cast<Position*>(parent->parent)) {
+    double bearing = 0.0;
+    ll_gc_ll_reverse(parent->lat, parent->lon, child->lat, child->lon,
+                     &bearing, NULL);
+    wxString failure_reason;
+    if (!ConstraintChecker::CheckFinalRouteLandConstraint(
+            configuration, parent->lat, parent->lon, child->lat, child->lon,
+            bearing, &failure_reason)) {
+      configuration.land_crossing = true;
+      if (failure_reason.IsEmpty())
+        failure_reason = _("Chart land crossing in final route");
+      SetFailureReason(failure_reason);
+      wxLogMessage(
+          "FINAL_ROUTE_SAFETY pass=0 route=\"%s -> %s\" "
+          "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
+          "reason=\"%s\"",
+          configuration.Start, configuration.End, checked_segments + 1,
+          parent->lat, parent->lon, child->lat, child->lon,
+          failure_reason);
+      return false;
+    }
+    ++checked_segments;
+  }
+
+  wxLogMessage("FINAL_ROUTE_SAFETY pass=1 route=\"%s -> %s\" segments=%d",
+               configuration.Start, configuration.End, checked_segments);
+  return true;
+}
+
 void RouteMapOverlay::UpdateDestination() {
   RouteMapConfiguration configuration = GetConfiguration();
   Position* last_last_destination_position = last_destination_position;
@@ -1664,11 +1704,16 @@ void RouteMapOverlay::UpdateDestination() {
     if (std::isinf(mindt)) {
       // destination is between two isochrons
       // but propagate can't reach it (land or boundaries in the way).
-      // Use an upper bound time for EndTime, not defined times are too much
-      // trouble later.
-      m_EndTime = isochron->time + wxTimeSpan(0, 0, isochron->delta);
+      m_EndTime = wxDateTime();
       last_destination_position =
           ClosestPosition(configuration.EndLat, configuration.EndLon);
+      configuration.land_crossing = true;
+      SetFailureReason(_("Final route did not reach destination"));
+      wxLogMessage(
+          "FINAL_ROUTE_SAFETY pass=0 route=\"%s -> %s\" "
+          "reason=direct-final-approach-unreachable",
+          configuration.Start, configuration.End);
+      SetFinished(false);
     } else {
       destination_position = new Position(
           configuration.EndLat, configuration.EndLon, endp, minH, NAN,
@@ -1678,7 +1723,16 @@ void RouteMapOverlay::UpdateDestination() {
       m_EndTime = isochron->time + wxTimeSpan::Milliseconds(1000 * mindt);
       isochron->delta = mindt;
       last_destination_position = destination_position;
+      if (!ValidateDestinationRouteLand(configuration)) {
+        delete destination_position;
+        destination_position = 0;
+        last_destination_position =
+            ClosestPosition(configuration.EndLat, configuration.EndLon);
+        m_EndTime = wxDateTime();
+        SetFinished(false);
+      }
     }
+    UpdateStatus(configuration);
   } else {
     last_destination_position =
         ClosestPosition(configuration.EndLat, configuration.EndLon);

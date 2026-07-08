@@ -20,6 +20,7 @@
 #ifndef _WEATHER_ROUTING_CONSTRAINT_CHECKER_H_
 #define _WEATHER_ROUTING_CONSTRAINT_CHECKER_H_
 
+class wxString;
 struct RouteMapConfiguration;
 
 enum PropagationError {
@@ -65,6 +66,27 @@ enum PropagationError {
  */
 class ConstraintChecker {
 public:
+  /**
+   * Reset per-computation diagnostics for land safety checks.
+   *
+   * @param use_experimental_chart_safety If true, Detect Land may call the
+   * experimental OpenCPN chart-backed API for diagnostics until the performance
+   * guard forces fallback. If false, Detect Land uses the existing GSHHS path
+   * directly.
+   * @param enforce_experimental_chart_safety If true, chart-backed unsafe
+   * results may reject candidates. This is intentionally separate from
+   * diagnostics while the chart-backed service is experimental.
+   */
+  static void ResetSegmentSafetyDiagnostics(
+      bool use_experimental_chart_safety,
+      bool enforce_experimental_chart_safety);
+
+  /** Set a short human-readable context for land-safety diagnostics. */
+  static void SetSegmentSafetyDiagnosticContext(const wxString& context);
+
+  /** Log the current per-computation land-safety diagnostic counters. */
+  static void LogSegmentSafetyDiagnostics(const wxString& context);
+
   /**
    * Check if swell constraint is met at the given position.
    *
@@ -167,6 +189,12 @@ public:
   static bool CheckLandConstraint(RouteMapConfiguration& configuration,
                                   double lat, double lon, double dlat,
                                   double dlon, double cog);
+
+  static bool CheckFinalRouteLandConstraint(RouteMapConfiguration& configuration,
+                                            double lat, double lon,
+                                            double dlat, double dlon,
+                                            double cog,
+                                            wxString* failure_reason = nullptr);
 
   static bool CheckMaxTrueWindConstraint(RouteMapConfiguration& configuration,
                                          double twsOverWater,

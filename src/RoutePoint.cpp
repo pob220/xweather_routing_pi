@@ -541,8 +541,10 @@ double RoutePoint::PropagateToPoint(double dlat, double dlon,
   }
 
   /* landfall test if we are within 60 miles (otherwise it's very slow) */
-  if (configuration.DetectLand && dist < 60 && CrossesLand(dlat, dlon)) {
-    if (!end) configuration.land_crossing = true;
+  if (configuration.DetectLand && dist < 60 &&
+      !ConstraintChecker::CheckLandConstraint(configuration, lat, lon, dlat,
+                                              dlon, cog)) {
+    configuration.land_crossing = true;
     return NAN;
   }
 

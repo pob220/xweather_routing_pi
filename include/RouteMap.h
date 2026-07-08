@@ -665,6 +665,8 @@ struct RouteMapConfiguration {
   bool land_crossing;
   // Set to true if the route crossed a boundary.
   bool boundary_crossing;
+  long rejection_counts[PROPAGATION_ANGLE_ERROR + 1];
+  long accepted_candidate_count;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,
@@ -954,6 +956,19 @@ public:
     Unlock();
   }
 
+  wxString GetFailureReason() {
+    Lock();
+    wxString ret = m_FailureReason;
+    Unlock();
+    return ret;
+  }
+
+  void SetFailureReason(wxString msg) {
+    Lock();
+    m_FailureReason = msg;
+    Unlock();
+  }
+
   wxString GetWeatherForecastError() {
     Lock();
     wxString ret = m_bWeatherForecastError;
@@ -1092,6 +1107,7 @@ private:
   bool m_bBoundaryCrossing;
 
   wxString m_ErrorMsg;
+  wxString m_FailureReason;
 
   wxDateTime m_NewTime;
 };

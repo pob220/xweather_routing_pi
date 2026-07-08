@@ -97,17 +97,32 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       m_WeatherRouting(weatherrouting),
       m_bBlockUpdate(false) {
   const wxString detect_land_note =
-      _("Detect Land uses OpenCPN GSHHS background shoreline data, not the "
-        "displayed chart coastline. Accuracy depends on installed GSHHS "
-        "quality.");
+      _("Detect Land uses OpenCPN chart land checks where vector or CM93 "
+        "chart geometry is available, with GSHHS background shoreline data "
+        "as a fallback. Accuracy depends on chart coverage and installed "
+        "GSHHS quality.");
   m_cbDetectLand->SetToolTip(detect_land_note);
   m_sSafetyMarginLand->SetToolTip(
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
                            "to maintain from land during routing "
                            "calculations."));
+  m_cbUseExperimentalChartSafety->SetToolTip(
+      _("Use OpenCPN chart-backed land checks for Detect Land diagnostics. "
+        "Experimental; may be slow for complex routes, multi-leg routing, and "
+        "departure optimisation. Route rejection still uses GSHHS unless "
+        "experimental enforcement is enabled."));
+  m_cbEnforceExperimentalChartSafety->SetToolTip(
+      _("Allow experimental chart-backed land checks to reject route "
+        "candidates and fail completed routes whose final track crosses "
+        "chart land. This may false-positive and should be used only for "
+        "testing."));
 
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  m_cbUseExperimentalChartSafety->SetValue(
+      (bool)pConf->Read(_T("UseExperimentalChartSafety"), 0L));
+  m_cbEnforceExperimentalChartSafety->SetValue(
+      (bool)pConf->Read(_T("EnforceExperimentalChartSafety"), 0L));
 
 #ifdef __OCPN__ANDROID__
   wxSize sz = ::wxGetDisplaySize();
@@ -755,6 +770,13 @@ void ConfigurationDialog::Update() {
   }
 
   m_WeatherRouting.UpdateCurrentConfigurations();
+
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Write(_T("UseExperimentalChartSafety"),
+               m_cbUseExperimentalChartSafety->GetValue());
+  pConf->Write(_T("EnforceExperimentalChartSafety"),
+               m_cbEnforceExperimentalChartSafety->GetValue());
 
   if (refresh) m_WeatherRouting.GetParent()->Refresh();
 

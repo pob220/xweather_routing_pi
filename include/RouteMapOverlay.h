@@ -257,6 +257,13 @@ public:
   void UpdateDestination();
 
   /**
+   * Validates the reconstructed destination route against land constraints.
+   *
+   * This is a final safety net after propagation/direct-to-destination checks.
+   */
+  bool ValidateDestinationRouteLand(RouteMapConfiguration& configuration);
+
+  /**
    * Gets the end time of the route.
    * @return The calculated end time.
    */

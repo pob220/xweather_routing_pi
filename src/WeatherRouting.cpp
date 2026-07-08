@@ -39,6 +39,7 @@
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
+#include "ConstraintChecker.h"
 #include "icons.h"
 #include "navobj_util.h"
 #include "ocpn_plugin.h"
@@ -50,6 +51,144 @@
 
 static const int MAX_DEPARTURE_OPTIMIZATION_CANDIDATES = 73;
 static bool s_loggedDetectLandGshhsWarning = false;
+
+static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
+                                                bool& enforce_chart_safety) {
+  use_chart_safety = false;
+  enforce_chart_safety = false;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("UseExperimentalChartSafety"), &use_chart_safety, false);
+  pConf->Read(_T("EnforceExperimentalChartSafety"), &enforce_chart_safety,
+              false);
+}
+
+static double ReadExperimentalChartSafetyPrewarmMarginNm() {
+  double margin_nm = 20.0;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("ExperimentalChartSafetyPrewarmMarginNm"), &margin_nm,
+              20.0);
+  if (!std::isfinite(margin_nm)) margin_nm = 20.0;
+  return wxMax(0.0, wxMin(60.0, margin_nm));
+}
+
+static void PrewarmExperimentalChartSafetyForConfiguration(
+    const RouteMapConfiguration& configuration, const wxString& context) {
+  if (!configuration.DetectLand) return;
+
+  bool use_chart_safety = false;
+  bool enforce_chart_safety = false;
+  ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
+  if (!use_chart_safety) return;
+
+  PlugInSegmentSafetyResult result = {};
+  result.struct_size = sizeof(result);
+  if (!PlugIn_PrewarmSegmentSafetyGridForSegment(
+          configuration.StartLat, configuration.StartLon, configuration.EndLat,
+          configuration.EndLon, configuration.SafetyMarginLand, &result)) {
+    wxLogMessage(
+        "WeatherRouting Detect Land: chart safety prewarm failed context=%s "
+        "route=\"%s to %s\".",
+        context, configuration.Start, configuration.End);
+    return;
+  }
+
+  wxString message = wxString::Format(
+      "WeatherRouting Detect Land: chart safety prewarm context=%s "
+      "route=\"%s to %s\" start=(%.6f,%.6f) end=(%.6f,%.6f) "
+      "margin_nm=%.3f enforce=%d ",
+      context, configuration.Start, configuration.End, configuration.StartLat,
+      configuration.StartLon, configuration.EndLat, configuration.EndLon,
+      configuration.SafetyMarginLand, enforce_chart_safety ? 1 : 0);
+  message += wxString::Format(
+      "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
+      "drying=%d unknown=%d point_queries=%d point_cache_hits=%d.",
+      result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
+      result.grid_cells_total, result.grid_cells_land,
+      result.grid_cells_water, result.grid_cells_drying,
+      result.grid_cells_unknown, result.point_cache_misses,
+      result.point_cache_hits);
+  wxLogMessage("%s", message.c_str());
+}
+
+static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
+    const std::vector<RouteMapOverlay*>& routes, const wxString& context) {
+  if (routes.empty()) return;
+
+  bool use_chart_safety = false;
+  bool enforce_chart_safety = false;
+  ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
+  if (!use_chart_safety) return;
+
+  bool any_detect_land = false;
+  bool initialized = false;
+  double min_lat = 0.0, max_lat = 0.0, min_lon = 0.0, max_lon = 0.0;
+  double max_safety_margin_nm = 0.0;
+  for (auto route : routes) {
+    if (!route) continue;
+    RouteMapConfiguration configuration = route->GetConfiguration();
+    if (!configuration.DetectLand) continue;
+    any_detect_land = true;
+    max_safety_margin_nm =
+        wxMax(max_safety_margin_nm, configuration.SafetyMarginLand);
+    double lats[] = {configuration.StartLat, configuration.EndLat};
+    double lons[] = {configuration.StartLon, configuration.EndLon};
+    for (int i = 0; i < 2; ++i) {
+      if (!initialized) {
+        min_lat = max_lat = lats[i];
+        min_lon = max_lon = lons[i];
+        initialized = true;
+      } else {
+        min_lat = wxMin(min_lat, lats[i]);
+        max_lat = wxMax(max_lat, lats[i]);
+        min_lon = wxMin(min_lon, lons[i]);
+        max_lon = wxMax(max_lon, lons[i]);
+      }
+    }
+  }
+  if (!any_detect_land || !initialized) return;
+
+  double envelope_margin_nm =
+      ReadExperimentalChartSafetyPrewarmMarginNm() + max_safety_margin_nm;
+  double mid_lat = (min_lat + max_lat) / 2.0;
+  double lat_margin = envelope_margin_nm / 60.0;
+  double lon_margin =
+      envelope_margin_nm / (60.0 * wxMax(0.1, fabs(cos(mid_lat * M_PI / 180.0))));
+  min_lat = wxMax(-90.0, min_lat - lat_margin);
+  max_lat = wxMin(90.0, max_lat + lat_margin);
+  min_lon -= lon_margin;
+  max_lon += lon_margin;
+
+  PlugInSegmentSafetyResult result = {};
+  result.struct_size = sizeof(result);
+  if (!PlugIn_PrewarmSegmentSafetyGrid(min_lat, min_lon, max_lat, max_lon,
+                                       &result)) {
+    wxLogMessage(
+        "WeatherRouting Detect Land: chart safety optimisation envelope "
+        "prewarm failed context=%s margin_nm=%.3f bbox=[lat %.6f..%.6f "
+        "lon %.6f..%.6f].",
+        context, envelope_margin_nm, min_lat, max_lat, min_lon, max_lon);
+    return;
+  }
+
+  wxString message = wxString::Format(
+      "WeatherRouting Detect Land: chart safety optimisation envelope "
+      "prewarm context=%s bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
+      "margin_nm=%.3f enforce=%d ",
+      context, min_lat, max_lat, min_lon, max_lon, envelope_margin_nm,
+      enforce_chart_safety ? 1 : 0);
+  message += wxString::Format(
+      "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
+      "drying=%d unknown=%d point_queries=%d point_cache_hits=%d "
+      "message=\"%s\".",
+      result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
+      result.grid_cells_total, result.grid_cells_land,
+      result.grid_cells_water, result.grid_cells_drying,
+      result.grid_cells_unknown, result.point_cache_misses,
+      result.point_cache_hits, result.message);
+  wxLogMessage("%s", message.c_str());
+}
 
 wxString GetRouteNameForGuid(const wxString& routeGuid) {
   std::unique_ptr<PlugIn_Route> route = GetRoute_Plugin(routeGuid);
@@ -1157,6 +1296,9 @@ wxString WeatherRouting::SafeMultiLegFailureReason(
   if (!routemapoverlay->Finished()) return _("leg was stopped");
 
   wxString reason;
+  wxString explicitReason = routemapoverlay->GetFailureReason();
+  if (!explicitReason.IsEmpty()) return explicitReason;
+
   RouteMapConfiguration configuration = routemapoverlay->GetConfiguration();
   if (configuration.grib_is_data_deficient) reason += _("data deficient");
 
@@ -1792,10 +1934,23 @@ bool WeatherRouting::StartNextMultiLegOptimizationCandidate() {
   if (bestIndex >= 0) m_MultiLegOptimizationCandidates[bestIndex].best = true;
 
   m_ActiveMultiLegDepartureOptimization = false;
+  long completed = 0;
+  long failed = 0;
+  for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i) {
+    if (m_MultiLegOptimizationCandidates[i].complete)
+      ++completed;
+    else if (m_MultiLegOptimizationCandidates[i].failed)
+      ++failed;
+  }
   wxLogMessage(
       "WeatherRouting multi-leg departure optimisation complete: id=%s "
-      "best_index=%d",
-      m_ActiveMultiLegOptimizationId, bestIndex);
+      "best_index=%d candidates_completed=%ld candidates_failed=%ld "
+      "candidate_count=%lu",
+      m_ActiveMultiLegOptimizationId, bestIndex, completed, failed,
+      static_cast<unsigned long>(m_MultiLegOptimizationCandidates.size()));
+  ConstraintChecker::LogSegmentSafetyDiagnostics(
+      wxString::Format(_("multi-leg departure optimisation %s"),
+                       m_ActiveMultiLegOptimizationId));
   return false;
 }
 
@@ -1949,6 +2104,18 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimization(
   m_MultiLegOptimizationCandidates.clear();
   m_AppliedMultiLegOptimizationCandidateIndex = -1;
   wxDateTime nominalStartTime = first.StartTime;
+
+  PrewarmExperimentalChartSafetyForMultiLegEnvelope(
+      baseRoutes, _("multi-leg departure optimisation"));
+
+  for (size_t i = 0; i < baseRoutes.size(); ++i) {
+    if (!baseRoutes[i]) continue;
+    PrewarmExperimentalChartSafetyForConfiguration(
+        baseRoutes[i]->GetConfiguration(),
+        wxString::Format(_("multi-leg optimisation leg %lu/%lu"),
+                         static_cast<unsigned long>(i + 1),
+                         static_cast<unsigned long>(baseRoutes.size())));
+  }
 
   for (auto offset : offsets) {
     MultiLegOptimizationCandidate candidate;
@@ -4314,6 +4481,9 @@ static wxString FormatRouteDistance(RouteMapOverlay* routemapoverlay,
 static wxString BuildRouteFailureState(RouteMapOverlay* routemapoverlay) {
   if (!routemapoverlay) return _("Failed");
 
+  wxString explicitReason = routemapoverlay->GetFailureReason();
+  if (!explicitReason.IsEmpty()) return explicitReason;
+
   wxString state;
   bool needsComma = false;
   RouteMapConfiguration configuration = routemapoverlay->GetConfiguration();
@@ -5139,11 +5309,34 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   /* initialize crossing land routine from main thread as it is
      not re-entrant, and cannot be done by worker-threads later */
   if (configuration.DetectLand) {
+    bool use_experimental_chart_safety = false;
+    bool enforce_experimental_chart_safety = false;
+    ReadExperimentalChartSafetySettings(use_experimental_chart_safety,
+                                        enforce_experimental_chart_safety);
+    ConstraintChecker::ResetSegmentSafetyDiagnostics(
+        use_experimental_chart_safety, enforce_experimental_chart_safety);
+    ConstraintChecker::SetSegmentSafetyDiagnosticContext(wxString::Format(
+        _("route=\"%s to %s\" group=%s candidate_offset=%d leg=%d/%d"),
+        configuration.Start, configuration.End, configuration.MultiLegGroupId,
+        configuration.DepartureTimeOptimizationOffsetMinutes,
+        configuration.MultiLegLegIndex, configuration.MultiLegLegCount));
     PlugIn_GSHHS_CrossesLand(0, 0, 0, 0);
+    PrewarmExperimentalChartSafetyForConfiguration(configuration,
+                                                  _("route start"));
     if (!s_loggedDetectLandGshhsWarning) {
       wxLogMessage(
-          "WeatherRouting Detect Land: using OpenCPN GSHHS shoreline land "
-          "checks; this is not chart-based coastline validation.");
+          use_experimental_chart_safety
+              ? (enforce_experimental_chart_safety
+                     ? "WeatherRouting Detect Land: initializing "
+                       "experimental OpenCPN chart-backed segment safety "
+                       "checks with enforcement enabled. Propagation may "
+                       "fall back if the performance guard triggers; "
+                       "final-route chart validation remains active."
+                     : "WeatherRouting Detect Land: initializing "
+                       "experimental OpenCPN chart-backed segment safety "
+                       "diagnostics. GSHHS remains the enforcement path.")
+              : "WeatherRouting Detect Land: initializing GSHHS shoreline "
+                "checks.");
       s_loggedDetectLandGshhsWarning = true;
     }
   }
