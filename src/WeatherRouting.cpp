@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <vector>
 
@@ -74,13 +75,23 @@ static double ReadExperimentalChartSafetyPrewarmMarginNm() {
 }
 
 static void PrewarmExperimentalChartSafetyForConfiguration(
-    const RouteMapConfiguration& configuration, const wxString& context) {
+    const RouteMapConfiguration& configuration, const wxString& context,
+    const std::function<void(const wxString&, const wxString&, int, int)>&
+        progress = std::function<void(const wxString&, const wxString&, int,
+                                      int)>()) {
   if (!configuration.DetectLand) return;
 
   bool use_chart_safety = false;
   bool enforce_chart_safety = false;
   ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
   if (!use_chart_safety) return;
+
+  if (progress) {
+    progress(_("Building chart safety grid"),
+             wxString::Format(_("%s: %s to %s"), context, configuration.Start,
+                              configuration.End),
+             -1, -1);
+  }
 
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
@@ -112,10 +123,21 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
       result.point_cache_hits, result.grid_cache_size,
       result.grid_cache_evictions);
   wxLogMessage("%s", message.c_str());
+  if (progress) {
+    progress(_("Chart safety grid ready"),
+             wxString::Format(
+                 _("%s: built %d tiles, reused %d, elapsed %.1f s"),
+                 context, result.grid_cache_misses, result.grid_cache_hits,
+                 result.grid_build_ms / 1000.0),
+             -1, -1);
+  }
 }
 
 static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
-    const std::vector<RouteMapOverlay*>& routes, const wxString& context) {
+    const std::vector<RouteMapOverlay*>& routes, const wxString& context,
+    const std::function<void(const wxString&, const wxString&, int, int)>&
+        progress = std::function<void(const wxString&, const wxString&, int,
+                                      int)>()) {
   if (routes.empty()) return;
 
   bool use_chart_safety = false;
@@ -160,6 +182,14 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
     RouteMapConfiguration configuration = route->GetConfiguration();
     if (!configuration.DetectLand) continue;
     ++legs;
+    if (progress) {
+      progress(_("Building chart safety grid"),
+               wxString::Format(
+                   _("%s: prewarming leg %d, %s to %s. This may take a while "
+                     "for long passages or large safety margins."),
+                   context, legs, configuration.Start, configuration.End),
+               legs - 1, (int)routes.size());
+    }
 
     PlugInSegmentSafetyResult result = {};
     result.struct_size = sizeof(result);
@@ -200,6 +230,13 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
       tile_builds, tile_hits, build_ms, cells, land, water, drying, unknown,
       point_queries, point_cache_hits, grid_cache_size, grid_cache_evictions);
   wxLogMessage("%s", message.c_str());
+  if (progress) {
+    progress(_("Chart safety grid ready"),
+             wxString::Format(
+                 _("%s: built %d tiles, reused %d, elapsed %.1f s"),
+                 context, tile_builds, tile_hits, timer.Time() / 1000.0),
+             (int)routes.size(), (int)routes.size());
+  }
 }
 
 wxString GetRouteNameForGuid(const wxString& routeGuid) {
@@ -334,6 +371,14 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       m_ActiveMultiLegOptimizationLegIndex(0),
       m_AppliedMultiLegOptimizationCandidateIndex(-1),
       m_ActiveMultiLegDepartureOptimization(false),
+      m_DeferredRoutingStartMode(0),
+      m_DeferredRoutingStartPending(false),
+      m_RoutingProgressDialog(NULL),
+      m_RoutingProgressStage(NULL),
+      m_RoutingProgressDetail(NULL),
+      m_RoutingProgressTiming(NULL),
+      m_RoutingProgressGauge(NULL),
+      m_RoutingProgressFinished(false),
       m_bShowConfiguration(false),
       m_bShowConfigurationBatch(false),
       m_bShowRoutePosition(false),
@@ -515,6 +560,12 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       wxEVT_TIMER,
       wxTimerEventHandler(WeatherRouting::OnHideConfigurationTimer), NULL,
       this);
+  m_tRoutingProgress.Connect(
+      wxEVT_TIMER,
+      wxTimerEventHandler(WeatherRouting::OnRoutingProgressTimer), NULL, this);
+  m_tDeferredRoutingStart.Connect(
+      wxEVT_TIMER,
+      wxTimerEventHandler(WeatherRouting::OnDeferredRoutingStart), NULL, this);
 
   m_tAutoSaveXML.Connect(
       wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnAutoSaveXMLTimer),
@@ -649,8 +700,22 @@ WeatherRouting::~WeatherRouting() {
   m_tAutoSaveXML.Disconnect(
       wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnAutoSaveXMLTimer),
       NULL, this);
+  m_tRoutingProgress.Disconnect(
+      wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnRoutingProgressTimer),
+      NULL, this);
+  m_tDeferredRoutingStart.Disconnect(
+      wxEVT_TIMER,
+      wxTimerEventHandler(WeatherRouting::OnDeferredRoutingStart), NULL, this);
 
   StopAll();
+  if (m_RoutingProgressDialog) {
+    m_RoutingProgressDialog->Destroy();
+    m_RoutingProgressDialog = NULL;
+    m_RoutingProgressStage = NULL;
+    m_RoutingProgressDetail = NULL;
+    m_RoutingProgressTiming = NULL;
+    m_RoutingProgressGauge = NULL;
+  }
 
   m_SettingsDialog.SaveSettings();
 
@@ -1300,6 +1365,170 @@ bool WeatherRouting::RouteMapIsManaged(RouteMapOverlay* routemapoverlay) const {
   return false;
 }
 
+void WeatherRouting::ShowRoutingProgress(const wxString& title) {
+  if (!m_RoutingProgressDialog) {
+    m_RoutingProgressDialog =
+        new wxDialog(this, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
+                     wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+    wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
+    m_RoutingProgressStage =
+        new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString);
+    m_RoutingProgressStage->SetFont(
+        m_RoutingProgressStage->GetFont().Bold());
+    topSizer->Add(m_RoutingProgressStage, 0, wxALL | wxEXPAND, 8);
+    m_RoutingProgressDetail =
+        new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString,
+                         wxDefaultPosition, wxSize(420, -1));
+    m_RoutingProgressDetail->Wrap(420);
+    topSizer->Add(m_RoutingProgressDetail, 0, wxLEFT | wxRIGHT | wxBOTTOM |
+                                           wxEXPAND,
+                  8);
+    m_RoutingProgressTiming =
+        new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString,
+                         wxDefaultPosition, wxSize(420, -1));
+    m_RoutingProgressTiming->Wrap(420);
+    topSizer->Add(m_RoutingProgressTiming, 0, wxLEFT | wxRIGHT | wxBOTTOM |
+                                           wxEXPAND,
+                  8);
+    m_RoutingProgressGauge =
+        new wxGauge(m_RoutingProgressDialog, wxID_ANY, 100);
+    topSizer->Add(m_RoutingProgressGauge, 0, wxLEFT | wxRIGHT | wxBOTTOM |
+                                           wxEXPAND,
+                  8);
+    wxStaticText* note = new wxStaticText(
+        m_RoutingProgressDialog, wxID_ANY,
+        _("Use the Weather Routing Stop button to cancel active route "
+          "computations."));
+    note->Wrap(420);
+    topSizer->Add(note, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
+    m_RoutingProgressDialog->SetSizerAndFit(topSizer);
+    m_RoutingProgressDialog->Bind(
+        wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& event) {
+          if (m_DeferredRoutingStartPending) CancelDeferredRoutingStart();
+          if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+          if (m_RoutingProgressDialog) m_RoutingProgressDialog->Hide();
+        });
+  } else {
+    m_RoutingProgressDialog->SetTitle(title);
+  }
+
+  m_RoutingProgressStartTime = wxDateTime::Now();
+  m_RoutingProgressStageStartTime = m_RoutingProgressStartTime;
+  m_RoutingProgressCurrentStage.Clear();
+  m_RoutingProgressPreviousStage.Clear();
+  m_RoutingProgressPreviousStageDuration = wxTimeSpan(0);
+  m_RoutingProgressFinished = false;
+  m_RoutingProgressDialog->Show();
+  m_RoutingProgressDialog->Raise();
+  RefreshRoutingProgressTiming();
+  PaintRoutingProgressNow();
+  m_tRoutingProgress.Start(1000);
+}
+
+void WeatherRouting::UpdateRoutingProgress(const wxString& stage,
+                                           const wxString& detail, int value,
+                                           int range) {
+  if (!m_RoutingProgressDialog) return;
+  wxDateTime now = wxDateTime::Now();
+  if (!stage.IsEmpty() && stage != m_RoutingProgressCurrentStage) {
+    if (!m_RoutingProgressCurrentStage.IsEmpty() &&
+        m_RoutingProgressStageStartTime.IsValid()) {
+      m_RoutingProgressPreviousStage = m_RoutingProgressCurrentStage;
+      m_RoutingProgressPreviousStageDuration =
+          now - m_RoutingProgressStageStartTime;
+    }
+    m_RoutingProgressCurrentStage = stage;
+    m_RoutingProgressStageStartTime = now;
+  }
+  if (range > 0) m_RoutingProgressGauge->SetRange(range);
+  if (value >= 0)
+    m_RoutingProgressGauge->SetValue(
+        wxMin(value, m_RoutingProgressGauge->GetRange()));
+  if (!stage.IsEmpty()) m_RoutingProgressStage->SetLabel(stage);
+
+  m_RoutingProgressDetail->SetLabel(detail);
+  m_RoutingProgressDetail->Wrap(420);
+  RefreshRoutingProgressTiming();
+  wxLogMessage("WR_PROGRESS stage=\"%s\" detail=\"%s\" value=%d range=%d",
+               stage, detail, value, range);
+  PaintRoutingProgressNow();
+}
+
+void WeatherRouting::FinishRoutingProgress(const wxString& stage,
+                                           const wxString& detail) {
+  UpdateRoutingProgress(stage, detail);
+  m_RoutingProgressFinished = true;
+  RefreshRoutingProgressTiming();
+  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+}
+
+void WeatherRouting::CloseRoutingProgress() {
+  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+  if (m_RoutingProgressDialog) m_RoutingProgressDialog->Hide();
+}
+
+void WeatherRouting::OnRoutingProgressTimer(wxTimerEvent&) {
+  RefreshRoutingProgressTiming();
+}
+
+void WeatherRouting::RefreshRoutingProgressTiming() {
+  if (!m_RoutingProgressDialog || !m_RoutingProgressTiming) return;
+  wxDateTime now = wxDateTime::Now();
+  wxString timing;
+  if (m_RoutingProgressStageStartTime.IsValid()) {
+    wxTimeSpan stageElapsed = now - m_RoutingProgressStageStartTime;
+    timing += wxString::Format(_("Stage elapsed: %s"),
+                               stageElapsed.Format(_T("%H:%M:%S")));
+  }
+  if (m_RoutingProgressStartTime.IsValid()) {
+    wxTimeSpan totalElapsed = now - m_RoutingProgressStartTime;
+    if (!timing.IsEmpty()) timing += _T("\n");
+    timing += wxString::Format(m_RoutingProgressFinished ? _("Total time: %s")
+                                                         : _("Total elapsed: %s"),
+                               totalElapsed.Format(_T("%H:%M:%S")));
+  }
+  if (!m_RoutingProgressPreviousStage.IsEmpty()) {
+    if (!timing.IsEmpty()) timing += _T("\n");
+    timing += wxString::Format(
+        _("Previous stage: %s, %s"), m_RoutingProgressPreviousStage,
+        m_RoutingProgressPreviousStageDuration.Format(_T("%H:%M:%S")));
+  }
+  m_RoutingProgressTiming->SetLabel(timing);
+  m_RoutingProgressTiming->Wrap(420);
+  m_RoutingProgressDialog->Layout();
+}
+
+void WeatherRouting::PaintRoutingProgressNow() {
+  if (!m_RoutingProgressDialog || !m_RoutingProgressDialog->IsShown()) return;
+
+  static bool painting = false;
+  if (painting) return;
+  painting = true;
+
+  m_RoutingProgressDialog->Layout();
+  m_RoutingProgressDialog->Fit();
+  if (m_RoutingProgressStage) {
+    m_RoutingProgressStage->Refresh();
+    m_RoutingProgressStage->Update();
+  }
+  if (m_RoutingProgressDetail) {
+    m_RoutingProgressDetail->Refresh();
+    m_RoutingProgressDetail->Update();
+  }
+  if (m_RoutingProgressTiming) {
+    m_RoutingProgressTiming->Refresh();
+    m_RoutingProgressTiming->Update();
+  }
+  if (m_RoutingProgressGauge) {
+    m_RoutingProgressGauge->Refresh();
+    m_RoutingProgressGauge->Update();
+  }
+  m_RoutingProgressDialog->Refresh();
+  m_RoutingProgressDialog->Update();
+
+  painting = false;
+}
+
 wxString WeatherRouting::SafeMultiLegFailureReason(
     RouteMapOverlay* routemapoverlay) const {
   if (!routemapoverlay) return _("route is unavailable");
@@ -1366,12 +1595,15 @@ wxString WeatherRouting::SafeMultiLegFailureReason(
 }
 
 void WeatherRouting::CancelMultiLegSequence() {
+  if (m_DeferredRoutingStartPending && m_DeferredRoutingStartMode == 1)
+    CancelDeferredRoutingStart();
   if (!m_ActiveMultiLegSequence) return;
   wxLogMessage("WeatherRouting multi-leg sequence cancelled: group=%s",
                m_ActiveMultiLegGroupId);
   m_ActiveMultiLegSequence = false;
   m_ActiveMultiLegGroupId.Clear();
   m_ActiveMultiLegCurrentLegIndex = 0;
+  if (!m_ActiveMultiLegDepartureOptimization) CloseRoutingProgress();
 }
 
 bool WeatherRouting::StartMultiLegSequenceLeg(RouteMapOverlay* routemapoverlay) {
@@ -1384,6 +1616,13 @@ bool WeatherRouting::StartMultiLegSequenceLeg(RouteMapOverlay* routemapoverlay) 
       configuration.MultiLegLegIndex, configuration.MultiLegLegCount,
       configuration.MultiLegGroupId, configuration.Start, configuration.End,
       configuration.StartTime.FormatISOCombined());
+  UpdateRoutingProgress(
+      _("Computing multi-leg route"),
+      wxString::Format(_("Computing leg %d of %d: %s to %s"),
+                       configuration.MultiLegLegIndex,
+                       configuration.MultiLegLegCount, configuration.Start,
+                       configuration.End),
+      configuration.MultiLegLegIndex - 1, configuration.MultiLegLegCount);
 
   if (RouteMapIsWaitingOrRunning(routemapoverlay)) {
     Stop(routemapoverlay);
@@ -1408,6 +1647,56 @@ bool WeatherRouting::StartMultiLegSequenceLeg(RouteMapOverlay* routemapoverlay) 
   return true;
 }
 
+void WeatherRouting::ScheduleDeferredRoutingStart(int mode,
+                                                  const wxString& groupId) {
+  if (m_DeferredRoutingStartPending) {
+    wxLogMessage(
+        "WeatherRouting deferred routing start ignored: mode=%d group=%s "
+        "pending_mode=%d pending_group=%s",
+        mode, groupId, m_DeferredRoutingStartMode,
+        m_DeferredRoutingStartGroupId);
+    return;
+  }
+
+  m_DeferredRoutingStartMode = mode;
+  m_DeferredRoutingStartGroupId = groupId;
+  m_DeferredRoutingStartPending = true;
+  wxLogMessage("WeatherRouting deferred routing start scheduled: mode=%d "
+               "group=%s",
+               mode, groupId);
+  m_tDeferredRoutingStart.StartOnce(100);
+}
+
+void WeatherRouting::CancelDeferredRoutingStart() {
+  if (!m_DeferredRoutingStartPending) return;
+  wxLogMessage("WeatherRouting deferred routing start cancelled: mode=%d "
+               "group=%s",
+               m_DeferredRoutingStartMode, m_DeferredRoutingStartGroupId);
+  if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+  m_DeferredRoutingStartPending = false;
+  m_DeferredRoutingStartMode = 0;
+  m_DeferredRoutingStartGroupId.Clear();
+}
+
+void WeatherRouting::OnDeferredRoutingStart(wxTimerEvent&) {
+  if (!m_DeferredRoutingStartPending) return;
+
+  int mode = m_DeferredRoutingStartMode;
+  wxString groupId = m_DeferredRoutingStartGroupId;
+  m_DeferredRoutingStartPending = false;
+  m_DeferredRoutingStartMode = 0;
+  m_DeferredRoutingStartGroupId.Clear();
+
+  wxLogMessage("WeatherRouting deferred routing start running: mode=%d "
+               "group=%s",
+               mode, groupId);
+
+  if (mode == 1)
+    ComputeMultiLegSequenceNow(groupId);
+  else if (mode == 2)
+    ComputeMultiLegDepartureOptimizationNow(groupId);
+}
+
 bool WeatherRouting::ComputeMultiLegSequence(RouteMapOverlay* selectedRoute) {
   if (!selectedRoute) return false;
 
@@ -1418,7 +1707,11 @@ bool WeatherRouting::ComputeMultiLegSequence(RouteMapOverlay* selectedRoute) {
     return false;
   }
 
-  CancelMultiLegSequence();
+  if (m_DeferredRoutingStartPending) {
+    wxMessageBox(_("A multi-leg routing start is already pending."),
+                 _("Weather Routing"), wxOK | wxICON_WARNING, this);
+    return false;
+  }
 
   std::vector<RouteMapOverlay*> routes =
       GetMultiLegGroupRoutes(selected.MultiLegGroupId);
@@ -1430,6 +1723,36 @@ bool WeatherRouting::ComputeMultiLegSequence(RouteMapOverlay* selectedRoute) {
     wxMessageBox(message, _("Weather Routing"), wxOK | wxICON_WARNING, this);
     return false;
   }
+
+  RouteMapConfiguration first = routes.front()->GetConfiguration();
+  CancelMultiLegSequence();
+  ShowRoutingProgress(_("Weather Routing Progress"));
+  UpdateRoutingProgress(
+      _("Preparing routes"),
+      wxString::Format(_("Preparing multi-leg route: %s (%d legs)"),
+                       first.MultiLegParentRouteName, first.MultiLegLegCount),
+      0, first.MultiLegLegCount);
+  ScheduleDeferredRoutingStart(1, selected.MultiLegGroupId);
+  return true;
+}
+
+bool WeatherRouting::ComputeMultiLegSequenceNow(const wxString& groupId) {
+  std::vector<RouteMapOverlay*> routes = GetMultiLegGroupRoutes(groupId);
+  if (routes.empty()) {
+    FinishRoutingProgress(_("Multi-leg route failed"),
+                          _("The selected multi-leg group is unavailable."));
+    return false;
+  }
+
+  RouteMapConfiguration selected = routes.front()->GetConfiguration();
+  if ((int)routes.size() != selected.MultiLegLegCount) {
+    FinishRoutingProgress(
+        _("Multi-leg route failed"),
+        _("The selected multi-leg group is incomplete or unavailable."));
+    return false;
+  }
+
+  CancelMultiLegSequence();
 
   for (auto route : routes) {
     RouteMapConfiguration configuration = route->GetConfiguration();
@@ -1447,6 +1770,11 @@ bool WeatherRouting::ComputeMultiLegSequence(RouteMapOverlay* selectedRoute) {
   m_ActiveMultiLegGroupId = first.MultiLegGroupId;
   m_ActiveMultiLegCurrentLegIndex = 1;
   m_ActiveMultiLegSequence = true;
+  UpdateRoutingProgress(
+      _("Preparing routes"),
+      wxString::Format(_("Preparing multi-leg route: %s (%d legs)"),
+                       first.MultiLegParentRouteName, first.MultiLegLegCount),
+      0, first.MultiLegLegCount);
 
   wxLogMessage(
       "WeatherRouting multi-leg sequence starting: group=%s route=%s legs=%d",
@@ -1493,6 +1821,12 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
   if (!completedRoute->ReachedDestination() ||
       !completedRoute->EndTime().IsValid()) {
     wxString reason = SafeMultiLegFailureReason(completedRoute);
+    FinishRoutingProgress(
+        _("Multi-leg route failed"),
+        wxString::Format(_("Leg %d of %d failed: %s to %s\n%s"),
+                         completed.MultiLegLegIndex,
+                         completed.MultiLegLegCount, completed.Start,
+                         completed.End, reason));
     wxLogMessage(
         "WeatherRouting multi-leg sequence stopped at leg %d/%d: group=%s "
         "%s -> %s start_time=%s reached=%d eta_valid=%d reason=%s",
@@ -1501,7 +1835,9 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
         completed.StartTime.FormatISOCombined(),
         completedRoute->ReachedDestination(), completedRoute->EndTime().IsValid(),
         reason);
-    CancelMultiLegSequence();
+    m_ActiveMultiLegSequence = false;
+    m_ActiveMultiLegGroupId.Clear();
+    m_ActiveMultiLegCurrentLegIndex = 0;
     return;
   }
 
@@ -1512,10 +1848,15 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
       completed.MultiLegGroupId, eta.FormatISOCombined());
 
   if (completed.MultiLegLegIndex >= completed.MultiLegLegCount) {
+    FinishRoutingProgress(
+        _("Multi-leg route complete"),
+        wxString::Format(_("Final ETA: %s"), eta.FormatISOCombined()));
     wxLogMessage(
         "WeatherRouting multi-leg sequence complete: group=%s final_eta=%s",
         completed.MultiLegGroupId, eta.FormatISOCombined());
-    CancelMultiLegSequence();
+    m_ActiveMultiLegSequence = false;
+    m_ActiveMultiLegGroupId.Clear();
+    m_ActiveMultiLegCurrentLegIndex = 0;
     return;
   }
 
@@ -1551,6 +1892,9 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
 
 void WeatherRouting::CancelMultiLegDepartureOptimization(
     bool cleanupCandidates) {
+  if (m_DeferredRoutingStartPending && m_DeferredRoutingStartMode == 2)
+    CancelDeferredRoutingStart();
+
   if (m_ActiveMultiLegDepartureOptimization)
     wxLogMessage("WeatherRouting multi-leg departure optimisation cancelled: "
                  "id=%s",
@@ -1577,6 +1921,7 @@ void WeatherRouting::CancelMultiLegDepartureOptimization(
   m_ActiveMultiLegOptimizationCandidateIndex = -1;
   m_ActiveMultiLegOptimizationLegIndex = 0;
   m_AppliedMultiLegOptimizationCandidateIndex = -1;
+  CloseRoutingProgress();
 }
 
 void WeatherRouting::DeleteMultiLegOptimizationCandidateRows() {
@@ -1866,6 +2211,20 @@ bool WeatherRouting::StartMultiLegOptimizationLeg(
       configuration.MultiLegLegIndex, configuration.MultiLegLegCount,
       configuration.StartTime.FormatISOCombined(), configuration.Start,
       configuration.End);
+  int candidateIndex = m_ActiveMultiLegOptimizationCandidateIndex;
+  int candidateCount = (int)m_MultiLegOptimizationCandidates.size();
+  int totalSteps = wxMax(1, candidateCount * configuration.MultiLegLegCount);
+  int currentStep =
+      wxMax(0, candidateIndex * configuration.MultiLegLegCount +
+                   configuration.MultiLegLegIndex - 1);
+  UpdateRoutingProgress(
+      _("Computing multi-leg departure optimisation"),
+      wxString::Format(
+          _("Candidate %d of %d, leg %d of %d: %s to %s\nDeparture: %s"),
+          candidateIndex + 1, candidateCount, configuration.MultiLegLegIndex,
+          configuration.MultiLegLegCount, configuration.Start,
+          configuration.End, configuration.StartTime.FormatISOCombined()),
+      currentStep, totalSteps);
 
   if (RouteMapIsWaitingOrRunning(routemapoverlay)) {
     Stop(routemapoverlay);
@@ -1911,6 +2270,15 @@ bool WeatherRouting::StartNextMultiLegOptimizationCandidate() {
     candidate.running = true;
     candidate.state = _("Computing...");
     candidate.reason.Clear();
+    UpdateRoutingProgress(
+        _("Computing candidate"),
+        wxString::Format(_("Candidate %d of %d: offset %+d min, departure %s"),
+                         m_ActiveMultiLegOptimizationCandidateIndex + 1,
+                         (int)m_MultiLegOptimizationCandidates.size(),
+                         candidate.offsetMinutes,
+                         candidate.departureTime.FormatISOCombined()),
+        m_ActiveMultiLegOptimizationCandidateIndex * candidate.totalLegs,
+        (int)m_MultiLegOptimizationCandidates.size() * candidate.totalLegs);
     wxLogMessage(
         "WeatherRouting multi-leg departure optimisation candidate started: "
         "index=%d offset=%d departure=%s",
@@ -1963,6 +2331,10 @@ bool WeatherRouting::StartNextMultiLegOptimizationCandidate() {
   ConstraintChecker::LogSegmentSafetyDiagnostics(
       wxString::Format(_("multi-leg departure optimisation %s"),
                        m_ActiveMultiLegOptimizationId));
+  FinishRoutingProgress(
+      _("Multi-leg departure optimisation complete"),
+      wxString::Format(_("Completed candidates: %ld\nFailed candidates: %ld"),
+                       completed, failed));
   return false;
 }
 
@@ -2007,6 +2379,16 @@ void WeatherRouting::AdvanceMultiLegDepartureOptimization(
         wxString::Format(_T("%s to %s"), completed.Start, completed.End);
     candidate.state = _("Failed");
     candidate.reason = SafeMultiLegFailureReason(completedRoute);
+    UpdateRoutingProgress(
+        _("Candidate failed"),
+        wxString::Format(_("Candidate offset %+d min failed at leg %d of %d: "
+                           "%s\n%s"),
+                         candidate.offsetMinutes, legIndex,
+                         candidate.totalLegs, candidate.failedLegName,
+                         candidate.reason),
+        m_ActiveMultiLegOptimizationCandidateIndex * candidate.totalLegs +
+            legIndex,
+        (int)m_MultiLegOptimizationCandidates.size() * candidate.totalLegs);
     wxLogMessage(
         "WeatherRouting multi-leg departure optimisation candidate failed: "
         "offset=%d leg=%d/%d reason=%s",
@@ -2034,6 +2416,12 @@ void WeatherRouting::AdvanceMultiLegDepartureOptimization(
         "offset=%d final_eta=%s elapsed=%ld",
         candidate.offsetMinutes, eta.FormatISOCombined(),
         candidate.totalElapsedSeconds);
+    UpdateRoutingProgress(
+        _("Candidate complete"),
+        wxString::Format(_("Candidate offset %+d min complete\nFinal ETA: %s"),
+                         candidate.offsetMinutes, eta.FormatISOCombined()),
+        (m_ActiveMultiLegOptimizationCandidateIndex + 1) * candidate.totalLegs,
+        (int)m_MultiLegOptimizationCandidates.size() * candidate.totalLegs);
     StartNextMultiLegOptimizationCandidate();
     return;
   }
@@ -2106,19 +2494,83 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimization(
     return false;
   }
 
+  if (m_DeferredRoutingStartPending) {
+    wxMessageBox(_("A multi-leg routing start is already pending."),
+                 _("Weather Routing"), wxOK | wxICON_WARNING, this);
+    return false;
+  }
+
   CancelMultiLegSequence();
   CancelMultiLegDepartureOptimization(true);
+
+  ShowRoutingProgress(_("Weather Routing Progress"));
+  UpdateRoutingProgress(
+      _("Preparing routes"),
+      wxString::Format(
+          _("Preparing multi-leg departure optimisation: %lu candidates, %lu "
+            "legs"),
+          static_cast<unsigned long>(offsets.size()),
+          static_cast<unsigned long>(baseRoutes.size())),
+      0, wxMax(1, (int)(offsets.size() * baseRoutes.size())));
+  ScheduleDeferredRoutingStart(2, selected.MultiLegGroupId);
+  return true;
+}
+
+bool WeatherRouting::ComputeMultiLegDepartureOptimizationNow(
+    const wxString& groupId) {
+  std::vector<RouteMapOverlay*> baseRoutes = GetMultiLegGroupRoutes(groupId);
+  if (baseRoutes.empty()) {
+    FinishRoutingProgress(
+        _("Multi-leg departure optimisation failed"),
+        _("The selected multi-leg group is unavailable."));
+    return false;
+  }
+
+  RouteMapConfiguration first = baseRoutes.front()->GetConfiguration();
+  int rangeMinutes = first.DepartureTimeOptimizationRangeMinutes;
+  int stepMinutes = first.DepartureTimeOptimizationStepMinutes;
+  if (rangeMinutes < 0 || stepMinutes <= 0) {
+    FinishRoutingProgress(
+        _("Multi-leg departure optimisation failed"),
+        _("Departure optimisation range or step is invalid."));
+    return false;
+  }
+
+  std::vector<int> offsets;
+  for (int offset = -rangeMinutes; offset <= rangeMinutes;
+       offset += stepMinutes)
+    offsets.push_back(offset);
+  offsets.push_back(0);
+  std::sort(offsets.begin(), offsets.end());
+  offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
+
+  if (offsets.size() > MAX_DEPARTURE_OPTIMIZATION_CANDIDATES) {
+    FinishRoutingProgress(
+        _("Multi-leg departure optimisation failed"),
+        _("Departure optimisation would create too many candidate chains."));
+    return false;
+  }
 
   m_ActiveMultiLegOptimizationId =
       wxString::Format(_T("multileg-opt-%s"),
                        wxDateTime::UNow().FormatISOCombined());
-  m_MultiLegOptimizationBaseGroupId = selected.MultiLegGroupId;
+  m_MultiLegOptimizationBaseGroupId = groupId;
   m_MultiLegOptimizationCandidates.clear();
   m_AppliedMultiLegOptimizationCandidateIndex = -1;
   wxDateTime nominalStartTime = first.StartTime;
+  UpdateRoutingProgress(
+      _("Preparing routes"),
+      wxString::Format(
+          _("Preparing multi-leg departure optimisation: %lu candidates, %lu "
+            "legs"),
+          static_cast<unsigned long>(offsets.size()),
+          static_cast<unsigned long>(baseRoutes.size())),
+      0, wxMax(1, (int)(offsets.size() * baseRoutes.size())));
 
   PrewarmExperimentalChartSafetyForMultiLegEnvelope(
-      baseRoutes, _("multi-leg departure optimisation"));
+      baseRoutes, _("multi-leg departure optimisation"),
+      [this](const wxString& stage, const wxString& detail, int value,
+             int range) { UpdateRoutingProgress(stage, detail, value, range); });
 
   for (size_t i = 0; i < baseRoutes.size(); ++i) {
     if (!baseRoutes[i]) continue;
@@ -2126,7 +2578,11 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimization(
         baseRoutes[i]->GetConfiguration(),
         wxString::Format(_("multi-leg optimisation leg %lu/%lu"),
                          static_cast<unsigned long>(i + 1),
-                         static_cast<unsigned long>(baseRoutes.size())));
+                         static_cast<unsigned long>(baseRoutes.size())),
+        [this](const wxString& stage, const wxString& detail, int value,
+               int range) {
+          UpdateRoutingProgress(stage, detail, value, range);
+        });
   }
 
   for (auto offset : offsets) {
@@ -5333,8 +5789,13 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
         configuration.DepartureTimeOptimizationOffsetMinutes,
         configuration.MultiLegLegIndex, configuration.MultiLegLegCount));
     PlugIn_GSHHS_CrossesLand(0, 0, 0, 0);
-    PrewarmExperimentalChartSafetyForConfiguration(configuration,
-                                                  _("route start"));
+    PrewarmExperimentalChartSafetyForConfiguration(
+        configuration, _("route start"),
+        [this](const wxString& stage, const wxString& detail, int value,
+               int range) {
+          if (m_RoutingProgressDialog && m_RoutingProgressDialog->IsShown())
+            UpdateRoutingProgress(stage, detail, value, range);
+        });
     if (!s_loggedDetectLandGshhsWarning) {
       wxLogMessage(
           use_experimental_chart_safety
@@ -5400,6 +5861,7 @@ void WeatherRouting::Stop(RouteMapOverlay* routemapoverlay) {
 }
 
 void WeatherRouting::StopAll() {
+  CancelDeferredRoutingStart();
   CancelMultiLegSequence();
 
   /* stop all the threads at once, rather than waiting for each one before
@@ -5430,6 +5892,7 @@ void WeatherRouting::StopAll() {
   m_RoutesToRun = 0;
   m_panel->m_gProgress->SetValue(0);
   m_bRunning = false;
+  CloseRoutingProgress();
 
   SetEnableConfigurationMenu();
   if (m_StartTime.IsValid())

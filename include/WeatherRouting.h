@@ -604,12 +604,25 @@ private:
                                  RouteMapConfiguration& configuration) const;
   void ShowRoutingStatus(RouteMapOverlay* selectedRoute);
   bool ComputeMultiLegDepartureOptimization(RouteMapOverlay* selectedRoute);
+  bool ComputeMultiLegSequenceNow(const wxString& groupId);
+  bool ComputeMultiLegDepartureOptimizationNow(const wxString& groupId);
+  void ScheduleDeferredRoutingStart(int mode, const wxString& groupId);
+  void CancelDeferredRoutingStart();
+  void OnDeferredRoutingStart(wxTimerEvent&);
   void CancelMultiLegDepartureOptimization(bool cleanupCandidates = true);
   bool StartNextMultiLegOptimizationCandidate();
   bool StartMultiLegOptimizationLeg(RouteMapOverlay* routemapoverlay);
   void AdvanceMultiLegDepartureOptimization(RouteMapOverlay* completedRoute);
   void ShowMultiLegDepartureOptimizationResults();
   void DeleteMultiLegOptimizationCandidateRows();
+  void ShowRoutingProgress(const wxString& title);
+  void UpdateRoutingProgress(const wxString& stage, const wxString& detail,
+                             int value = -1, int range = -1);
+  void FinishRoutingProgress(const wxString& stage, const wxString& detail);
+  void CloseRoutingProgress();
+  void OnRoutingProgressTimer(wxTimerEvent&);
+  void RefreshRoutingProgressTiming();
+  void PaintRoutingProgressNow();
 
 public:
   bool ApplyMultiLegOptimizationCandidate(int candidateIndex);
@@ -664,7 +677,8 @@ private:
   PlotDialog m_PlotDialog;
   FilterRoutesDialog m_FilterRoutesDialog;
 
-  wxTimer m_tCompute, m_tHideConfiguration;
+  wxTimer m_tCompute, m_tHideConfiguration, m_tRoutingProgress,
+      m_tDeferredRoutingStart;
 
   bool m_bRunning;
   wxTimeSpan m_RunTime;
@@ -688,6 +702,20 @@ private:
   bool m_ActiveMultiLegDepartureOptimization;
   std::vector<MultiLegOptimizationCandidate>
       m_MultiLegOptimizationCandidates;
+  int m_DeferredRoutingStartMode;
+  bool m_DeferredRoutingStartPending;
+  wxString m_DeferredRoutingStartGroupId;
+  wxDialog* m_RoutingProgressDialog;
+  wxStaticText* m_RoutingProgressStage;
+  wxStaticText* m_RoutingProgressDetail;
+  wxStaticText* m_RoutingProgressTiming;
+  wxGauge* m_RoutingProgressGauge;
+  wxDateTime m_RoutingProgressStartTime;
+  wxDateTime m_RoutingProgressStageStartTime;
+  wxString m_RoutingProgressCurrentStage;
+  wxString m_RoutingProgressPreviousStage;
+  wxTimeSpan m_RoutingProgressPreviousStageDuration;
+  bool m_RoutingProgressFinished;
 
   bool m_bShowConfiguration;
   bool m_bShowConfigurationBatch;
