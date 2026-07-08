@@ -4356,6 +4356,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     RouteMapOverlay* routemapoverlay = *it;
     if (!routemapoverlay->Running()) {
       routemapoverlay->DeleteThread();
+      ValidateCompletedRouteForDisplay(routemapoverlay);
 
       it = m_RunningRouteMaps.erase(it);
 
@@ -5499,6 +5500,47 @@ void WeatherRouting::RebuildList() {
       UpdateItem(m_panel->m_lWeatherRoutes->InsertItem(item));
     }
   }
+}
+
+bool WeatherRouting::ValidateCompletedRouteForDisplay(
+    RouteMapOverlay* routemapoverlay) {
+  if (!routemapoverlay) return true;
+  if (!routemapoverlay->Finished() || !routemapoverlay->ReachedDestination())
+    return true;
+
+  RouteMapConfiguration configuration = routemapoverlay->GetConfiguration();
+  if (!configuration.DetectLand) return true;
+
+  bool use_experimental_chart_safety = false;
+  bool enforce_experimental_chart_safety = false;
+  ReadExperimentalChartSafetySettings(use_experimental_chart_safety,
+                                      enforce_experimental_chart_safety);
+  if (!use_experimental_chart_safety || !enforce_experimental_chart_safety)
+    return true;
+
+  ConstraintChecker::ResetSegmentSafetyDiagnostics(
+      use_experimental_chart_safety, enforce_experimental_chart_safety);
+  ConstraintChecker::SetSegmentSafetyDiagnosticContext(wxString::Format(
+      _("route_display route=\"%s to %s\" group=%s candidate_offset=%d "
+        "leg=%d/%d"),
+      configuration.Start, configuration.End, configuration.MultiLegGroupId,
+      configuration.DepartureTimeOptimizationOffsetMinutes,
+      configuration.MultiLegLegIndex, configuration.MultiLegLegCount));
+
+  bool valid =
+      routemapoverlay->ValidateDestinationRouteLand(configuration) &&
+      routemapoverlay->ValidatePlottedDestinationRouteLand(configuration);
+  routemapoverlay->SetConfigurationPreserveResult(configuration);
+
+  wxLogMessage(
+      "FINAL_ROUTE_SAFETY display_validation route=\"%s -> %s\" pass=%d "
+      "finished=%d reached=%d",
+      configuration.Start, configuration.End, valid ? 1 : 0,
+      routemapoverlay->Finished() ? 1 : 0,
+      routemapoverlay->ReachedDestination() ? 1 : 0);
+  ConstraintChecker::LogSegmentSafetyDiagnostics(
+      _("normal route display validation"));
+  return valid;
 }
 
 bool WeatherRouting::ValidateRouteForOutput(RouteMapOverlay& routemapoverlay,

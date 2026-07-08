@@ -552,6 +552,7 @@ private:
    * @param routemapoverlay Pointer to the RouteMapOverlay to update
    */
   void UpdateRouteMap(RouteMapOverlay* routemapoverlay);
+  bool ValidateCompletedRouteForDisplay(RouteMapOverlay* routemapoverlay);
   /**
    * Updates a specific item in the weather routes list.
    *
