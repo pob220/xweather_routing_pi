@@ -87,6 +87,9 @@ public:
   /** Log the current per-computation land-safety diagnostic counters. */
   static void LogSegmentSafetyDiagnostics(const wxString& context);
 
+  /** Return true when experimental chart-backed land checks are enforcing. */
+  static bool IsExperimentalChartSafetyEnforced();
+
   /**
    * Check if swell constraint is met at the given position.
    *

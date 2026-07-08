@@ -23,6 +23,7 @@
 #include <wx/wx.h>
 
 #include <list>
+#include <vector>
 
 #include "WeatherDataProvider.h"
 
@@ -32,6 +33,16 @@ struct RouteMapConfiguration;
 class IsoRoute;
 
 typedef std::list<IsoRoute*> IsoRouteList;
+
+struct IsoRouteDestinationCandidate {
+  double dt;
+  Position* endp;
+  double heading;
+  bool tacked;
+  bool jibed;
+  bool sail_plan_changed;
+  int data_mask;
+};
 
 /**
  * Represents a closed loop of positions forming an isochrone boundary.
@@ -216,6 +227,10 @@ public:
                       Position*& endp, double& minH, bool& mintacked,
                       bool& minjibed, bool& minsail_plan_changed,
                       int& mindata_mask);
+
+  void CollectDestinationCandidates(
+      RouteMapConfiguration& configuration,
+      std::vector<IsoRouteDestinationCandidate>& candidates);
 
   /**
    * Counts the number of skip positions in this route.

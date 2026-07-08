@@ -19,6 +19,7 @@
 
 #include <wx/wx.h>
 
+#include <cmath>
 #include <map>
 
 #include "IsoRoute.h"
@@ -185,6 +186,7 @@ void IsoRoute::PropagateToEnd(RouteMapConfiguration& configuration,
       endp = p;
       mintacked = tacked;
       minjibed = jibed;
+      minsail_plan_changed = false;
       mindata_mask = data_mask;
     }
     p = p->next;
@@ -194,6 +196,48 @@ void IsoRoute::PropagateToEnd(RouteMapConfiguration& configuration,
        cit++)
     (*cit)->PropagateToEnd(configuration, mindt, endp, minH, mintacked,
                            minjibed, minsail_plan_changed, mindata_mask);
+}
+
+void IsoRoute::CollectDestinationCandidates(
+    RouteMapConfiguration& configuration,
+    std::vector<IsoRouteDestinationCandidate>& candidates) {
+  Position* p = skippoints->point;
+  do {
+    double H;
+    int data_mask = 0;
+    double dt = p->PropagateToEnd(configuration, H, data_mask);
+
+    bool tacked = false;
+    if (!std::isnan(dt) && p->parent_heading * H < 0 &&
+        fabs(p->parent_heading - H) < 180) {
+      tacked = true;
+      dt += configuration.TackingTime;
+    }
+
+    bool jibed = false;
+    if (!std::isnan(dt) && p->parent_heading * H > 0 &&
+        fabs(p->parent_heading - H) > 180) {
+      jibed = true;
+      dt += configuration.JibingTime;
+    }
+
+    if (!std::isnan(dt)) {
+      IsoRouteDestinationCandidate candidate;
+      candidate.dt = dt;
+      candidate.endp = p;
+      candidate.heading = H;
+      candidate.tacked = tacked;
+      candidate.jibed = jibed;
+      candidate.sail_plan_changed = false;
+      candidate.data_mask = data_mask;
+      candidates.push_back(candidate);
+    }
+    p = p->next;
+  } while (p != skippoints->point);
+
+  for (IsoRouteList::iterator cit = children.begin(); cit != children.end();
+       cit++)
+    (*cit)->CollectDestinationCandidates(configuration, candidates);
 }
 
 int IsoRoute::SkipCount() {

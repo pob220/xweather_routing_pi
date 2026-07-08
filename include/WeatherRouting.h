@@ -572,6 +572,8 @@ private:
   /** Save weather routing as OpenCPN route. */
   void SaveAsRoute(RouteMapOverlay& routemapoverlay);
   void ExportRoute(RouteMapOverlay& routemapoverlay);
+  bool ValidateRouteForOutput(RouteMapOverlay& routemapoverlay,
+                              const wxString& action);
   /**
    * Initiates route calculation for a specific route map overlay.
    *

@@ -20,6 +20,7 @@
 #include <wx/wx.h>
 #include <wx/glcanvas.h>
 
+#include <algorithm>
 #include <functional>
 #include <list>
 
@@ -28,6 +29,7 @@
 #include "json/json.h"
 #include "Utilities.h"
 #include "Boat.h"
+#include "ConstraintChecker.h"
 #include "RouteMapOverlay.h"
 #include "SettingsDialog.h"
 #include "georef.h"
@@ -324,21 +326,55 @@ void RouteMapOverlay::RenderIsoRoute(IsoRoute* r, wxDateTime time,
   wxColour* pcolor =
       &PositionColor(p, grib_color, climatology_color, grib_deficient_color,
                      climatology_deficient_color);
+  const bool clip_land_crossing_display =
+      ConstraintChecker::IsExperimentalChartSafetyEnforced();
 #ifndef __OCPN__ANDROID__
-  if (!dc.GetDC()) glBegin(GL_LINES);
+  if (!dc.GetDC() && !clip_land_crossing_display) glBegin(GL_LINES);
 #endif
   do {
     wxColour& ncolor =
         PositionColor(p->next, grib_color, climatology_color,
                       grib_deficient_color, climatology_deficient_color);
-    if (!p->copied || !p->next->copied)
+    bool draw_segment = !p->copied || !p->next->copied;
+    if (draw_segment && clip_land_crossing_display) {
+      RouteMapConfiguration configuration = GetConfiguration();
+      wxString failure_reason;
+      double bearing = 0.0;
+      ll_gc_ll_reverse(p->lat, p->lon, p->next->lat, p->next->lon, &bearing,
+                       NULL);
+      if (!ConstraintChecker::CheckFinalRouteLandConstraint(
+              configuration, p->lat, p->lon, p->next->lat, p->next->lon,
+              bearing, &failure_reason)) {
+        draw_segment = false;
+        static int s_isochrone_clip_logs = 0;
+        if (s_isochrone_clip_logs < 20) {
+          ++s_isochrone_clip_logs;
+          wxLogMessage(
+              "FINAL_ROUTE_SAFETY isochrone display segment clipped: "
+              "route=\"%s -> %s\" start=(%.8f,%.8f) end=(%.8f,%.8f) "
+              "reason=\"%s\"",
+              configuration.Start, configuration.End, p->lat, p->lon,
+              p->next->lat, p->next->lon,
+              failure_reason.IsEmpty() ? _("Chart land crossing")
+                                       : failure_reason);
+        }
+      }
+    }
+    if (draw_segment) {
+#ifndef __OCPN__ANDROID__
+      if (!dc.GetDC() && clip_land_crossing_display) glBegin(GL_LINES);
+#endif
       DrawLine(p, *pcolor, p->next, ncolor, dc, vp);
+#ifndef __OCPN__ANDROID__
+      if (!dc.GetDC() && clip_land_crossing_display) glEnd();
+#endif
+    }
     pcolor = &ncolor;
     p = p->next;
   } while (p != s->point);
 
 #ifndef __OCPN__ANDROID__
-  if (!dc.GetDC()) glEnd();
+  if (!dc.GetDC() && !clip_land_crossing_display) glEnd();
 #endif
   /* now render any children */
   wxColour cyan(0, 255, 255), magenta(255, 0, 255);
@@ -1650,6 +1686,9 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
       if (failure_reason.IsEmpty())
         failure_reason = _("Chart land crossing in final route");
       SetFailureReason(failure_reason);
+      m_EndTime = wxDateTime();
+      SetFinished(false);
+      clear_destination_plotdata = true;
       wxLogMessage(
           "FINAL_ROUTE_SAFETY pass=0 route=\"%s -> %s\" "
           "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
@@ -1667,6 +1706,83 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
   return true;
 }
 
+bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
+    RouteMapConfiguration& configuration) {
+  if (!configuration.DetectLand) return true;
+  if (!Finished() || !ReachedDestination()) return true;
+
+  std::list<PlotData>& plotdata = GetPlotData(false);
+  if (plotdata.empty()) return true;
+
+  int checked_segments = 0;
+  double prev_lat = configuration.StartLat;
+  double prev_lon = configuration.StartLon;
+  bool have_prev = true;
+
+  for (std::list<PlotData>::const_iterator it = plotdata.begin();
+       it != plotdata.end(); ++it) {
+    if (have_prev) {
+      double bearing = 0.0;
+      ll_gc_ll_reverse(prev_lat, prev_lon, it->lat, it->lon, &bearing, NULL);
+      wxString failure_reason;
+      if (!ConstraintChecker::CheckFinalRouteLandConstraint(
+              configuration, prev_lat, prev_lon, it->lat, it->lon, bearing,
+              &failure_reason)) {
+        configuration.land_crossing = true;
+        if (failure_reason.IsEmpty())
+          failure_reason = _("Chart land crossing in final route");
+        SetFailureReason(failure_reason);
+        m_EndTime = wxDateTime();
+        SetFinished(false);
+        clear_destination_plotdata = true;
+        wxLogMessage(
+            "FINAL_ROUTE_SAFETY plotted_pass=0 route=\"%s -> %s\" "
+            "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
+            "reason=\"%s\"",
+            configuration.Start, configuration.End, checked_segments + 1,
+            prev_lat, prev_lon, it->lat, it->lon, failure_reason);
+        return false;
+      }
+      ++checked_segments;
+    }
+    prev_lat = it->lat;
+    prev_lon = it->lon;
+    have_prev = true;
+  }
+
+  if (have_prev) {
+    double bearing = 0.0;
+    ll_gc_ll_reverse(prev_lat, prev_lon, configuration.EndLat,
+                     configuration.EndLon, &bearing, NULL);
+    wxString failure_reason;
+    if (!ConstraintChecker::CheckFinalRouteLandConstraint(
+            configuration, prev_lat, prev_lon, configuration.EndLat,
+            configuration.EndLon, bearing, &failure_reason)) {
+      configuration.land_crossing = true;
+      if (failure_reason.IsEmpty())
+        failure_reason = _("Chart land crossing in final route");
+      SetFailureReason(failure_reason);
+      m_EndTime = wxDateTime();
+      SetFinished(false);
+      clear_destination_plotdata = true;
+      wxLogMessage(
+          "FINAL_ROUTE_SAFETY plotted_pass=0 route=\"%s -> %s\" "
+          "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
+          "reason=\"%s\"",
+          configuration.Start, configuration.End, checked_segments + 1,
+          prev_lat, prev_lon, configuration.EndLat, configuration.EndLon,
+          failure_reason);
+      return false;
+    }
+    ++checked_segments;
+  }
+
+  wxLogMessage(
+      "FINAL_ROUTE_SAFETY plotted_pass=1 route=\"%s -> %s\" segments=%d",
+      configuration.Start, configuration.End, checked_segments);
+  return true;
+}
+
 void RouteMapOverlay::UpdateDestination() {
   RouteMapConfiguration configuration = GetConfiguration();
   Position* last_last_destination_position = last_destination_position;
@@ -1681,13 +1797,7 @@ void RouteMapOverlay::UpdateDestination() {
     iit--;
     iit--; /* second from last isochron */
     IsoChron* isochron = *iit;
-    double mindt = INFINITY;
-    Position* endp;
-    double minH;
-    bool mintacked;
-    bool minjibes;
-    bool minsail_plan_changed;
-    int mindata_mask;
+    std::vector<IsoRouteDestinationCandidate> destination_candidates;
 
     for (IsoRouteList::iterator it = isochron->routes.begin();
          it != isochron->routes.end(); ++it) {
@@ -1696,12 +1806,23 @@ void RouteMapOverlay::UpdateDestination() {
 
       configuration.time = isochron->time;
       configuration.UsedDeltaTime = isochron->delta;
-      (*it)->PropagateToEnd(configuration, mindt, endp, minH, mintacked,
-                            minjibes, minsail_plan_changed, mindata_mask);
+      (*it)->CollectDestinationCandidates(configuration, destination_candidates);
     }
     Unlock();
 
-    if (std::isinf(mindt)) {
+    std::sort(destination_candidates.begin(), destination_candidates.end(),
+              [](const IsoRouteDestinationCandidate& a,
+                 const IsoRouteDestinationCandidate& b) {
+                return a.dt < b.dt;
+              });
+
+    int alternatives_validated = 0;
+    int alternatives_rejected_by_chart = 0;
+    bool accepted_destination_candidate = false;
+    double fastest_rejected_dt = NAN;
+    double accepted_dt = NAN;
+
+    if (destination_candidates.empty()) {
       // destination is between two isochrons
       // but propagate can't reach it (land or boundaries in the way).
       m_EndTime = wxDateTime();
@@ -1715,21 +1836,64 @@ void RouteMapOverlay::UpdateDestination() {
           configuration.Start, configuration.End);
       SetFinished(false);
     } else {
-      destination_position = new Position(
-          configuration.EndLat, configuration.EndLon, endp, minH, NAN,
-          endp->polar, endp->tacks + mintacked, endp->jibes + minjibes,
-          endp->sail_plan_changes + minsail_plan_changed, mindata_mask);
+      for (std::vector<IsoRouteDestinationCandidate>::const_iterator it =
+               destination_candidates.begin();
+           it != destination_candidates.end(); ++it) {
+        RouteMapConfiguration validation_configuration = configuration;
+        delete destination_position;
+        destination_position = new Position(
+            validation_configuration.EndLat, validation_configuration.EndLon,
+            it->endp, it->heading, NAN, it->endp->polar,
+            it->endp->tacks + it->tacked, it->endp->jibes + it->jibed,
+            it->endp->sail_plan_changes + it->sail_plan_changed,
+            it->data_mask);
 
-      m_EndTime = isochron->time + wxTimeSpan::Milliseconds(1000 * mindt);
-      isochron->delta = mindt;
-      last_destination_position = destination_position;
-      if (!ValidateDestinationRouteLand(configuration)) {
+        m_EndTime = isochron->time + wxTimeSpan::Milliseconds(1000 * it->dt);
+        isochron->delta = it->dt;
+        last_destination_position = destination_position;
+        clear_destination_plotdata = true;
+        SetFinished(true);
+        ++alternatives_validated;
+
+        if (ValidateDestinationRouteLand(validation_configuration) &&
+            ValidatePlottedDestinationRouteLand(validation_configuration)) {
+          configuration = validation_configuration;
+          accepted_destination_candidate = true;
+          accepted_dt = it->dt;
+          break;
+        }
+
+        if (std::isnan(fastest_rejected_dt)) fastest_rejected_dt = it->dt;
+        ++alternatives_rejected_by_chart;
         delete destination_position;
         destination_position = 0;
-        last_destination_position =
-            ClosestPosition(configuration.EndLat, configuration.EndLon);
         m_EndTime = wxDateTime();
         SetFinished(false);
+      }
+
+      if (!accepted_destination_candidate) {
+        last_destination_position =
+            ClosestPosition(configuration.EndLat, configuration.EndLon);
+        configuration.land_crossing = alternatives_rejected_by_chart > 0;
+        SetFailureReason(alternatives_rejected_by_chart > 0
+                             ? _("No chart-safe final route found")
+                             : _("Final route did not reach destination"));
+        wxLogMessage(
+            "FINAL_ROUTE_SAFETY alternatives_exhausted route=\"%s -> %s\" "
+            "destination_alternatives=%zu validated=%d chart_rejected=%d "
+            "fastest_rejected_dt=%.3f",
+            configuration.Start, configuration.End,
+            destination_candidates.size(), alternatives_validated,
+            alternatives_rejected_by_chart, fastest_rejected_dt);
+      } else {
+        wxLogMessage(
+            "FINAL_ROUTE_SAFETY alternative_selected route=\"%s -> %s\" "
+            "destination_alternatives=%zu validated=%d "
+            "chart_rejected_before_accept=%d fastest_rejected_dt=%.3f "
+            "accepted_dt=%.3f",
+            configuration.Start, configuration.End,
+            destination_candidates.size(), alternatives_validated,
+            alternatives_rejected_by_chart, fastest_rejected_dt, accepted_dt);
       }
     }
     UpdateStatus(configuration);

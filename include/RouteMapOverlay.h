@@ -264,6 +264,13 @@ public:
   bool ValidateDestinationRouteLand(RouteMapConfiguration& configuration);
 
   /**
+   * Validates the exact plotted destination route geometry against land
+   * constraints. This catches display/apply paths which use plot data rather
+   * than walking only the raw destination parent chain.
+   */
+  bool ValidatePlottedDestinationRouteLand(RouteMapConfiguration& configuration);
+
+  /**
    * Gets the end time of the route.
    * @return The calculated end time.
    */

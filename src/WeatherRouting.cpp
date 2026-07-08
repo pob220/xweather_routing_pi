@@ -1811,6 +1811,15 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
 
   bool reachedDestination = completedRoute->ReachedDestination();
   wxDateTime eta = completedRoute->EndTime();
+  if (reachedDestination && eta.IsValid()) {
+    RouteMapConfiguration validationConfig = completedRoute->GetConfiguration();
+    if (!completedRoute->ValidatePlottedDestinationRouteLand(
+            validationConfig)) {
+      reachedDestination = false;
+      completedRoute->SetConfigurationPreserveResult(validationConfig);
+      UpdateRouteMap(completedRoute);
+    }
+  }
   wxLogMessage(
       "WeatherRouting multi-leg sequence leg state: group=%s leg=%d/%d "
       "route=%p finished=%d reached=%d eta_valid=%d",
@@ -1818,8 +1827,7 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
       completed.MultiLegLegCount, completedRoute, completedRoute->Finished(),
       reachedDestination, eta.IsValid());
 
-  if (!completedRoute->ReachedDestination() ||
-      !completedRoute->EndTime().IsValid()) {
+  if (!reachedDestination || !eta.IsValid()) {
     wxString reason = SafeMultiLegFailureReason(completedRoute);
     FinishRoutingProgress(
         _("Multi-leg route failed"),
@@ -1833,8 +1841,7 @@ void WeatherRouting::AdvanceMultiLegSequence(RouteMapOverlay* completedRoute) {
         completed.MultiLegLegIndex, completed.MultiLegLegCount,
         completed.MultiLegGroupId, completed.Start, completed.End,
         completed.StartTime.FormatISOCombined(),
-        completedRoute->ReachedDestination(), completedRoute->EndTime().IsValid(),
-        reason);
+        reachedDestination, eta.IsValid(), reason);
     m_ActiveMultiLegSequence = false;
     m_ActiveMultiLegGroupId.Clear();
     m_ActiveMultiLegCurrentLegIndex = 0;
@@ -1986,6 +1993,33 @@ bool WeatherRouting::ApplyMultiLegOptimizationCandidate(int candidateIndex) {
           candidateIndex, i + 1, baseRoute, candidateRoute);
       wxMessageBox(_("The selected multi-leg candidate is no longer available."),
                    _("Weather Routing"), wxOK | wxICON_WARNING, this);
+      return false;
+    }
+    RouteMapConfiguration validationConfig = candidateRoute->GetConfiguration();
+    if (!candidateRoute->ValidatePlottedDestinationRouteLand(
+            validationConfig)) {
+      candidate.complete = false;
+      candidate.failed = true;
+      candidate.failedLegIndex =
+          validationConfig.MultiLegLegIndex > 0
+              ? validationConfig.MultiLegLegIndex
+              : static_cast<int>(i + 1);
+      candidate.failedLegName = wxString::Format(
+          _T("%s to %s"), validationConfig.Start, validationConfig.End);
+      candidate.state = _("Failed");
+      candidate.reason = candidateRoute->GetFailureReason();
+      if (candidate.reason.IsEmpty())
+        candidate.reason = _("Chart land crossing in final route");
+      candidateRoute->SetConfigurationPreserveResult(validationConfig);
+      UpdateRouteMap(candidateRoute);
+      wxLogMessage(
+          "WeatherRouting multi-leg departure optimisation apply blocked: "
+          "candidate=%d leg=%zu reason=%s",
+          candidateIndex, i + 1, candidate.reason);
+      wxMessageBox(
+          _("The selected multi-leg candidate crosses chart land and cannot be "
+            "applied."),
+          _("Weather Routing"), wxOK | wxICON_WARNING, this);
       return false;
     }
   }
@@ -2362,6 +2396,15 @@ void WeatherRouting::AdvanceMultiLegDepartureOptimization(
   wxDateTime eta = completedRoute->EndTime();
   bool completeLeg =
       completedRoute->ReachedDestination() && eta.IsValid();
+  if (completeLeg) {
+    RouteMapConfiguration validationConfig = completedRoute->GetConfiguration();
+    if (!completedRoute->ValidatePlottedDestinationRouteLand(
+            validationConfig)) {
+      completeLeg = false;
+      completedRoute->SetConfigurationPreserveResult(validationConfig);
+      UpdateRouteMap(completedRoute);
+    }
+  }
   wxLogMessage(
       "WeatherRouting multi-leg departure optimisation leg state: "
       "candidate=%d leg=%d/%d finished=%d reached=%d eta_valid=%d",
@@ -5457,7 +5500,48 @@ void WeatherRouting::RebuildList() {
   }
 }
 
+bool WeatherRouting::ValidateRouteForOutput(RouteMapOverlay& routemapoverlay,
+                                            const wxString& action) {
+  RouteMapConfiguration configuration = routemapoverlay.GetConfiguration();
+  if (!configuration.DetectLand) return true;
+
+  bool use_experimental_chart_safety = false;
+  bool enforce_experimental_chart_safety = false;
+  ReadExperimentalChartSafetySettings(use_experimental_chart_safety,
+                                      enforce_experimental_chart_safety);
+  if (!use_experimental_chart_safety || !enforce_experimental_chart_safety)
+    return true;
+
+  ConstraintChecker::ResetSegmentSafetyDiagnostics(
+      use_experimental_chart_safety, enforce_experimental_chart_safety);
+  ConstraintChecker::SetSegmentSafetyDiagnosticContext(wxString::Format(
+      _("route_output action=\"%s\" route=\"%s to %s\" group=%s leg=%d/%d"),
+      action, configuration.Start, configuration.End,
+      configuration.MultiLegGroupId, configuration.MultiLegLegIndex,
+      configuration.MultiLegLegCount));
+
+  if (routemapoverlay.ValidatePlottedDestinationRouteLand(configuration))
+    return true;
+
+  routemapoverlay.SetConfigurationPreserveResult(configuration);
+  UpdateRouteMap(&routemapoverlay);
+  ConstraintChecker::LogSegmentSafetyDiagnostics(_("route output validation"));
+
+  wxString reason = routemapoverlay.GetFailureReason();
+  if (reason.empty()) reason = _("Chart land crossing in final route");
+  wxMessageDialog mdlg(
+      this,
+      wxString::Format(
+          _("%s was blocked because the plotted weather route is not chart-safe.\n\n%s"),
+          action, reason),
+      _("Weather Routing"), wxOK | wxICON_WARNING);
+  mdlg.ShowModal();
+  return false;
+}
+
 void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {
+  if (!ValidateRouteForOutput(routemapoverlay, _("Save as track"))) return;
+
   std::list<PlotData> plotdata = routemapoverlay.GetPlotData(false);
 
   if (plotdata.empty()) {
@@ -5515,6 +5599,8 @@ void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {
 }
 
 void WeatherRouting::SaveAsRoute(RouteMapOverlay& routemapoverlay) {
+  if (!ValidateRouteForOutput(routemapoverlay, _("Save as route"))) return;
+
   std::list<PlotData> plotdata = routemapoverlay.GetPlotData(false);
 
   if (plotdata.empty()) {
@@ -5572,6 +5658,8 @@ void WeatherRouting::SaveAsRoute(RouteMapOverlay& routemapoverlay) {
 }
 
 void WeatherRouting::ExportRoute(RouteMapOverlay& routemapoverlay) {
+  if (!ValidateRouteForOutput(routemapoverlay, _("Export as GPX"))) return;
+
   std::list<PlotData> plotdata = routemapoverlay.GetPlotData(false);
 
   if (plotdata.empty()) {

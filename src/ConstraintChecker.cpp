@@ -68,6 +68,7 @@ long s_gridCacheSize = 0;
 long s_gridCacheEvictions = 0;
 long s_unexpectedTileBuilds = 0;
 long s_chartLandRejections = 0;
+long s_chartAcceptedSegments = 0;
 long s_finalRouteValidationChecks = 0;
 long s_landRingTotal = 0;
 long s_bboxRingTests = 0;
@@ -111,7 +112,8 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
       "segment_cache_hits=%ld segment_cache_misses=%ld "
       "segment_cache_stores=%ld grid_cache_size=%ld "
       "grid_cache_evictions=%ld unexpected_tile_builds=%ld "
-      "chart_land_rejections=%ld final_route_checks=%ld ",
+      "chart_land_rejections=%ld chart_checked_accepts=%ld "
+      "final_route_checks=%ld ",
       s_gridCacheHits, s_gridCacheMisses, s_gridBuildMs, s_gridCellsTotal,
       s_gridCellsLand, s_gridCellsWater, s_gridCellsDrying,
       s_gridCellsUnknown, s_gridLookups, s_gridLookupMs,
@@ -121,7 +123,7 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
           : 0.0,
       s_waterTileShortcuts, s_segmentCacheHits, s_segmentCacheMisses,
       s_segmentCacheStores, s_gridCacheSize, s_gridCacheEvictions,
-      s_unexpectedTileBuilds, s_chartLandRejections,
+      s_unexpectedTileBuilds, s_chartLandRejections, s_chartAcceptedSegments,
       s_finalRouteValidationChecks);
   message += wxString::Format(
       "land_rings_seen=%ld bbox_ring_tests=%ld edge_tests=%ld "
@@ -418,6 +420,10 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
   if (chart_rejects && !result.used_fallback &&
       result.source != PI_SEGMENT_SAFETY_SOURCE_GSHHS_FALLBACK)
     ++s_chartLandRejections;
+  else if (!chart_rejects && !result.used_fallback &&
+           (result.source == PI_SEGMENT_SAFETY_SOURCE_VECTOR_CHART ||
+            result.source == PI_SEGMENT_SAFETY_SOURCE_CM93))
+    ++s_chartAcceptedSegments;
 
   if (chart_rejects && !result.used_fallback &&
       result.source != PI_SEGMENT_SAFETY_SOURCE_GSHHS_FALLBACK &&
@@ -558,6 +564,7 @@ void ConstraintChecker::ResetSegmentSafetyDiagnostics(
   s_gridCacheEvictions = 0;
   s_unexpectedTileBuilds = 0;
   s_chartLandRejections = 0;
+  s_chartAcceptedSegments = 0;
   s_finalRouteValidationChecks = 0;
   s_landRingTotal = 0;
   s_bboxRingTests = 0;
@@ -582,6 +589,10 @@ void ConstraintChecker::SetSegmentSafetyDiagnosticContext(
 
 void ConstraintChecker::LogSegmentSafetyDiagnostics(const wxString& context) {
   wxLogMessage("%s", SegmentSafetyDiagnosticSummary(context).c_str());
+}
+
+bool ConstraintChecker::IsExperimentalChartSafetyEnforced() {
+  return s_useExperimentalChartSafety && s_enforceExperimentalChartSafety;
 }
 
 bool ConstraintChecker::CheckSwellConstraint(
