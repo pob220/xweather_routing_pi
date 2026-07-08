@@ -436,6 +436,8 @@ protected:
   wxSpinCtrl* m_sTimeStepMinutes;
   wxStaticText* m_staticText111;
   wxCheckBox* m_cbDetectLand;
+  wxCheckBox* m_cbUseExperimentalChartSafety;
+  wxCheckBox* m_cbEnforceExperimentalChartSafety;
   wxCheckBox* m_cbDetectBoundary;
   wxCheckBox* m_cbOptimizeTacking;
   wxCheckBox* m_cbAllowDataDeficient;
