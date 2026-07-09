@@ -169,9 +169,12 @@ public:
   double m_cursor_lon;  //!< Longitude of the cursor position, in degrees.
 
 private:
+  friend class HeadlessRouteTestStarter;
+
   void OnCursorLatLonTimer(wxTimerEvent&);
   void RequestOcpnDrawSetting();
   void NewWR();
+  void MaybeStartHeadlessRouteTest();
 
   bool LoadConfig();
   bool SaveConfig();

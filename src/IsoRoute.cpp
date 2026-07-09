@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <map>
+#include <vector>
 
 #include "IsoRoute.h"
 #include "Position.h"
@@ -224,6 +225,15 @@ void IsoRoute::CollectDestinationCandidates(
     if (!std::isnan(dt)) {
       IsoRouteDestinationCandidate candidate;
       candidate.dt = dt;
+      candidate.isochron_time = configuration.time;
+      candidate.absolute_dt = configuration.StartTime.IsValid() &&
+                                      configuration.time.IsValid()
+                                  ? (configuration.time -
+                                     configuration.StartTime)
+                                            .GetSeconds()
+                                            .ToDouble() +
+                                        dt
+                                  : dt;
       candidate.endp = p;
       candidate.heading = H;
       candidate.tacked = tacked;
@@ -640,6 +650,63 @@ void IsoRoute::ReduceClosePoints() {
 
   for (IsoRouteList::iterator it = children.begin(); it != children.end(); it++)
     (*it)->ReduceClosePoints();
+}
+
+int IsoRoute::ThinPositions(int max_positions) {
+  int removed = 0;
+
+  if (max_positions < 3) max_positions = 3;
+
+  int count = Count();
+  if (count > max_positions) {
+    std::vector<Position*> positions;
+    positions.reserve(count);
+    Position* p = skippoints->point;
+    do {
+      positions.push_back(p);
+      p = p->next;
+    } while (p != skippoints->point);
+
+    std::vector<bool> keep(count, false);
+    for (int i = 0; i < max_positions; ++i) {
+      int index = (int)floor((double)i * count / max_positions);
+      if (index < 0) index = 0;
+      if (index >= count) index = count - 1;
+      keep[index] = true;
+    }
+
+    Position* first_kept = nullptr;
+    Position* previous_kept = nullptr;
+    for (int i = 0; i < count; ++i) {
+      Position* pos = positions[i];
+      if (keep[i]) {
+        if (!first_kept) first_kept = pos;
+        if (previous_kept) {
+          previous_kept->next = pos;
+          pos->prev = previous_kept;
+        }
+        previous_kept = pos;
+      } else {
+        ++removed;
+      }
+    }
+
+    if (first_kept && previous_kept) {
+      previous_kept->next = first_kept;
+      first_kept->prev = previous_kept;
+      for (int i = 0; i < count; ++i) {
+        if (!keep[i]) delete positions[i];
+      }
+      DeleteSkipPoints(skippoints);
+      skippoints = first_kept->BuildSkipList();
+      MinimizeLat();
+    }
+  }
+
+  for (IsoRouteList::iterator it = children.begin(); it != children.end(); ++it)
+    removed += (*it)->ThinPositions(max_positions);
+
+  return removed;
 }
 
 /* apply current to given route, and return if it changed at all */

@@ -41,6 +41,10 @@ wxString s_segmentSafetyDiagnosticContext;
 long s_chartWouldRejectLogs = 0;
 long s_unexpectedTileBuildLogs = 0;
 long s_segmentSafetyApiCalls = 0;
+long s_finalChartHitLogs = 0;
+long s_finalChartHitLogsSuppressed = 0;
+long s_endpointMarginRelaxedLogs = 0;
+long s_endpointMarginRelaxedLogsSuppressed = 0;
 long s_chartAvailableChecks = 0;
 long s_chartUnavailableFallbacks = 0;
 long s_gshhsSafetyCalls = 0;
@@ -88,6 +92,7 @@ const long kMaxSegmentSafetyApiCallsPerRun = 500;
 const long kMaxChartSafetyMsPerRun = 250;
 const long kMaxChartWouldRejectLogsPerRun = 10;
 const long kMaxUnexpectedTileBuildLogsPerRun = 10;
+const long kMaxFinalChartHitLogsPerRun = 20;
 
 long ChartSafetyMeasuredMs() {
   return s_chartSelectMs + s_cacheBuildMs + s_geometryCheckMs +
@@ -113,7 +118,10 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
       "segment_cache_stores=%ld grid_cache_size=%ld "
       "grid_cache_evictions=%ld unexpected_tile_builds=%ld "
       "chart_land_rejections=%ld chart_checked_accepts=%ld "
-      "final_route_checks=%ld ",
+      "final_route_checks=%ld final_chart_hit_logs=%ld "
+      "final_chart_hit_logs_suppressed=%ld "
+      "endpoint_margin_relaxed=%ld "
+      "endpoint_margin_relaxed_suppressed=%ld ",
       s_gridCacheHits, s_gridCacheMisses, s_gridBuildMs, s_gridCellsTotal,
       s_gridCellsLand, s_gridCellsWater, s_gridCellsDrying,
       s_gridCellsUnknown, s_gridLookups, s_gridLookupMs,
@@ -124,7 +132,9 @@ wxString SegmentSafetyDiagnosticSummary(const wxString& context) {
       s_waterTileShortcuts, s_segmentCacheHits, s_segmentCacheMisses,
       s_segmentCacheStores, s_gridCacheSize, s_gridCacheEvictions,
       s_unexpectedTileBuilds, s_chartLandRejections, s_chartAcceptedSegments,
-      s_finalRouteValidationChecks);
+      s_finalRouteValidationChecks, s_finalChartHitLogs,
+      s_finalChartHitLogsSuppressed, s_endpointMarginRelaxedLogs,
+      s_endpointMarginRelaxedLogsSuppressed);
   message += wxString::Format(
       "land_rings_seen=%ld bbox_ring_tests=%ld edge_tests=%ld "
       "max_bbox_rings_per_call=%ld max_edges_per_call=%ld "
@@ -291,25 +301,108 @@ bool GshhsSegmentSafetyHitsLand(double lat1, double lon1, double lat2,
          PlugIn_GSHHS_CrossesLand(lat_down1, lon_down1, lat_up2, lon_up2);
 }
 
-bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
+bool SegmentTouchesEndpointMarginZone(RouteMapConfiguration* configuration,
+                                      double lat1, double lon1, double lat2,
+                                      double lon2,
+                                      double safety_margin_nm) {
+  if (!configuration || safety_margin_nm <= 0.0) return false;
+
+  /*
+   * A start/end waypoint can legitimately be close to land, for example just
+   * outside a harbour or headland.  The chart safety margin should not make it
+   * impossible to leave or arrive at such a waypoint, but only for margin-only
+   * hits.  Actual land/drying/depth/no-chart hazards are still checked by a
+   * zero-margin segment safety call before any relaxation is allowed.
+   */
+  const double endpoint_zone_nm = wxMax(1.0, safety_margin_nm * 4.0);
+  double bearing = 0.0;
+  double dist_nm = 0.0;
+
+  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat1, lon1,
+                   &bearing, &dist_nm);
+  if (dist_nm <= endpoint_zone_nm) return true;
+  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat2, lon2,
+                   &bearing, &dist_nm);
+  if (dist_nm <= endpoint_zone_nm) return true;
+  ll_gc_ll_reverse(configuration->EndLat, configuration->EndLon, lat1, lon1,
+                   &bearing, &dist_nm);
+  if (dist_nm <= endpoint_zone_nm) return true;
+  ll_gc_ll_reverse(configuration->EndLat, configuration->EndLon, lat2, lon2,
+                   &bearing, &dist_nm);
+  return dist_nm <= endpoint_zone_nm;
+}
+
+bool EndpointMarginOnlyHitIsZeroMarginSafe(RouteMapConfiguration* configuration,
+                                           double lat1, double lon1,
+                                           double lat2, double lon2,
+                                           double safety_margin_nm,
+                                           const char* context) {
+  if (!configuration ||
+      !SegmentTouchesEndpointMarginZone(configuration, lat1, lon1, lat2, lon2,
+                                        safety_margin_nm))
+    return false;
+
+  PlugInSegmentSafetyOptions zero_margin_options = {};
+  zero_margin_options.struct_size = sizeof(zero_margin_options);
+  zero_margin_options.safety_margin_nm = 0.0;
+  zero_margin_options.check_land = true;
+  zero_margin_options.allow_gshhs_fallback = false;
+
+  PlugInSegmentSafetyResult zero_margin_result = {};
+  zero_margin_result.struct_size = sizeof(zero_margin_result);
+  if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &zero_margin_options,
+                                 &zero_margin_result))
+    return false;
+
+  if (zero_margin_result.status != PI_SEGMENT_SAFETY_SAFE) return false;
+
+  if (s_endpointMarginRelaxedLogs < 40) {
+    wxLogMessage(
+        "WR_ENDPOINT_MARGIN_RELAXED context=%s route=\"%s -> %s\" "
+        "segment=(%.8f,%.8f)->(%.8f,%.8f) margin_nm=%.3f "
+        "zero_margin_status=%d source=%d",
+        context ? context : "unknown", configuration->Start, configuration->End,
+        lat1, lon1, lat2, lon2, safety_margin_nm, zero_margin_result.status,
+        zero_margin_result.source);
+    ++s_endpointMarginRelaxedLogs;
+  } else {
+    ++s_endpointMarginRelaxedLogsSuppressed;
+  }
+  return true;
+}
+
+bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
+                              double lat1, double lon1, double lat2,
                               double lon2, double safety_margin_nm) {
-  if (!s_useExperimentalChartSafety ||
+  if (!s_useExperimentalChartSafety || !configuration ||
+      !configuration->UseChartSafetyForPropagation ||
       (s_forceGshhsForPerformance && !s_enforceExperimentalChartSafety)) {
     if (!s_loggedGshhsDefault) {
       wxLogMessage(
-          "WeatherRouting Detect Land: using GSHHS shoreline checks. "
-          "Experimental chart-based land checks are disabled.");
+          s_useExperimentalChartSafety && s_enforceExperimentalChartSafety &&
+                  configuration && !configuration->UseChartSafetyForPropagation
+              ? "WeatherRouting Detect Land: using fast GSHHS shoreline "
+                "checks during propagation; chart-backed checks will validate "
+                "final route alternatives."
+              : "WeatherRouting Detect Land: using GSHHS shoreline checks. "
+                "Experimental chart-based land checks are disabled.");
       s_loggedGshhsDefault = true;
     }
     return GshhsSegmentSafetyHitsLand(lat1, lon1, lat2, lon2,
                                       safety_margin_nm);
   }
 
-  PlugInSegmentSafetyOptions options;
+  PlugInSegmentSafetyOptions options = {};
   options.struct_size = sizeof(options);
   options.safety_margin_nm = safety_margin_nm;
   options.check_land = true;
-  options.allow_gshhs_fallback = true;
+  /*
+   * Final/display route validation is the last safety gate before a route can
+   * be shown, applied, saved, or exported.  When experimental chart safety is
+   * explicitly enforced, do not let a temporary chart-grid miss degrade to
+   * GSHHS and pass as safe; the chart result must be available and safe.
+   */
+  options.allow_gshhs_fallback = false;
 
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
@@ -320,6 +413,22 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
                                       safety_margin_nm);
   }
   AccumulateSegmentSafetyDiagnostics(result);
+
+  if (configuration && result.unexpected_tile_builds > 0) {
+    configuration->chart_safety_missing_tile_rejections +=
+        result.unexpected_tile_builds;
+    if (!std::isfinite(
+            configuration->chart_safety_missing_tile_first_min_lat)) {
+      configuration->chart_safety_missing_tile_first_lat_tile =
+          result.unexpected_lat_tile;
+      configuration->chart_safety_missing_tile_first_lon_tile =
+          result.unexpected_lon_tile;
+      configuration->chart_safety_missing_tile_first_min_lat =
+          result.unexpected_tile_min_lat;
+      configuration->chart_safety_missing_tile_first_min_lon =
+          result.unexpected_tile_min_lon;
+    }
+  }
 
   if (result.unexpected_tile_builds > 0 &&
       s_unexpectedTileBuildLogs < kMaxUnexpectedTileBuildLogsPerRun) {
@@ -415,7 +524,20 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
   bool chart_rejects =
       result.status == PI_SEGMENT_SAFETY_CROSSES_LAND ||
       result.status == PI_SEGMENT_SAFETY_WITHIN_LAND_MARGIN ||
-      result.status == PI_SEGMENT_SAFETY_UNSAFE_AREA;
+      result.status == PI_SEGMENT_SAFETY_UNSAFE_AREA ||
+      result.status == PI_SEGMENT_SAFETY_DRYING_AREA ||
+      result.status == PI_SEGMENT_SAFETY_TOO_SHALLOW ||
+      result.status == PI_SEGMENT_SAFETY_UNKNOWN_DEPTH ||
+                 result.status == PI_SEGMENT_SAFETY_NO_DATA ||
+                 result.status == PI_SEGMENT_SAFETY_ERROR;
+
+  if (chart_rejects &&
+      result.status == PI_SEGMENT_SAFETY_WITHIN_LAND_MARGIN &&
+      EndpointMarginOnlyHitIsZeroMarginSafe(configuration, lat1, lon1, lat2,
+                                            lon2, safety_margin_nm,
+                                            "propagation")) {
+    chart_rejects = false;
+  }
 
   if (chart_rejects && !result.used_fallback &&
       result.source != PI_SEGMENT_SAFETY_SOURCE_GSHHS_FALLBACK)
@@ -466,7 +588,8 @@ bool SegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
                                     safety_margin_nm);
 }
 
-bool FinalRouteSegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
+bool FinalRouteSegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
+                                        double lat1, double lon1, double lat2,
                                         double lon2,
                                         double safety_margin_nm,
                                         wxString* failure_reason) {
@@ -478,7 +601,7 @@ bool FinalRouteSegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
     return rejects;
   }
 
-  PlugInSegmentSafetyOptions options;
+  PlugInSegmentSafetyOptions options = {};
   options.struct_size = sizeof(options);
   options.safety_margin_nm = safety_margin_nm;
   options.check_land = true;
@@ -497,26 +620,47 @@ bool FinalRouteSegmentSafetyRejectsLand(double lat1, double lon1, double lat2,
 
   bool rejects = result.status == PI_SEGMENT_SAFETY_CROSSES_LAND ||
                  result.status == PI_SEGMENT_SAFETY_WITHIN_LAND_MARGIN ||
-                 result.status == PI_SEGMENT_SAFETY_UNSAFE_AREA;
+                 result.status == PI_SEGMENT_SAFETY_UNSAFE_AREA ||
+                 result.status == PI_SEGMENT_SAFETY_DRYING_AREA ||
+                 result.status == PI_SEGMENT_SAFETY_TOO_SHALLOW ||
+                 result.status == PI_SEGMENT_SAFETY_UNKNOWN_DEPTH ||
+                 result.status == PI_SEGMENT_SAFETY_NO_DATA ||
+                 result.status == PI_SEGMENT_SAFETY_ERROR;
+  if (rejects &&
+      result.status == PI_SEGMENT_SAFETY_WITHIN_LAND_MARGIN &&
+      EndpointMarginOnlyHitIsZeroMarginSafe(configuration, lat1, lon1, lat2,
+                                            lon2, safety_margin_nm,
+                                            "final-route")) {
+    return false;
+  }
   if (!rejects) return false;
 
   if (failure_reason) {
-    if (!result.used_fallback &&
+    if (result.status == PI_SEGMENT_SAFETY_NO_DATA ||
+        result.status == PI_SEGMENT_SAFETY_ERROR) {
+      *failure_reason = _("Chart safety data unavailable in final route");
+    } else if (!result.used_fallback &&
         result.source != PI_SEGMENT_SAFETY_SOURCE_GSHHS_FALLBACK)
       *failure_reason = FormatChartLandCrossingReason(result);
     else
       *failure_reason = _("Land crossing in final route");
   }
 
-  wxLogMessage(
-      "FINAL_ROUTE_SAFETY chart_hit status=%d source=%d fallback=%d "
-      "reason=%d message=\"%s\" sample=(%.8f,%.8f) sample_index=%d/%d "
-      "object=\"%s\" chart_db_index=%d chart_scale=%d chart_path=\"%s\"",
-      result.status, result.source, result.used_fallback,
-      result.diagnostic_reason, result.message, result.hit_sample_lat,
-      result.hit_sample_lon, result.hit_sample_index + 1,
-      result.hit_sample_count, result.hit_object, result.chart_db_index,
-      result.chart_scale, result.chart_path);
+  if (s_finalChartHitLogs < kMaxFinalChartHitLogsPerRun) {
+    ++s_finalChartHitLogs;
+    wxLogMessage(
+        "FINAL_ROUTE_SAFETY chart_hit #%ld status=%d source=%d fallback=%d "
+        "reason=%d message=\"%s\" sample=(%.8f,%.8f) sample_index=%d/%d "
+        "object=\"%s\" chart_db_index=%d chart_scale=%d chart_path=\"%s\"",
+        s_finalChartHitLogs, result.status, result.source,
+        result.used_fallback, result.diagnostic_reason, result.message,
+        result.hit_sample_lat, result.hit_sample_lon,
+        result.hit_sample_index + 1, result.hit_sample_count,
+        result.hit_object, result.chart_db_index, result.chart_scale,
+        result.chart_path);
+  } else {
+    ++s_finalChartHitLogsSuppressed;
+  }
 
   return true;
 }
@@ -537,6 +681,10 @@ void ConstraintChecker::ResetSegmentSafetyDiagnostics(
   s_chartWouldRejectLogs = 0;
   s_unexpectedTileBuildLogs = 0;
   s_segmentSafetyApiCalls = 0;
+  s_finalChartHitLogs = 0;
+  s_finalChartHitLogsSuppressed = 0;
+  s_endpointMarginRelaxedLogs = 0;
+  s_endpointMarginRelaxedLogsSuppressed = 0;
   s_chartAvailableChecks = 0;
   s_chartUnavailableFallbacks = 0;
   s_gshhsSafetyCalls = 0;
@@ -686,7 +834,7 @@ bool ConstraintChecker::CheckLandConstraint(
     if (ndlon1 > 360) {
       ndlon1 -= 360;
     }
-    if (SegmentSafetyRejectsLand(lat, lon, dlat1, ndlon1,
+    if (SegmentSafetyRejectsLand(&configuration, lat, lon, dlat1, ndlon1,
                                  configuration.SafetyMarginLand)) {
       return false;
     }
@@ -702,7 +850,8 @@ bool ConstraintChecker::CheckFinalRouteLandConstraint(
     if (ndlon1 > 360) {
       ndlon1 -= 360;
     }
-    if (FinalRouteSegmentSafetyRejectsLand(lat, lon, dlat1, ndlon1,
+    if (FinalRouteSegmentSafetyRejectsLand(&configuration, lat, lon, dlat1,
+                                           ndlon1,
                                            configuration.SafetyMarginLand,
                                            failure_reason)) {
       return false;

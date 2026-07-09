@@ -49,6 +49,8 @@ RouteMapOverlayThread::RouteMapOverlayThread(RouteMapOverlay& routemapoverlay)
 
 void* RouteMapOverlayThread::Entry() {
   RouteMapConfiguration cf = m_RouteMapOverlay.GetConfiguration();
+  const bool defer_destination_update_to_main =
+      cf.DetectLand && ConstraintChecker::IsExperimentalChartSafetyEnforced();
 
   if (!cf.RouteGUID.IsEmpty()) {
     std::unique_ptr<PlugIn_Route> rte = GetRoute_Plugin(cf.RouteGUID);
@@ -58,13 +60,19 @@ void* RouteMapOverlayThread::Entry() {
     m_RouteMapOverlay.RouteAnalysis(proute);
   } else {
     while (!TestDestroy() && !m_RouteMapOverlay.Finished()) {
-      if (!m_RouteMapOverlay.Propagate())
-        wxThread::Sleep(50);
-      else {
+      {
+        RouteMapOverlay::DestinationUpdateGuard destination_update_guard(
+            m_RouteMapOverlay);
+        if (!m_RouteMapOverlay.Propagate()) {
+          wxThread::Sleep(50);
+          continue;
+        }
         // don't do it inside worker thread, race
         // m_RouteMapOverlay.UpdateCursorPosition();
-        m_RouteMapOverlay.UpdateDestination();
+        if (!defer_destination_update_to_main)
+          m_RouteMapOverlay.UpdateDestination();
         wxThread::Sleep(5);
+        continue;
       }
     }
   }
@@ -76,6 +84,7 @@ RouteMapOverlay::RouteMapOverlay()
     : m_UpdateOverlay(true),
       m_bEndRouteVisible(false),
       m_Thread(nullptr),
+      m_bUpdatingDestination(false),
       last_cursor_lat(0),
       last_cursor_lon(0),
       last_cursor_position(nullptr),
@@ -1666,6 +1675,7 @@ bool RouteMapOverlay::Updated() {
 bool RouteMapOverlay::ValidateDestinationRouteLand(
     RouteMapConfiguration& configuration) {
   if (!configuration.DetectLand) return true;
+  wxStopWatch timer;
 
   Position* child = destination_position ? destination_position
                                          : last_destination_position;
@@ -1696,6 +1706,11 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
           configuration.Start, configuration.End, checked_segments + 1,
           parent->lat, parent->lon, child->lat, child->lon,
           failure_reason);
+      wxLogMessage(
+          "WR_UI_TIMING ValidateDestinationRouteLand total_ms=%ld "
+          "route=\"%s -> %s\" segments=%d ui_thread=%d pass=0",
+          timer.Time(), configuration.Start, configuration.End,
+          checked_segments + 1, wxThread::IsMain() ? 1 : 0);
       return false;
     }
     ++checked_segments;
@@ -1703,6 +1718,11 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
 
   wxLogMessage("FINAL_ROUTE_SAFETY pass=1 route=\"%s -> %s\" segments=%d",
                configuration.Start, configuration.End, checked_segments);
+  wxLogMessage(
+      "WR_UI_TIMING ValidateDestinationRouteLand total_ms=%ld "
+      "route=\"%s -> %s\" segments=%d ui_thread=%d pass=1",
+      timer.Time(), configuration.Start, configuration.End, checked_segments,
+      wxThread::IsMain() ? 1 : 0);
   return true;
 }
 
@@ -1710,6 +1730,7 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
     RouteMapConfiguration& configuration) {
   if (!configuration.DetectLand) return true;
   if (!Finished() || !ReachedDestination()) return true;
+  wxStopWatch timer;
 
   std::list<PlotData>& plotdata = GetPlotData(false);
   if (plotdata.empty()) return true;
@@ -1723,7 +1744,14 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
        it != plotdata.end(); ++it) {
     if (have_prev) {
       double bearing = 0.0;
-      ll_gc_ll_reverse(prev_lat, prev_lon, it->lat, it->lon, &bearing, NULL);
+      double dist_nm = 0.0;
+      ll_gc_ll_reverse(prev_lat, prev_lon, it->lat, it->lon, &bearing,
+                       &dist_nm);
+      if (dist_nm < 1e-5) {
+        prev_lat = it->lat;
+        prev_lon = it->lon;
+        continue;
+      }
       wxString failure_reason;
       if (!ConstraintChecker::CheckFinalRouteLandConstraint(
               configuration, prev_lat, prev_lon, it->lat, it->lon, bearing,
@@ -1741,6 +1769,13 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
             "reason=\"%s\"",
             configuration.Start, configuration.End, checked_segments + 1,
             prev_lat, prev_lon, it->lat, it->lon, failure_reason);
+        wxLogMessage(
+            "WR_UI_TIMING ValidatePlottedDestinationRouteLand total_ms=%ld "
+            "route=\"%s -> %s\" segments=%d plot_points=%lu ui_thread=%d "
+            "pass=0",
+            timer.Time(), configuration.Start, configuration.End,
+            checked_segments + 1, static_cast<unsigned long>(plotdata.size()),
+            wxThread::IsMain() ? 1 : 0);
         return false;
       }
       ++checked_segments;
@@ -1752,8 +1787,24 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
 
   if (have_prev) {
     double bearing = 0.0;
+    double dist_nm = 0.0;
     ll_gc_ll_reverse(prev_lat, prev_lon, configuration.EndLat,
-                     configuration.EndLon, &bearing, NULL);
+                     configuration.EndLon, &bearing, &dist_nm);
+    if (dist_nm < 1e-5) {
+      wxLogMessage(
+          "FINAL_ROUTE_SAFETY display_validation route=\"%s -> %s\" "
+          "segments=%d plot_points=%lu pass=1",
+          configuration.Start, configuration.End, checked_segments,
+          static_cast<unsigned long>(plotdata.size()));
+      wxLogMessage(
+          "WR_UI_TIMING ValidatePlottedDestinationRouteLand total_ms=%ld "
+          "route=\"%s -> %s\" segments=%d plot_points=%lu ui_thread=%d "
+          "pass=1",
+          timer.Time(), configuration.Start, configuration.End,
+          checked_segments, static_cast<unsigned long>(plotdata.size()),
+          wxThread::IsMain() ? 1 : 0);
+      return true;
+    }
     wxString failure_reason;
     if (!ConstraintChecker::CheckFinalRouteLandConstraint(
             configuration, prev_lat, prev_lon, configuration.EndLat,
@@ -1772,6 +1823,13 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
           configuration.Start, configuration.End, checked_segments + 1,
           prev_lat, prev_lon, configuration.EndLat, configuration.EndLon,
           failure_reason);
+      wxLogMessage(
+          "WR_UI_TIMING ValidatePlottedDestinationRouteLand total_ms=%ld "
+          "route=\"%s -> %s\" segments=%d plot_points=%lu ui_thread=%d "
+          "pass=0",
+          timer.Time(), configuration.Start, configuration.End,
+          checked_segments + 1, static_cast<unsigned long>(plotdata.size()),
+          wxThread::IsMain() ? 1 : 0);
       return false;
     }
     ++checked_segments;
@@ -1780,40 +1838,63 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
   wxLogMessage(
       "FINAL_ROUTE_SAFETY plotted_pass=1 route=\"%s -> %s\" segments=%d",
       configuration.Start, configuration.End, checked_segments);
+  wxLogMessage(
+      "WR_UI_TIMING ValidatePlottedDestinationRouteLand total_ms=%ld "
+      "route=\"%s -> %s\" segments=%d plot_points=%lu ui_thread=%d pass=1",
+      timer.Time(), configuration.Start, configuration.End, checked_segments,
+      static_cast<unsigned long>(plotdata.size()),
+      wxThread::IsMain() ? 1 : 0);
   return true;
 }
 
 void RouteMapOverlay::UpdateDestination() {
   RouteMapConfiguration configuration = GetConfiguration();
+  const bool defer_chart_validation_to_main =
+      configuration.DetectLand && ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
+      !wxThread::IsMain();
   Position* last_last_destination_position = last_destination_position;
   bool done = ReachedDestination();
   if (done) {
     Lock();
     delete destination_position;
     destination_position = 0;
-    /* this doesn't happen often, so can be slow.. for each position in the last
-       isochron, we try to propagate to the destination */
-    IsoChronList::iterator iit = origin.end();
-    iit--;
-    iit--; /* second from last isochron */
-    IsoChron* isochron = *iit;
     std::vector<IsoRouteDestinationCandidate> destination_candidates;
+    int isochrons_considered = 0;
+    const int max_destination_isochrons = 8;
 
-    for (IsoRouteList::iterator it = isochron->routes.begin();
-         it != isochron->routes.end(); ++it) {
-      configuration.grib = isochron->m_Grib;
-      configuration.grib_is_data_deficient = isochron->m_Grib_is_data_deficient;
+    /* This doesn't happen often, so it can afford to be slower.  The
+       historical path only tried the second-from-last isochrone.  With chart
+       safety enabled that can fail when the fastest frontier approaches the
+       destination from the wrong side of land, even though a slightly earlier
+       or slower frontier has a safe final approach.  Keep this bounded and
+       validate alternatives in absolute ETA order below. */
+    if (origin.size() >= 2) {
+      IsoChronList::reverse_iterator rit = origin.rbegin();
+      ++rit; /* skip the final isochrone which already crossed the target */
+      for (; rit != origin.rend() &&
+             isochrons_considered < max_destination_isochrons;
+           ++rit, ++isochrons_considered) {
+        IsoChron* isochron = *rit;
+        if (!isochron) continue;
+        for (IsoRouteList::iterator it = isochron->routes.begin();
+             it != isochron->routes.end(); ++it) {
+          configuration.grib = isochron->m_Grib;
+          configuration.grib_is_data_deficient =
+              isochron->m_Grib_is_data_deficient;
 
-      configuration.time = isochron->time;
-      configuration.UsedDeltaTime = isochron->delta;
-      (*it)->CollectDestinationCandidates(configuration, destination_candidates);
+          configuration.time = isochron->time;
+          configuration.UsedDeltaTime = isochron->delta;
+          (*it)->CollectDestinationCandidates(configuration,
+                                              destination_candidates);
+        }
+      }
     }
     Unlock();
 
     std::sort(destination_candidates.begin(), destination_candidates.end(),
               [](const IsoRouteDestinationCandidate& a,
                  const IsoRouteDestinationCandidate& b) {
-                return a.dt < b.dt;
+                return a.absolute_dt < b.absolute_dt;
               });
 
     int alternatives_validated = 0;
@@ -1821,6 +1902,7 @@ void RouteMapOverlay::UpdateDestination() {
     bool accepted_destination_candidate = false;
     double fastest_rejected_dt = NAN;
     double accepted_dt = NAN;
+    double accepted_absolute_dt = NAN;
 
     if (destination_candidates.empty()) {
       // destination is between two isochrons
@@ -1832,8 +1914,9 @@ void RouteMapOverlay::UpdateDestination() {
       SetFailureReason(_("Final route did not reach destination"));
       wxLogMessage(
           "FINAL_ROUTE_SAFETY pass=0 route=\"%s -> %s\" "
-          "reason=direct-final-approach-unreachable",
-          configuration.Start, configuration.End);
+          "reason=direct-final-approach-unreachable "
+          "isochrons_considered=%d",
+          configuration.Start, configuration.End, isochrons_considered);
       SetFinished(false);
     } else {
       for (std::vector<IsoRouteDestinationCandidate>::const_iterator it =
@@ -1848,18 +1931,35 @@ void RouteMapOverlay::UpdateDestination() {
             it->endp->sail_plan_changes + it->sail_plan_changed,
             it->data_mask);
 
-        m_EndTime = isochron->time + wxTimeSpan::Milliseconds(1000 * it->dt);
-        isochron->delta = it->dt;
+        m_EndTime =
+            it->isochron_time + wxTimeSpan::Milliseconds(1000 * it->dt);
         last_destination_position = destination_position;
         clear_destination_plotdata = true;
         SetFinished(true);
         ++alternatives_validated;
+
+        if (defer_chart_validation_to_main) {
+          configuration = validation_configuration;
+          accepted_destination_candidate = true;
+          accepted_dt = it->dt;
+          accepted_absolute_dt = it->absolute_dt;
+          wxLogMessage(
+              "FINAL_ROUTE_SAFETY alternative_selected_deferred "
+              "route=\"%s -> %s\" destination_alternatives=%zu "
+              "validated=%d accepted_dt=%.3f absolute_dt=%.3f "
+              "isochrons_considered=%d thread=worker",
+              configuration.Start, configuration.End,
+              destination_candidates.size(), alternatives_validated,
+              accepted_dt, it->absolute_dt, isochrons_considered);
+          break;
+        }
 
         if (ValidateDestinationRouteLand(validation_configuration) &&
             ValidatePlottedDestinationRouteLand(validation_configuration)) {
           configuration = validation_configuration;
           accepted_destination_candidate = true;
           accepted_dt = it->dt;
+          accepted_absolute_dt = it->absolute_dt;
           break;
         }
 
@@ -1881,19 +1981,22 @@ void RouteMapOverlay::UpdateDestination() {
         wxLogMessage(
             "FINAL_ROUTE_SAFETY alternatives_exhausted route=\"%s -> %s\" "
             "destination_alternatives=%zu validated=%d chart_rejected=%d "
-            "fastest_rejected_dt=%.3f",
+            "fastest_rejected_dt=%.3f isochrons_considered=%d",
             configuration.Start, configuration.End,
             destination_candidates.size(), alternatives_validated,
-            alternatives_rejected_by_chart, fastest_rejected_dt);
+            alternatives_rejected_by_chart, fastest_rejected_dt,
+            isochrons_considered);
       } else {
         wxLogMessage(
             "FINAL_ROUTE_SAFETY alternative_selected route=\"%s -> %s\" "
             "destination_alternatives=%zu validated=%d "
             "chart_rejected_before_accept=%d fastest_rejected_dt=%.3f "
-            "accepted_dt=%.3f",
+            "accepted_dt=%.3f accepted_absolute_dt=%.3f "
+            "isochrons_considered=%d",
             configuration.Start, configuration.End,
             destination_candidates.size(), alternatives_validated,
-            alternatives_rejected_by_chart, fastest_rejected_dt, accepted_dt);
+            alternatives_rejected_by_chart, fastest_rejected_dt, accepted_dt,
+            accepted_absolute_dt, isochrons_considered);
       }
     }
     UpdateStatus(configuration);

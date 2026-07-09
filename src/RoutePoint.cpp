@@ -19,6 +19,8 @@
 
 #include <wx/wx.h>
 
+#include <cmath>
+
 #include "RoutePoint.h"
 #include "WeatherDataProvider.h"
 #include "RouteMap.h"
@@ -212,6 +214,13 @@ bool BoatData::GetBoatSpeedForPolar(RouteMapConfiguration& configuration,
 
   // Calculate distance traveled over ground based on speed and time.
   dist = sog * timeseconds / 3600.0;
+  if (!std::isfinite(stw) || !std::isfinite(sog) ||
+      !std::isfinite(dist)) {
+    configuration.nonfinite_boat_speed_rejections++;
+    return false;
+  }
+  if (stw <= 0 || sog <= 0 || dist <= 0)
+    configuration.zero_boat_speed_rejections++;
   return true;
 }
 
@@ -228,6 +237,7 @@ bool WeatherData::ReadWeatherDataAndCheckConstraints(
   }
 
   // Read wind and current data
+  configuration.weather_data_read_attempts++;
   if (!WeatherDataProvider::ReadWindAndCurrents(
           configuration, position, twdOverGround, twsOverGround, twdOverWater,
           twsOverWater, currentDir, currentSpeed, atlas, data_mask)) {
@@ -239,6 +249,26 @@ bool WeatherData::ReadWeatherDataAndCheckConstraints(
                            configuration.time.Format("%Y-%m-%d %H:%M:%S"));
     }
     return false;
+  }
+  configuration.weather_data_read_successes++;
+  if (data_mask & Position::GRIB_WIND) configuration.grib_wind_data_reads++;
+  if (data_mask & Position::CLIMATOLOGY_WIND)
+    configuration.climatology_wind_data_reads++;
+  if (data_mask & Position::DATA_DEFICIENT_WIND)
+    configuration.deficient_wind_data_reads++;
+  if (configuration.Currents) {
+    configuration.current_data_read_attempts++;
+    if (data_mask & (Position::GRIB_CURRENT |
+                     Position::CLIMATOLOGY_CURRENT |
+                     Position::DATA_DEFICIENT_CURRENT)) {
+      configuration.current_data_reads++;
+      configuration.current_speed_samples++;
+      configuration.sum_current_speed_seen += currentSpeed;
+      if (currentSpeed > configuration.max_current_speed_seen)
+        configuration.max_current_speed_seen = currentSpeed;
+    } else {
+      configuration.missing_current_data_reads++;
+    }
   }
 
   // Check if wind exceeds configured maximum limit (safety limit)

@@ -20,6 +20,8 @@
 #ifndef _WEATHER_ROUTING_ROUTE_MAP_OVERLAY_H_
 #define _WEATHER_ROUTING_ROUTE_MAP_OVERLAY_H_
 
+#include <atomic>
+
 #include "RouteMap.h"
 #include "LineBufferOverlay.h"
 
@@ -296,7 +298,10 @@ public:
    * Checks if the calculation thread is still running.
    * @return True if the thread is running.
    */
-  bool Running() { return m_Thread && m_Thread->IsAlive(); }
+  bool Running() {
+    return m_Thread &&
+           (m_Thread->IsAlive() || m_bUpdatingDestination.load());
+  }
 
   /**
    * Starts the route calculation thread.
@@ -427,8 +432,21 @@ private:
   /** Pointer to the calculation thread. */
   RouteMapOverlayThread* m_Thread;
 
+  std::atomic<bool> m_bUpdatingDestination;
+
   /** Mutex for thread-safe access to route data. */
   wxMutex routemutex;
+
+  struct DestinationUpdateGuard {
+    explicit DestinationUpdateGuard(RouteMapOverlay& overlay)
+        : m_overlay(overlay) {
+      m_overlay.m_bUpdatingDestination.store(true);
+    }
+    ~DestinationUpdateGuard() {
+      m_overlay.m_bUpdatingDestination.store(false);
+    }
+    RouteMapOverlay& m_overlay;
+  };
 
   /**
    * Sets the point color based on position data.

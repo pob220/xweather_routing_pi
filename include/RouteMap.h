@@ -502,6 +502,13 @@ struct RouteMapConfiguration {
    * SafetyMarginLand.
    */
   bool DetectLand;
+  /**
+   * Runtime-only fallback: use chart-backed land checks during propagation.
+   * Normal hybrid mode leaves this false and chart-validates final alternatives.
+   */
+  bool UseChartSafetyForPropagation;
+  /** Runtime-only guard so a route retries chart propagation at most once. */
+  bool ChartSafetyPropagationFallbackTried;
 
   /**
    * If true, the route calculation will avoid exclusion boundaries.
@@ -668,8 +675,35 @@ struct RouteMapConfiguration {
   long rejection_counts[PROPAGATION_ANGLE_ERROR + 1];
   long accepted_candidate_count;
   long generated_candidate_count;
+  long frontier_positions_before_merge;
+  long frontier_positions_after_merge;
+  long frontier_positions_after_reduce;
+  long frontier_routes_before_merge;
+  long frontier_routes_after_merge;
+  long frontier_routes_after_reduce;
+  long sparse_legal_frontiers_retained;
+  long sparse_legal_frontiers_dropped;
+  long weather_data_read_attempts;
+  long weather_data_read_successes;
+  long grib_wind_data_reads;
+  long climatology_wind_data_reads;
+  long deficient_wind_data_reads;
+  long current_data_read_attempts;
+  long current_data_reads;
+  long missing_current_data_reads;
+  long nonfinite_boat_speed_rejections;
+  long zero_boat_speed_rejections;
+  double max_current_speed_seen;
+  double sum_current_speed_seen;
+  long current_speed_samples;
   long chart_land_refinement_angles;
   long chart_land_refinement_accepted;
+  long chart_safety_missing_tile_rejections;
+  int chart_safety_missing_tile_retry_count;
+  int chart_safety_missing_tile_first_lat_tile;
+  int chart_safety_missing_tile_first_lon_tile;
+  double chart_safety_missing_tile_first_min_lat;
+  double chart_safety_missing_tile_first_min_lon;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,

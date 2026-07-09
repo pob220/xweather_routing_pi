@@ -235,29 +235,36 @@ bool Position::Propagate(IsoRouteList& routelist,
     bearing2 = heading_resolve(parent_bearing + configuration.MaxSearchAngle);
   }
 
-  std::vector<std::pair<double, bool> > degree_steps;
-  degree_steps.reserve(configuration.DegreeSteps.size() * 2);
+  std::vector<double> degree_steps;
+  degree_steps.reserve(configuration.DegreeSteps.size());
+  std::vector<double> refined_degree_steps;
+  refined_degree_steps.reserve(configuration.DegreeSteps.size());
   std::set<int> seen_angles;
-  auto add_degree_step = [&degree_steps, &seen_angles](double angle,
-                                                       bool refined) {
+  auto add_degree_step = [&degree_steps, &seen_angles](double angle) {
     angle = heading_resolve(angle);
     int key = static_cast<int>(std::lround(angle * 1000.0));
-    if (seen_angles.insert(key).second)
-      degree_steps.push_back(std::make_pair(angle, refined));
+    if (seen_angles.insert(key).second) degree_steps.push_back(angle);
   };
+  auto add_refined_degree_step =
+      [&refined_degree_steps, &seen_angles](double angle) {
+        angle = heading_resolve(angle);
+        int key = static_cast<int>(std::lround(angle * 1000.0));
+        if (seen_angles.insert(key).second)
+          refined_degree_steps.push_back(angle);
+      };
 
   for (auto it = configuration.DegreeSteps.begin();
        it != configuration.DegreeSteps.end(); it++) {
-    add_degree_step(*it, false);
+    add_degree_step(*it);
   }
 
   /*
    * Chart-backed land checks can reject the fastest landward shortcuts, but
    * the old coarse wind-angle step can still leave too few seaward detour
-   * choices.  When chart enforcement is explicit, add one bounded half-step
-   * refinement between the user's configured true-wind course steps.  This
-   * does not relax any safety constraint; every accepted segment still passes
-   * the same chart land/depth checks below.
+   * choices.  Prepare one bounded half-step refinement between the user's
+   * configured true-wind course steps, but only run it after the normal pass
+   * has actually encountered chart land locally.  Running these extra branches
+   * everywhere is prohibitively expensive in open water and adds no safety.
    */
   if (configuration.DetectLand &&
       ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
@@ -265,20 +272,20 @@ bool Position::Propagate(IsoRouteList& routelist,
     double half_step = configuration.ByDegrees / 2.0;
     for (double step = configuration.FromDegree + half_step;
          step < configuration.ToDegree; step += configuration.ByDegrees) {
-      add_degree_step(step, true);
-      if (step > 0 && step < 180) add_degree_step(360 - step, true);
+      add_refined_degree_step(step);
+      if (step > 0 && step < 180) add_refined_degree_step(360 - step);
     }
   }
 
-  std::sort(degree_steps.begin(), degree_steps.end(),
-            [](const std::pair<double, bool>& a,
-               const std::pair<double, bool>& b) { return a.first < b.first; });
+  std::sort(degree_steps.begin(), degree_steps.end());
+  std::sort(refined_degree_steps.begin(), refined_degree_steps.end());
 
-  for (auto it = degree_steps.begin(); it != degree_steps.end(); it++) {
+  long local_land_rejections = 0;
+
+  auto try_degree_step = [&](double degree_step, bool refined_angle) {
     configuration.generated_candidate_count++;
     double timeseconds = configuration.UsedDeltaTime;
-    double twa = heading_resolve(it->first);
-    const bool refined_angle = it->second;
+    double twa = heading_resolve(degree_step);
     if (refined_angle) configuration.chart_land_refinement_angles++;
     double ctw =
         weather_data.twdOverWater + twa; /* rotated relative to true wind */
@@ -302,7 +309,7 @@ bool Position::Propagate(IsoRouteList& routelist,
               true;  // not a "real" position so we don't propagate it either.
           goto add_position;
         } else {
-          continue;
+          return;
         }
       }
     }
@@ -314,7 +321,7 @@ bool Position::Propagate(IsoRouteList& routelist,
               configuration, weather_data, twa, ctw, parent_heading, data_mask,
               this->polar, newpolar, timeseconds)) {
         configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED]++;
-        continue;
+        return;
       }
 
       // {dlat, dlon} represent the destination coordinates for a route point
@@ -340,7 +347,7 @@ bool Position::Propagate(IsoRouteList& routelist,
                      configuration.grib, rk_time, newpolar, k4_BG, k4_dist,
                      data_mask)) {
           configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED]++;
-          continue;
+          return;
         }
 
         ll_gc_ll(lat, lon, boat_data.cog,
@@ -363,12 +370,12 @@ bool Position::Propagate(IsoRouteList& routelist,
       if (!ConstraintChecker::CheckMaxCourseAngleConstraint(configuration, dlat,
                                                             dlon)) {
         configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS]++;
-        continue;
+        return;
       }
       if (!ConstraintChecker::CheckMaxDivertedCourse(configuration, dlat,
                                                      dlon)) {
         configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS]++;
-        continue;
+        return;
       }
 
       /* quick test first to avoid slower calculation */
@@ -376,7 +383,7 @@ bool Position::Propagate(IsoRouteList& routelist,
               configuration, boat_data.stw, twa, weather_data.twsOverWater,
               propagation_error)) {
         configuration.rejection_counts[propagation_error]++;
-        continue;
+        return;
       }
 
       if (configuration.DetectLand || configuration.DetectBoundary) {
@@ -402,7 +409,8 @@ bool Position::Propagate(IsoRouteList& routelist,
                 configuration, lat, lon, dlat1, dlon1, boat_data.cog)) {
           configuration.land_crossing = true;
           configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION]++;
-          continue;
+          local_land_rejections++;
+          return;
         }
 
         /* Boundary test */
@@ -410,7 +418,7 @@ bool Position::Propagate(IsoRouteList& routelist,
           if (EntersBoundary(dlat1, dlon1)) {
             configuration.boundary_crossing = true;
             configuration.rejection_counts[PROPAGATION_BOUNDARY_INTERSECTION]++;
-            continue;
+            return;
           }
         }
       }
@@ -418,7 +426,7 @@ bool Position::Propagate(IsoRouteList& routelist,
       if (!ConstraintChecker::CheckCycloneTrackConstraint(configuration, lat,
                                                           lon, dlat, dlon)) {
         configuration.rejection_counts[PROPAGATION_CYCLONE_TRACK_CROSSING]++;
-        continue;
+        return;
       }
 
       rp = new Position(dlat, dlon, this, twa, ctw, newpolar,
@@ -439,12 +447,30 @@ bool Position::Propagate(IsoRouteList& routelist,
     count++;
     configuration.accepted_candidate_count++;
     if (refined_angle) configuration.chart_land_refinement_accepted++;
+  };
+
+  for (auto it = degree_steps.begin(); it != degree_steps.end(); it++)
+    try_degree_step(*it, false);
+
+  if (!refined_degree_steps.empty() && local_land_rejections > 0 &&
+      count < 4) {
+    for (auto it = refined_degree_steps.begin();
+         it != refined_degree_steps.end(); it++)
+      try_degree_step(*it, true);
   }
 
-  if (count < 3) { /* would get eliminated anyway, but save the extra steps */
+  if (count < 3 &&
+      !(count > 0 && configuration.DetectLand &&
+        ConstraintChecker::IsExperimentalChartSafetyEnforced())) {
+    /* would get eliminated anyway, but save the extra steps */
     if (count) DeletePoints(points);
+    if (count > 0) configuration.sparse_legal_frontiers_dropped++;
     propagation_error = PROPAGATION_ANGLE_ERROR;
     return false;
+  }
+  if (count > 0 && count < 3 && configuration.DetectLand &&
+      ConstraintChecker::IsExperimentalChartSafetyEnforced()) {
+    configuration.sparse_legal_frontiers_retained++;
   }
 
   IsoRoute* nr = new IsoRoute(points->BuildSkipList());

@@ -36,6 +36,8 @@ typedef std::list<IsoRoute*> IsoRouteList;
 
 struct IsoRouteDestinationCandidate {
   double dt;
+  wxDateTime isochron_time;
+  double absolute_dt;
   Position* endp;
   double heading;
   bool tacked;
@@ -161,6 +163,17 @@ public:
    * route.
    */
   void ReduceClosePoints();
+
+  /**
+   * Bound frontier density by removing roughly evenly spaced intermediate
+   * positions.  This is used only after safety checks and graph merge/reduce,
+   * before the next isochrone expands, to keep chart-aware routing practical
+   * without allowing unchecked segments into the result.
+   *
+   * @param max_positions Maximum positions to retain in this route.
+   * @return Number of positions removed from this route and its children.
+   */
+  int ThinPositions(int max_positions);
   //    bool ApplyCurrents(GribRecordSet *grib, wxDateTime time,
   //    RouteMapConfiguration &configuration);
   /**

@@ -25,6 +25,7 @@
 
 #include <wx/wx.h>
 #include <wx/stdpaths.h>
+#include <wx/timer.h>
 #include <wx/treectrl.h>
 #include <wx/fileconf.h>
 
@@ -171,6 +172,8 @@ int weather_routing_pi::Init() {
 
   //    And load the configuration items
   LoadConfig();
+
+  MaybeStartHeadlessRouteTest();
 
   return (WANTS_OVERLAY_CALLBACK | WANTS_OPENGL_OVERLAY_CALLBACK |
           WANTS_TOOLBAR_CALLBACK | WANTS_CONFIG | WANTS_CURSOR_LATLON |
@@ -443,6 +446,40 @@ void weather_routing_pi::RequestOcpnDrawSetting() {
     jMsg["MsgId"] = "GetAPIAddresses";
     SendPluginMessage("OCPN_DRAW_PI", writer.write(jMsg));
   }
+}
+
+class HeadlessRouteTestStarter : public wxTimer {
+public:
+  explicit HeadlessRouteTestStarter(weather_routing_pi* plugin)
+      : m_plugin(plugin) {}
+
+  void Notify() override {
+    weather_routing_pi* plugin = m_plugin;
+    delete this;
+
+    if (!plugin->m_pWeather_Routing) plugin->NewWR();
+    if (!plugin->m_pWeather_Routing) {
+      wxLogMessage("WR_HEADLESS_ROUTE_TEST abort reason=weather_routing_unavailable");
+      wxTheApp->ExitMainLoop();
+      return;
+    }
+    plugin->m_pWeather_Routing->RunHeadlessRouteTestFromEnv();
+  }
+
+private:
+  weather_routing_pi* m_plugin;
+};
+
+void weather_routing_pi::MaybeStartHeadlessRouteTest() {
+  const char* enabled = getenv("WR_HEADLESS_ROUTE_TEST");
+  if (!enabled || !*enabled) return;
+
+  // OpenCPN continues loading GPX/waypoint state after plugin Init().  Starting
+  // Weather Routing immediately can resolve waypoint GUIDs before the waypoint
+  // manager is ready, so defer this test-only entry point until app startup has
+  // settled.
+  HeadlessRouteTestStarter* starter = new HeadlessRouteTestStarter(this);
+  starter->StartOnce(5000);
 }
 
 void weather_routing_pi::NewWR() {

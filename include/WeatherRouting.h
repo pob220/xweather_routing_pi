@@ -588,6 +588,11 @@ private:
    */
   void Start(RouteMapOverlay* routemapoverlay);
   void StartAll();
+  bool TryScoutRouteForChartSafety(RouteMapOverlay* routemapoverlay,
+                                   RouteMapConfiguration& configuration);
+  bool RetryRouteWithChartSafetyPropagation(
+      RouteMapOverlay* routemapoverlay);
+  bool RetryRouteAfterMissingChartSafetyTiles(RouteMapOverlay* routemapoverlay);
   /* Stop the computation of the specified route. */
   void Stop(RouteMapOverlay* routemapoverlay);
   /* Stop the computation of all routes. */
@@ -609,6 +614,16 @@ private:
   bool ComputeMultiLegDepartureOptimization(RouteMapOverlay* selectedRoute);
   bool ComputeMultiLegSequenceNow(const wxString& groupId);
   bool ComputeMultiLegDepartureOptimizationNow(const wxString& groupId);
+  bool ShouldShowChartSafetyComputeProgress(
+      const std::list<RouteMapOverlay*>& routemapoverlays) const;
+  void BeginChartSafetyComputeProgress(
+      bool computeAll, const std::list<RouteMapOverlay*>& routemapoverlays);
+  void StartCurrentRouteComputations();
+  void StartAllRouteComputations();
+  void UpdateChartSafetyComputeProgress(const wxString& stage,
+                                        RouteMapOverlay* routemapoverlay,
+                                        int value = -1, int range = -1);
+  void FinishChartSafetyComputeProgressIfDone();
   void ScheduleDeferredRoutingStart(int mode, const wxString& groupId);
   void CancelDeferredRoutingStart();
   void OnDeferredRoutingStart(wxTimerEvent&);
@@ -630,6 +645,7 @@ private:
 public:
   bool ApplyMultiLegOptimizationCandidate(int candidateIndex);
   bool ApplyBestMultiLegOptimizationCandidate();
+  void RunHeadlessRouteTestFromEnv();
   struct MultiLegOptimizationCandidate {
     int offsetMinutes;
     wxDateTime departureTime;
@@ -708,6 +724,11 @@ private:
   int m_DeferredRoutingStartMode;
   bool m_DeferredRoutingStartPending;
   wxString m_DeferredRoutingStartGroupId;
+  bool m_ChartSafetyComputeProgressActive;
+  bool m_ChartSafetyComputeProgressAll;
+  int m_ChartSafetyComputeProgressTotalRoutes;
+  int m_ChartSafetyComputeProgressStartedRoutes;
+  int m_ChartSafetyComputeProgressCompletedRoutes;
   wxDialog* m_RoutingProgressDialog;
   wxStaticText* m_RoutingProgressStage;
   wxStaticText* m_RoutingProgressDetail;

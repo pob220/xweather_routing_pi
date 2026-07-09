@@ -152,10 +152,43 @@ RouteMapConfiguration::RouteMapConfiguration()
       UpwindEfficiency(1.),
       DownwindEfficiency(1.),
       NightCumulativeEfficiency(1.),
+      UseChartSafetyForPropagation(false),
+      ChartSafetyPropagationFallbackTried(false),
       StartLon(0),
       EndLon(0),
       grib(nullptr),
-      grib_is_data_deficient(false) {}
+      grib_is_data_deficient(false),
+      accepted_candidate_count(0),
+      generated_candidate_count(0),
+      frontier_positions_before_merge(0),
+      frontier_positions_after_merge(0),
+      frontier_positions_after_reduce(0),
+      frontier_routes_before_merge(0),
+      frontier_routes_after_merge(0),
+      frontier_routes_after_reduce(0),
+      sparse_legal_frontiers_retained(0),
+      sparse_legal_frontiers_dropped(0),
+      weather_data_read_attempts(0),
+      weather_data_read_successes(0),
+      grib_wind_data_reads(0),
+      climatology_wind_data_reads(0),
+      deficient_wind_data_reads(0),
+      current_data_read_attempts(0),
+      current_data_reads(0),
+      missing_current_data_reads(0),
+      nonfinite_boat_speed_rejections(0),
+      zero_boat_speed_rejections(0),
+      max_current_speed_seen(0),
+      sum_current_speed_seen(0),
+      current_speed_samples(0),
+      chart_land_refinement_angles(0),
+      chart_land_refinement_accepted(0),
+      chart_safety_missing_tile_rejections(0),
+      chart_safety_missing_tile_retry_count(0),
+      chart_safety_missing_tile_first_lat_tile(0),
+      chart_safety_missing_tile_first_lon_tile(0),
+      chart_safety_missing_tile_first_min_lat(NAN),
+      chart_safety_missing_tile_first_min_lon(NAN) {}
 
 double RouteMapConfiguration::GetBoatLat() {
   if (s_plugin_instance) return s_plugin_instance->m_boat_lat;
@@ -253,6 +286,20 @@ RouteMap::RouteMap() {}
 
 RouteMap::~RouteMap() { Clear(); }
 
+static long CountIsoRouteListPositions(const IsoRouteList& routes) {
+  long count = 0;
+  for (auto route : routes) {
+    if (route) count += route->Count();
+  }
+  return count;
+}
+
+static void DeleteIsoRouteList(IsoRouteList& routes) {
+  for (IsoRouteList::iterator it = routes.begin(); it != routes.end(); ++it)
+    delete *it;
+  routes.clear();
+}
+
 void RouteMap::PositionLatLon(wxString Name, double& lat, double& lon) {
   for (std::list<RouteMapPosition>::iterator it = Positions.begin();
        it != Positions.end(); it++)
@@ -316,6 +363,27 @@ bool RouteMap::Propagate() {
     configuration.rejection_counts[i] = 0;
   configuration.accepted_candidate_count = 0;
   configuration.generated_candidate_count = 0;
+  configuration.frontier_positions_before_merge = 0;
+  configuration.frontier_positions_after_merge = 0;
+  configuration.frontier_positions_after_reduce = 0;
+  configuration.frontier_routes_before_merge = 0;
+  configuration.frontier_routes_after_merge = 0;
+  configuration.frontier_routes_after_reduce = 0;
+  configuration.sparse_legal_frontiers_retained = 0;
+  configuration.sparse_legal_frontiers_dropped = 0;
+  configuration.weather_data_read_attempts = 0;
+  configuration.weather_data_read_successes = 0;
+  configuration.grib_wind_data_reads = 0;
+  configuration.climatology_wind_data_reads = 0;
+  configuration.deficient_wind_data_reads = 0;
+  configuration.current_data_read_attempts = 0;
+  configuration.current_data_reads = 0;
+  configuration.missing_current_data_reads = 0;
+  configuration.nonfinite_boat_speed_rejections = 0;
+  configuration.zero_boat_speed_rejections = 0;
+  configuration.max_current_speed_seen = 0;
+  configuration.sum_current_speed_seen = 0;
+  configuration.current_speed_samples = 0;
   configuration.chart_land_refinement_angles = 0;
   configuration.chart_land_refinement_accepted = 0;
 
@@ -349,6 +417,7 @@ bool RouteMap::Propagate() {
   Unlock();
 
   IsoRouteList routelist;
+  wxStopWatch propagateTimer;
   if (origin.empty()) {
     // The routing calculation has not started yet.
     Position* np = new Position(configuration.StartLat, configuration.StartLon);
@@ -404,16 +473,96 @@ bool RouteMap::Propagate() {
 
     origin.back()->PropagateIntoList(routelist, configuration);
   }
+  long propagateMs = propagateTimer.Time();
+
+  if (configuration.DetectLand &&
+      ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
+      configuration.chart_safety_missing_tile_rejections > 0) {
+    wxLogMessage(
+        "WR_GRID_TILE_RETRY_NEEDED route=\"%s -> %s\" "
+        "missing_rejections=%ld first_tile=(%d,%d) "
+        "first_tile_min=(%.6f,%.6f) propagate_ms=%ld "
+        "generated=%ld accepted=%ld. Aborting this attempt so the main "
+        "thread can prewarm missing chart-safety tiles and retry.",
+        m_Configuration.Start, m_Configuration.End,
+        configuration.chart_safety_missing_tile_rejections,
+        configuration.chart_safety_missing_tile_first_lat_tile,
+        configuration.chart_safety_missing_tile_first_lon_tile,
+        configuration.chart_safety_missing_tile_first_min_lat,
+        configuration.chart_safety_missing_tile_first_min_lon, propagateMs,
+        configuration.generated_candidate_count,
+        configuration.accepted_candidate_count);
+    DeleteIsoRouteList(routelist);
+  }
 
   IsoChron* update;
   if (routelist.empty()) {
     update = nullptr;
   } else {
+    wxStopWatch reduceInputTimer;
+    for (IsoRouteList::iterator it = routelist.begin(); it != routelist.end();
+         ++it)
+      (*it)->ReduceClosePoints();
+    long reduceInputMs = reduceInputTimer.Time();
+    configuration.frontier_routes_before_merge = routelist.size();
+    configuration.frontier_positions_before_merge =
+        CountIsoRouteListPositions(routelist);
     IsoRouteList merged;
+    wxStopWatch mergeTimer;
     if (!ReduceList(merged, routelist, configuration)) return false;
+    long mergeMs = mergeTimer.Time();
+    configuration.frontier_routes_after_merge = merged.size();
+    configuration.frontier_positions_after_merge =
+        CountIsoRouteListPositions(merged);
 
+    wxStopWatch reduceOutputTimer;
     for (IsoRouteList::iterator it = merged.begin(); it != merged.end(); ++it)
       (*it)->ReduceClosePoints();
+    long reduceOutputMs = reduceOutputTimer.Time();
+    configuration.frontier_routes_after_reduce = merged.size();
+    configuration.frontier_positions_after_reduce =
+        CountIsoRouteListPositions(merged);
+
+    long frontierThinMs = 0;
+    long frontierThinRemoved = 0;
+    const long max_chart_safe_frontier_positions = 280;
+    if (configuration.DetectLand &&
+        ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
+        configuration.frontier_positions_after_reduce >
+            max_chart_safe_frontier_positions) {
+      wxStopWatch thinTimer;
+      for (IsoRouteList::iterator it = merged.begin(); it != merged.end(); ++it)
+        frontierThinRemoved +=
+            (*it)->ThinPositions(max_chart_safe_frontier_positions);
+      frontierThinMs = thinTimer.Time();
+      long positions_after_thin = CountIsoRouteListPositions(merged);
+      wxLogMessage(
+          "WR_ROUTE_FRONTIER_THINNING route=\"%s -> %s\" before=%ld "
+          "after=%ld removed=%ld max_per_route=%ld thin_ms=%ld",
+          m_Configuration.Start, m_Configuration.End,
+          configuration.frontier_positions_after_reduce, positions_after_thin,
+          frontierThinRemoved, max_chart_safe_frontier_positions,
+          frontierThinMs);
+      configuration.frontier_positions_after_reduce = positions_after_thin;
+    }
+    if (propagateMs + reduceInputMs + mergeMs + reduceOutputMs > 1000) {
+      wxLogMessage(
+          "WR_ROUTE_WORKER_TIMING route=\"%s -> %s\" propagate_ms=%ld "
+          "premerge_reduce_ms=%ld merge_ms=%ld postmerge_reduce_ms=%ld "
+          "frontier_thin_ms=%ld frontier_thin_removed=%ld "
+          "routes_before=%ld positions_before=%ld routes_after_merge=%ld "
+          "positions_after_merge=%ld routes_after_reduce=%ld "
+          "positions_after_reduce=%ld",
+          m_Configuration.Start, m_Configuration.End, propagateMs,
+          reduceInputMs, mergeMs, reduceOutputMs, frontierThinMs,
+          frontierThinRemoved,
+          configuration.frontier_routes_before_merge,
+          configuration.frontier_positions_before_merge,
+          configuration.frontier_routes_after_merge,
+          configuration.frontier_positions_after_merge,
+          configuration.frontier_routes_after_reduce,
+          configuration.frontier_positions_after_reduce);
+    }
 
     update =
         new IsoChron(merged, time, delta, shared_grib, grib_is_data_deficient);
@@ -436,21 +585,138 @@ bool RouteMap::Propagate() {
         dominant_error = (PropagationError)i;
       }
     }
-    if (dominant_count > 0) {
+    long land_rejections =
+        configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
+        configuration.rejection_counts[PROPAGATION_LAND_SAFETY_MARGIN];
+    long weather_rejections =
+        configuration.rejection_counts[PROPAGATION_WIND_DATA_FAILED] +
+        configuration.rejection_counts[PROPAGATION_EXCEEDED_MAX_WIND] +
+        configuration.rejection_counts[PROPAGATION_EXCEEDED_APPARENT_WIND] +
+        configuration.rejection_counts[PROPAGATION_EXCEEDED_WIND_VS_CURRENT];
+    long polar_rejections =
+        configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
+        configuration.rejection_counts[PROPAGATION_POLAR_CONSTRAINTS];
+    long angle_rejections =
+        configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS] +
+        configuration.rejection_counts[PROPAGATION_ANGLE_ERROR];
+    long boundary_rejections =
+        configuration.rejection_counts[PROPAGATION_BOUNDARY_INTERSECTION];
+
+    if (configuration.chart_safety_missing_tile_rejections > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: missing chart safety data after "
+            "prewarm/retry (%ld candidate segments need chart tiles)"),
+          configuration.chart_safety_missing_tile_rejections);
+    } else if (configuration.weather_data_read_attempts > 0 &&
+               configuration.weather_data_read_successes == 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: no weather data at route time/window "
+            "(%ld weather reads failed)"),
+          configuration.weather_data_read_attempts);
+    } else if (configuration.Currents &&
+               configuration.current_data_read_attempts > 0 &&
+               configuration.current_data_reads == 0 &&
+               configuration.grib_wind_data_reads > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: no current data available; routing "
+            "used zero-current fallback for %ld samples"),
+          configuration.missing_current_data_reads);
+    } else if (configuration.nonfinite_boat_speed_rejections > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: current/polar calculation produced "
+            "invalid boat speed/SOG (%ld rejected moves)"),
+          configuration.nonfinite_boat_speed_rejections);
+    } else if (configuration.accepted_candidate_count > 0 &&
+               configuration.frontier_positions_before_merge == 0 &&
+               configuration.sparse_legal_frontiers_dropped > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: pruning/frontier collapse (%ld sparse "
+            "legal frontiers with 1-2 moves were dropped, %ld accepted moves "
+            "before pruning)"),
+          configuration.sparse_legal_frontiers_dropped,
+          configuration.accepted_candidate_count);
+    } else if (land_rejections > 0 &&
+               land_rejections >= weather_rejections &&
+               land_rejections >= polar_rejections &&
+               land_rejections >= angle_rejections &&
+               land_rejections >= boundary_rejections) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: all branches blocked mostly by "
+            "chart land/depth constraints (%ld land/depth rejections, "
+            "%ld accepted moves)"),
+          land_rejections, configuration.accepted_candidate_count);
+    } else if (weather_rejections > 0 &&
+               weather_rejections >= polar_rejections &&
+               weather_rejections >= angle_rejections) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: weather/current constraints prevent "
+            "progress (%ld weather/current rejections)"),
+          weather_rejections);
+    } else if (polar_rejections > 0 &&
+               polar_rejections >= angle_rejections) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: polar/sail configuration prevents "
+            "progress (%ld polar rejections)"),
+          polar_rejections);
+    } else if (angle_rejections > 0) {
+      m_FailureReason = wxString::Format(
+          _("No reachable route points: search angle/course limits prevent "
+            "progress (%ld angle-limit rejections)"),
+          angle_rejections);
+    } else if (dominant_count > 0) {
       m_FailureReason = wxString::Format(
           _("No reachable route points; most candidates rejected by: %s"),
           Position::GetErrorText(dominant_error));
     } else {
       m_FailureReason = _("No reachable route points");
     }
-    wxLogMessage(
+    wxString summaryLog = wxString::Format(
         "WeatherRouting propagation summary route=\"%s -> %s\" "
-        "generated=%ld accepted=%ld refinement_angles=%ld "
-        "refinement_accepted=%ld rejected{polar=%ld land=%ld boundary=%ld "
-        "weather=%ld wind=%ld apparent_wind=%ld angle=%ld}",
+        "candidate_offset=%d leg=%d/%d generated=%ld accepted=%ld ",
         m_Configuration.Start, m_Configuration.End,
+        m_Configuration.DepartureTimeOptimizationOffsetMinutes,
+        m_Configuration.MultiLegLegIndex, m_Configuration.MultiLegLegCount,
         configuration.generated_candidate_count,
-        configuration.accepted_candidate_count,
+        configuration.accepted_candidate_count);
+    summaryLog += wxString::Format(
+        "frontier_before_merge{routes=%ld positions=%ld} "
+        "frontier_after_merge{routes=%ld positions=%ld} "
+        "frontier_after_reduce{routes=%ld positions=%ld} "
+        "sparse_frontiers{retained=%ld dropped=%ld} ",
+        configuration.frontier_routes_before_merge,
+        configuration.frontier_positions_before_merge,
+        configuration.frontier_routes_after_merge,
+        configuration.frontier_positions_after_merge,
+        configuration.frontier_routes_after_reduce,
+        configuration.frontier_positions_after_reduce,
+        configuration.sparse_legal_frontiers_retained,
+        configuration.sparse_legal_frontiers_dropped);
+    summaryLog += wxString::Format(
+        "data{weather_attempts=%ld weather_success=%ld grib_wind=%ld "
+        "climatology_wind=%ld deficient_wind=%ld current_attempts=%ld "
+        "current_success=%ld current_missing=%ld current_max=%.3f "
+        "current_avg=%.3f nonfinite_boat_speed=%ld zero_boat_speed=%ld} ",
+        configuration.weather_data_read_attempts,
+        configuration.weather_data_read_successes,
+        configuration.grib_wind_data_reads,
+        configuration.climatology_wind_data_reads,
+        configuration.deficient_wind_data_reads,
+        configuration.current_data_read_attempts,
+        configuration.current_data_reads,
+        configuration.missing_current_data_reads,
+        configuration.max_current_speed_seen,
+        configuration.current_speed_samples > 0
+            ? configuration.sum_current_speed_seen /
+                  configuration.current_speed_samples
+            : 0.0,
+        configuration.nonfinite_boat_speed_rejections,
+        configuration.zero_boat_speed_rejections);
+    summaryLog += wxString::Format(
+        "refinement_angles=%ld refinement_accepted=%ld "
+        "rejected{polar=%ld land=%ld boundary=%ld weather=%ld wind=%ld "
+        "apparent_wind=%ld angle=%ld missing_safety_tiles=%ld "
+        "first_missing_tile=(%d,%d) first_missing_tile_min=(%.6f,%.6f)} "
+        "reason=\"%s\"",
         configuration.chart_land_refinement_angles,
         configuration.chart_land_refinement_accepted,
         configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
@@ -461,11 +727,28 @@ bool RouteMap::Propagate() {
         configuration.rejection_counts[PROPAGATION_WIND_DATA_FAILED],
         configuration.rejection_counts[PROPAGATION_EXCEEDED_MAX_WIND],
         configuration.rejection_counts[PROPAGATION_EXCEEDED_APPARENT_WIND],
-        configuration.rejection_counts[PROPAGATION_ANGLE_ERROR]);
+        configuration.rejection_counts[PROPAGATION_ANGLE_ERROR],
+        configuration.chart_safety_missing_tile_rejections,
+        configuration.chart_safety_missing_tile_first_lat_tile,
+        configuration.chart_safety_missing_tile_first_lon_tile,
+        configuration.chart_safety_missing_tile_first_min_lat,
+        configuration.chart_safety_missing_tile_first_min_lon,
+        m_FailureReason);
+    wxLogMessage("%s", summaryLog);
   }
 
   // take note of possible failure reasons
   UpdateStatus(configuration);
+  m_Configuration.chart_safety_missing_tile_rejections =
+      configuration.chart_safety_missing_tile_rejections;
+  m_Configuration.chart_safety_missing_tile_first_lat_tile =
+      configuration.chart_safety_missing_tile_first_lat_tile;
+  m_Configuration.chart_safety_missing_tile_first_lon_tile =
+      configuration.chart_safety_missing_tile_first_lon_tile;
+  m_Configuration.chart_safety_missing_tile_first_min_lat =
+      configuration.chart_safety_missing_tile_first_min_lat;
+  m_Configuration.chart_safety_missing_tile_first_min_lon =
+      configuration.chart_safety_missing_tile_first_min_lon;
 
   long land_rejections =
       configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
@@ -476,12 +759,15 @@ bool RouteMap::Propagate() {
     wxLogMessage(
         "WeatherRouting detour refinement route=\"%s -> %s\" "
         "generated=%ld accepted=%ld land_rejections=%ld "
-        "refinement_angles=%ld refinement_accepted=%ld",
+        "refinement_angles=%ld refinement_accepted=%ld "
+        "sparse_frontiers_retained=%ld sparse_frontiers_dropped=%ld",
         m_Configuration.Start, m_Configuration.End,
         configuration.generated_candidate_count,
         configuration.accepted_candidate_count, land_rejections,
         configuration.chart_land_refinement_angles,
-        configuration.chart_land_refinement_accepted);
+        configuration.chart_land_refinement_accepted,
+        configuration.sparse_legal_frontiers_retained,
+        configuration.sparse_legal_frontiers_dropped);
   }
 
   Unlock();
