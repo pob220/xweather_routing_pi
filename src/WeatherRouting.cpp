@@ -40,6 +40,7 @@
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "headless/HeadlessRouteRunner.h"
 #include "icons.h"
 #include "navobj_util.h"
 #include "ocpn_plugin.h"
@@ -3174,11 +3175,66 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimizationNow(
 
 void WeatherRouting::RunHeadlessRouteTestFromEnv() {
   wxString mode = EnvString("WR_HEADLESS_ROUTE_TEST");
+  weather_routing_engine::RoutingScenario scenario;
+  wxString scenario_path;
+  wxString scenario_output_path;
+  wxString scenario_error;
+  bool scenario_loaded = false;
+  if (!EnvString("WR_HEADLESS_SCENARIO").IsEmpty()) {
+    scenario_loaded = weather_routing_headless::HeadlessRouteRunner::
+        LoadScenarioFromEnv(scenario, scenario_path, scenario_output_path,
+                            scenario_error);
+    if (!scenario_loaded) {
+      wxLogMessage("WR_HEADLESS_SCENARIO abort path=\"%s\" reason=\"%s\".",
+                   EnvString("WR_HEADLESS_SCENARIO"), scenario_error);
+      FinishHeadlessRouteTestProcess(2);
+      return;
+    }
+    if (mode.IsEmpty() || mode.IsSameAs("scenario", false))
+      mode = scenario.departureOptimization.enabled ? _("departure-opt")
+                                                    : _("single");
+    wxString safety_mode = scenario.safety.mode.Lower();
+    if (safety_mode == "none" || safety_mode == "gshhs") {
+      wxSetEnv("WR_HEADLESS_CHART_SAFETY_USE", "0");
+      wxSetEnv("WR_HEADLESS_CHART_SAFETY_ENFORCE", "0");
+    } else if (safety_mode == "chart") {
+      wxSetEnv("WR_HEADLESS_CHART_SAFETY_USE", "1");
+      wxSetEnv("WR_HEADLESS_CHART_SAFETY_ENFORCE",
+               scenario.safety.enforce ? "1" : "0");
+    }
+    if (scenario.safety.hasPersistentCertifiedCacheEnabled)
+      PlugIn_SetSegmentSafetyPersistentCacheEnabled(
+          scenario.safety.persistentCertifiedCacheEnabled ? 1 : 0);
+    wxString write_error;
+    if (!weather_routing_headless::HeadlessRouteRunner::WriteStartedResult(
+            scenario_output_path, scenario, write_error)) {
+      wxLogMessage("WR_HEADLESS_SCENARIO warning output=\"%s\" reason=\"%s\".",
+                   scenario_output_path, write_error);
+    }
+    wxLogMessage(
+        "WR_HEADLESS_SCENARIO loaded path=\"%s\" output=\"%s\" name=\"%s\" "
+        "mode=%s.",
+        scenario_path, scenario_output_path, scenario.name, mode);
+  }
   if (mode.IsEmpty()) mode = _("multileg-opt");
   wxString match = EnvString("WR_HEADLESS_MATCH");
   wxString group_filter = EnvString("WR_HEADLESS_GROUP");
   long timeout_ms = EnvLong("WR_HEADLESS_TIMEOUT_MS", 30L * 60L * 1000L);
   if (timeout_ms < 1000) timeout_ms = 1000;
+
+  auto write_scenario_result =
+      [&](const wxString& status, const wxString& failureReason,
+          const std::vector<RouteMapOverlay*>& routes) {
+        if (!scenario_loaded || scenario_output_path.IsEmpty()) return;
+        wxString write_error;
+        if (!weather_routing_headless::HeadlessRouteRunner::
+                WriteSingleRouteResult(scenario_output_path, &scenario, status,
+                                       failureReason, routes, write_error)) {
+          wxLogMessage(
+              "WR_HEADLESS_SCENARIO warning output=\"%s\" reason=\"%s\".",
+              scenario_output_path, write_error);
+        }
+      };
 
   bool use_chart_safety = false;
   bool enforce_chart_safety = false;
@@ -3195,34 +3251,42 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       mode.IsSameAs("single-opt", false) ||
       mode.IsSameAs("departure-opt", false)) {
     RouteMapOverlay* selected_route = NULL;
-    for (auto weatherroute : m_WeatherRoutes) {
-      if (!weatherroute || !weatherroute->routemapoverlay) continue;
-      RouteMapConfiguration configuration =
-          weatherroute->routemapoverlay->GetConfiguration();
-      if (configuration.IsMultiLegGenerated ||
-          configuration.DepartureTimeOptimizationCandidate)
-        continue;
-      wxString haystack = wxString::Format(
-          _("%s %s %s"), configuration.RouteGUID, configuration.Start,
-          configuration.End);
-      bool text_matches = TextMatchesFilter(haystack, match);
-      wxLogMessage(
-          "WR_HEADLESS_ROUTE_TEST candidate_route start=\"%s\" end=\"%s\" "
-          "guid=\"%s\" text_matches=%d departure_opt=%d.",
-          configuration.Start, configuration.End, configuration.RouteGUID,
-          text_matches ? 1 : 0,
-          configuration.DepartureTimeOptimizationEnabled ? 1 : 0);
-      if (text_matches) {
-        selected_route = weatherroute->routemapoverlay;
-        break;
+    if (!scenario_loaded) {
+      for (auto weatherroute : m_WeatherRoutes) {
+        if (!weatherroute || !weatherroute->routemapoverlay) continue;
+        RouteMapConfiguration configuration =
+            weatherroute->routemapoverlay->GetConfiguration();
+        if (configuration.IsMultiLegGenerated ||
+            configuration.DepartureTimeOptimizationCandidate)
+          continue;
+        wxString haystack = wxString::Format(
+            _("%s %s %s"), configuration.RouteGUID, configuration.Start,
+            configuration.End);
+        bool text_matches = TextMatchesFilter(haystack, match);
+        wxLogMessage(
+            "WR_HEADLESS_ROUTE_TEST candidate_route start=\"%s\" end=\"%s\" "
+            "guid=\"%s\" text_matches=%d departure_opt=%d.",
+            configuration.Start, configuration.End, configuration.RouteGUID,
+            text_matches ? 1 : 0,
+            configuration.DepartureTimeOptimizationEnabled ? 1 : 0);
+        if (text_matches) {
+          selected_route = weatherroute->routemapoverlay;
+          break;
+        }
       }
     }
 
     if (!selected_route) {
-      double start_lat = EnvDouble("WR_HEADLESS_START_LAT", NAN);
-      double start_lon = EnvDouble("WR_HEADLESS_START_LON", NAN);
-      double end_lat = EnvDouble("WR_HEADLESS_END_LAT", NAN);
-      double end_lon = EnvDouble("WR_HEADLESS_END_LON", NAN);
+      double start_lat = scenario_loaded
+                             ? scenario.start.lat
+                             : EnvDouble("WR_HEADLESS_START_LAT", NAN);
+      double start_lon = scenario_loaded
+                             ? scenario.start.lon
+                             : EnvDouble("WR_HEADLESS_START_LON", NAN);
+      double end_lat =
+          scenario_loaded ? scenario.end.lat : EnvDouble("WR_HEADLESS_END_LAT", NAN);
+      double end_lon =
+          scenario_loaded ? scenario.end.lon : EnvDouble("WR_HEADLESS_END_LON", NAN);
       if (!std::isnan(start_lat) && !std::isnan(start_lon) &&
           !std::isnan(end_lat) && !std::isnan(end_lon)) {
         RouteMapConfiguration configuration = DefaultConfiguration();
@@ -3234,14 +3298,16 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.RouteGUID.Clear();
         configuration.StartType = RouteMapConfiguration::START_FROM_POSITION;
         configuration.EndType = RouteMapConfiguration::END_AT_POSITION;
-        configuration.Start =
-            EnvString("WR_HEADLESS_START_NAME").IsEmpty()
-                ? _("Headless start")
-                : EnvString("WR_HEADLESS_START_NAME");
-        configuration.End =
-            EnvString("WR_HEADLESS_END_NAME").IsEmpty()
-                ? _("Headless end")
-                : EnvString("WR_HEADLESS_END_NAME");
+        configuration.Start = scenario_loaded
+                                  ? scenario.start.name
+                                  : (EnvString("WR_HEADLESS_START_NAME").IsEmpty()
+                                         ? _("Headless start")
+                                         : EnvString("WR_HEADLESS_START_NAME"));
+        configuration.End = scenario_loaded
+                                ? scenario.end.name
+                                : (EnvString("WR_HEADLESS_END_NAME").IsEmpty()
+                                       ? _("Headless end")
+                                       : EnvString("WR_HEADLESS_END_NAME"));
         configuration.StartGUID.Clear();
         configuration.EndGUID.Clear();
         configuration.StartLat = start_lat;
@@ -3249,8 +3315,11 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.EndLat = end_lat;
         configuration.EndLon = end_lon;
         ApplyHeadlessRouteSafetyOverrides(configuration, _("created_route"));
+        if (scenario_loaded && scenario.startTime.IsValid()) {
+          configuration.StartTime = scenario.startTime;
+        }
         wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
-        if (!headless_start_time.IsEmpty()) {
+        if (!scenario_loaded && !headless_start_time.IsEmpty()) {
           wxDateTime parsed_start_time;
           if (parsed_start_time.ParseISOCombined(headless_start_time, 'T')) {
             configuration.StartTime = parsed_start_time;
@@ -3277,17 +3346,53 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.DepartureTimeOptimizationCandidate = false;
         configuration.DepartureTimeOptimizationGroupId.Clear();
         configuration.DepartureTimeOptimizationEnabled =
-            mode.IsSameAs("single-opt", false) ||
-            mode.IsSameAs("departure-opt", false);
-        configuration.DepartureTimeOptimizationRangeMinutes =
-            EnvLong("WR_HEADLESS_OPT_RANGE_MIN", 240);
-        configuration.DepartureTimeOptimizationStepMinutes =
-            EnvLong("WR_HEADLESS_OPT_STEP_MIN", 60);
+            scenario_loaded
+                ? scenario.departureOptimization.enabled
+                : (mode.IsSameAs("single-opt", false) ||
+                   mode.IsSameAs("departure-opt", false));
+        if (scenario_loaded) {
+          configuration.DepartureTimeOptimizationRangeMinutes = wxMax(
+              scenario.departureOptimization.beforeMinutes,
+              scenario.departureOptimization.afterMinutes);
+          configuration.DepartureTimeOptimizationStepMinutes =
+              scenario.departureOptimization.stepMinutes;
+        } else {
+          configuration.DepartureTimeOptimizationRangeMinutes =
+              EnvLong("WR_HEADLESS_OPT_RANGE_MIN", 240);
+          configuration.DepartureTimeOptimizationStepMinutes =
+              EnvLong("WR_HEADLESS_OPT_STEP_MIN", 60);
+        }
+        if (scenario_loaded && scenario.environment.hasUseCurrents)
+          configuration.Currents = scenario.environment.useCurrents;
+        if (scenario_loaded) {
+          wxString safety_mode = scenario.safety.mode.Lower();
+          if (safety_mode == "none") {
+            configuration.DetectLand = false;
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_USE", "0");
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_ENFORCE", "0");
+          } else if (safety_mode == "gshhs") {
+            configuration.DetectLand = true;
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_USE", "0");
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_ENFORCE", "0");
+          } else if (safety_mode == "chart") {
+            configuration.DetectLand = true;
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_USE", "1");
+            wxSetEnv("WR_HEADLESS_CHART_SAFETY_ENFORCE",
+                     scenario.safety.enforce ? "1" : "0");
+          }
+          if (scenario.safety.hasLandMarginNm)
+            configuration.SafetyMarginLand =
+                wxMax(0.0, scenario.safety.landMarginNm);
+          if (scenario.safety.hasPersistentCertifiedCacheEnabled)
+            PlugIn_SetSegmentSafetyPersistentCacheEnabled(
+                scenario.safety.persistentCertifiedCacheEnabled ? 1 : 0);
+        }
         if (!AddConfiguration(configuration)) {
-        wxLogMessage(
-            "WR_HEADLESS_ROUTE_TEST abort reason=create_route_failed "
-            "start=(%.6f,%.6f) end=(%.6f,%.6f).",
-            start_lat, start_lon, end_lat, end_lon);
+          wxLogMessage(
+              "WR_HEADLESS_ROUTE_TEST abort reason=create_route_failed "
+              "start=(%.6f,%.6f) end=(%.6f,%.6f).",
+              start_lat, start_lon, end_lat, end_lon);
+          write_scenario_result("failed", "create_route_failed", {});
           FinishHeadlessRouteTestProcess(2);
           return;
         }
@@ -3305,6 +3410,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
             "match=\"%s\". Provide WR_HEADLESS_START_LAT/LON and "
             "WR_HEADLESS_END_LAT/LON to create a runtime route.",
             match);
+        write_scenario_result("failed", "no_matching_route", {});
         FinishHeadlessRouteTestProcess(2);
         return;
       }
@@ -3382,6 +3488,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
           "WR_HEADLESS_ROUTE_TEST abort route=\"%s to %s\" "
           "reason=start_failed.",
           selected_config.Start, selected_config.End);
+      write_scenario_result("failed", "start_failed", {selected_route});
       FinishHeadlessRouteTestProcess(2);
       return;
     }
@@ -3474,6 +3581,15 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         selected_config.Start, selected_config.End, timer.Time(),
         timed_out ? 1 : 0, static_cast<unsigned long>(routes.size()),
         complete, failed, running, waiting);
+
+    wxString result_status = timed_out   ? _("timeout")
+                             : complete > 0 ? _("complete")
+                             : failed > 0   ? _("failed")
+                                            : _("unknown");
+    wxString result_failure =
+        timed_out ? _("timeout")
+                  : (complete > 0 ? wxString() : _("no_completed_routes"));
+    write_scenario_result(result_status, result_failure, routes);
 
     if (m_tCompute.IsRunning()) m_tCompute.Stop();
     if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();

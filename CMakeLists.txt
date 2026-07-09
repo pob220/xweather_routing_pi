@@ -205,6 +205,8 @@ SET(SRCS
             src/RoutePoint.cpp
             src/Position.cpp
             src/IsoRoute.cpp
+            src/headless/HeadlessRouteRunner.cpp
+            src/headless/RoutingScenarioJson.cpp
 )
 
 SET (HDRS
@@ -242,6 +244,11 @@ SET (HDRS
             include/RoutePoint.h
             include/Position.h
             include/IsoRoute.h
+            include/weather_routing_engine/RoutingDiagnostics.h
+            include/weather_routing_engine/RoutingResult.h
+            include/weather_routing_engine/RoutingScenario.h
+            src/headless/HeadlessRouteRunner.h
+            src/headless/RoutingScenarioJson.h
 )
 
 add_definitions(-DPLUGIN_USE_SVG)
@@ -265,7 +272,7 @@ set(SRC ${SRCS} ${HDRS} )
 ## Modify/configure 'Include' Directories below for the Plugin
 ##=============================================================
 
-include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include)
+include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
 
 ## Change target_sources to match your project needs.
 ##==============================================================

@@ -476,13 +476,17 @@ private:
 
 void weather_routing_pi::MaybeStartHeadlessRouteTest() {
   const char* enabled = getenv("WR_HEADLESS_ROUTE_TEST");
-  if (!enabled || !*enabled) return;
+  const char* scenario = getenv("WR_HEADLESS_SCENARIO");
+  if ((!enabled || !*enabled) && (!scenario || !*scenario)) return;
+  if ((!enabled || !*enabled) && scenario && *scenario)
+    wxSetEnv("WR_HEADLESS_ROUTE_TEST", "scenario");
 
   // OpenCPN continues loading GPX/waypoint state after plugin Init().  Starting
   // Weather Routing immediately can resolve waypoint GUIDs before the waypoint
   // manager is ready, so defer this test-only entry point until app startup has
   // settled.
-  wxLogMessage("WR_HEADLESS_ROUTE_TEST timer_scheduled mode=%s", enabled);
+  wxLogMessage("WR_HEADLESS_ROUTE_TEST timer_scheduled mode=%s scenario=%s",
+               enabled ? enabled : "", scenario ? scenario : "");
   HeadlessRouteTestStarter* starter = new HeadlessRouteTestStarter(this);
   starter->StartOnce(5000);
 }

@@ -32,6 +32,8 @@ src/WeatherDataProvider.cpp
 src/RoutePoint.cpp
 src/Position.cpp
 src/IsoRoute.cpp
+src/headless/HeadlessRouteRunner.cpp
+src/headless/RoutingScenarioJson.cpp
 include/weather_routing_pi.h
 include/WeatherRouting.h
 include/SunCalculator.h
@@ -66,3 +68,8 @@ include/WeatherDataProvider.h
 include/RoutePoint.h
 include/Position.h
 include/IsoRoute.h
+include/weather_routing_engine/RoutingDiagnostics.h
+include/weather_routing_engine/RoutingResult.h
+include/weather_routing_engine/RoutingScenario.h
+src/headless/HeadlessRouteRunner.h
+src/headless/RoutingScenarioJson.h
