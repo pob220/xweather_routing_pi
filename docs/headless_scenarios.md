@@ -10,14 +10,14 @@ second routing algorithm.
 Build OpenCPN and the Weather Routing plugin before running a scenario:
 
 ```sh
-cd /home/paul/src/OpenCPN/build
+cd ~/src/OpenCPN/build
 cmake --build . --target opencpn weather_routing_pi -j"$(nproc)"
 ```
 
 Run from the OpenCPN source tree so relative plugin paths resolve as expected:
 
 ```sh
-cd /home/paul/src/OpenCPN
+cd ~/src/OpenCPN
 ```
 
 If another OpenCPN instance is running, headless runs may exit through the
@@ -54,7 +54,7 @@ starts the headless runner.
 Example:
 
 ```sh
-cd /home/paul/src/OpenCPN
+cd ~/src/OpenCPN
 
 WR_HEADLESS_SCENARIO="$PWD/plugins/weather_routing_pi/testdata/scenarios/holyhead_dunlaoghaire.json" \
 WR_HEADLESS_OUTPUT=/tmp/wr_result.json \
@@ -73,7 +73,7 @@ The log should show the Weather Routing plugin loaded from the build tree, for
 example:
 
 ```text
-PluginLoader: Loading PlugIn: /home/paul/src/OpenCPN/build/plugins/weather_routing_pi/libweather_routing_pi.so
+PluginLoader: Loading PlugIn: ~/src/OpenCPN/build/plugins/weather_routing_pi/libweather_routing_pi.so
 WR_HEADLESS_ROUTE_TEST timer_scheduled ...
 WR_HEADLESS_SCENARIO loaded ...
 ```
