@@ -704,6 +704,10 @@ struct RouteMapConfiguration {
   int chart_safety_missing_tile_first_lon_tile;
   double chart_safety_missing_tile_first_min_lat;
   double chart_safety_missing_tile_first_min_lon;
+  double chart_safety_missing_tile_min_lat;
+  double chart_safety_missing_tile_max_lat;
+  double chart_safety_missing_tile_min_lon;
+  double chart_safety_missing_tile_max_lon;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,

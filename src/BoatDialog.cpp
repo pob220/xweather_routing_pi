@@ -89,6 +89,12 @@ BoatDialog::BoatDialog(WeatherRouting& weatherrouting)
 }
 
 BoatDialog::~BoatDialog() {
+  if (getenv("WR_HEADLESS_ROUTE_TEST")) {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST shutdown: skipping BoatDialog config access "
+        "during headless app teardown.");
+    return;
+  }
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting/BoatDialog" ));
 }

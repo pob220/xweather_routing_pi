@@ -188,7 +188,11 @@ RouteMapConfiguration::RouteMapConfiguration()
       chart_safety_missing_tile_first_lat_tile(0),
       chart_safety_missing_tile_first_lon_tile(0),
       chart_safety_missing_tile_first_min_lat(NAN),
-      chart_safety_missing_tile_first_min_lon(NAN) {}
+      chart_safety_missing_tile_first_min_lon(NAN),
+      chart_safety_missing_tile_min_lat(NAN),
+      chart_safety_missing_tile_max_lat(NAN),
+      chart_safety_missing_tile_min_lon(NAN),
+      chart_safety_missing_tile_max_lon(NAN) {}
 
 double RouteMapConfiguration::GetBoatLat() {
   if (s_plugin_instance) return s_plugin_instance->m_boat_lat;
@@ -481,7 +485,9 @@ bool RouteMap::Propagate() {
     wxLogMessage(
         "WR_GRID_TILE_RETRY_NEEDED route=\"%s -> %s\" "
         "missing_rejections=%ld first_tile=(%d,%d) "
-        "first_tile_min=(%.6f,%.6f) propagate_ms=%ld "
+        "first_tile_min=(%.6f,%.6f) "
+        "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
+        "propagate_ms=%ld "
         "generated=%ld accepted=%ld. Aborting this attempt so the main "
         "thread can prewarm missing chart-safety tiles and retry.",
         m_Configuration.Start, m_Configuration.End,
@@ -489,7 +495,11 @@ bool RouteMap::Propagate() {
         configuration.chart_safety_missing_tile_first_lat_tile,
         configuration.chart_safety_missing_tile_first_lon_tile,
         configuration.chart_safety_missing_tile_first_min_lat,
-        configuration.chart_safety_missing_tile_first_min_lon, propagateMs,
+        configuration.chart_safety_missing_tile_first_min_lon,
+        configuration.chart_safety_missing_tile_min_lat,
+        configuration.chart_safety_missing_tile_max_lat,
+        configuration.chart_safety_missing_tile_min_lon,
+        configuration.chart_safety_missing_tile_max_lon, propagateMs,
         configuration.generated_candidate_count,
         configuration.accepted_candidate_count);
     DeleteIsoRouteList(routelist);
@@ -715,7 +725,8 @@ bool RouteMap::Propagate() {
         "refinement_angles=%ld refinement_accepted=%ld "
         "rejected{polar=%ld land=%ld boundary=%ld weather=%ld wind=%ld "
         "apparent_wind=%ld angle=%ld missing_safety_tiles=%ld "
-        "first_missing_tile=(%d,%d) first_missing_tile_min=(%.6f,%.6f)} "
+        "first_missing_tile=(%d,%d) first_missing_tile_min=(%.6f,%.6f) "
+        "missing_tile_bbox=[lat %.6f..%.6f lon %.6f..%.6f]} "
         "reason=\"%s\"",
         configuration.chart_land_refinement_angles,
         configuration.chart_land_refinement_accepted,
@@ -733,6 +744,10 @@ bool RouteMap::Propagate() {
         configuration.chart_safety_missing_tile_first_lon_tile,
         configuration.chart_safety_missing_tile_first_min_lat,
         configuration.chart_safety_missing_tile_first_min_lon,
+        configuration.chart_safety_missing_tile_min_lat,
+        configuration.chart_safety_missing_tile_max_lat,
+        configuration.chart_safety_missing_tile_min_lon,
+        configuration.chart_safety_missing_tile_max_lon,
         m_FailureReason);
     wxLogMessage("%s", summaryLog);
   }
@@ -749,6 +764,14 @@ bool RouteMap::Propagate() {
       configuration.chart_safety_missing_tile_first_min_lat;
   m_Configuration.chart_safety_missing_tile_first_min_lon =
       configuration.chart_safety_missing_tile_first_min_lon;
+  m_Configuration.chart_safety_missing_tile_min_lat =
+      configuration.chart_safety_missing_tile_min_lat;
+  m_Configuration.chart_safety_missing_tile_max_lat =
+      configuration.chart_safety_missing_tile_max_lat;
+  m_Configuration.chart_safety_missing_tile_min_lon =
+      configuration.chart_safety_missing_tile_min_lon;
+  m_Configuration.chart_safety_missing_tile_max_lon =
+      configuration.chart_safety_missing_tile_max_lon;
 
   long land_rejections =
       configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +

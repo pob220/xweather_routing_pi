@@ -417,6 +417,10 @@ bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   if (configuration && result.unexpected_tile_builds > 0) {
     configuration->chart_safety_missing_tile_rejections +=
         result.unexpected_tile_builds;
+    double tile_min_lat = result.unexpected_tile_min_lat;
+    double tile_min_lon = result.unexpected_tile_min_lon;
+    double tile_max_lat = tile_min_lat + 0.05;
+    double tile_max_lon = tile_min_lon + 0.05;
     if (!std::isfinite(
             configuration->chart_safety_missing_tile_first_min_lat)) {
       configuration->chart_safety_missing_tile_first_lat_tile =
@@ -427,6 +431,23 @@ bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
           result.unexpected_tile_min_lat;
       configuration->chart_safety_missing_tile_first_min_lon =
           result.unexpected_tile_min_lon;
+      configuration->chart_safety_missing_tile_min_lat = tile_min_lat;
+      configuration->chart_safety_missing_tile_max_lat = tile_max_lat;
+      configuration->chart_safety_missing_tile_min_lon = tile_min_lon;
+      configuration->chart_safety_missing_tile_max_lon = tile_max_lon;
+    } else {
+      configuration->chart_safety_missing_tile_min_lat =
+          wxMin(configuration->chart_safety_missing_tile_min_lat,
+                tile_min_lat);
+      configuration->chart_safety_missing_tile_max_lat =
+          wxMax(configuration->chart_safety_missing_tile_max_lat,
+                tile_max_lat);
+      configuration->chart_safety_missing_tile_min_lon =
+          wxMin(configuration->chart_safety_missing_tile_min_lon,
+                tile_min_lon);
+      configuration->chart_safety_missing_tile_max_lon =
+          wxMax(configuration->chart_safety_missing_tile_max_lon,
+                tile_max_lon);
     }
   }
 
@@ -606,10 +627,17 @@ bool FinalRouteSegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   options.safety_margin_nm = safety_margin_nm;
   options.check_land = true;
   options.allow_gshhs_fallback = true;
+  options.force_authoritative_fine_validation = true;
 
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
   ++s_finalRouteValidationChecks;
+  wxLogMessage(
+      "FINAL_ROUTE_SAFETY validation_mode=fine_authoritative "
+      "persistent_cache_used_in_final_validation=0 "
+      "final_validation_forced_fine_masks=1 "
+      "segment=(%.8f,%.8f)->(%.8f,%.8f) margin_nm=%.3f",
+      lat1, lon1, lat2, lon2, safety_margin_nm);
   if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &options, &result)) {
     bool rejects = GshhsSegmentSafetyHitsLand(lat1, lon1, lat2, lon2,
                                              safety_margin_nm);

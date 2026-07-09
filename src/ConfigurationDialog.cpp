@@ -136,6 +136,12 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
 }
 
 ConfigurationDialog::~ConfigurationDialog() {
+  if (getenv("WR_HEADLESS_ROUTE_TEST")) {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST shutdown: skipping ConfigurationDialog "
+        "position save during headless app teardown.");
+    return;
+  }
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
 

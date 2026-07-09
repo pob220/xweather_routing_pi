@@ -80,6 +80,17 @@ static double EnvDouble(const char* name, double default_value) {
   return end && *end == '\0' ? parsed : default_value;
 }
 
+static void FinishHeadlessRouteTestProcess(int exit_code = 0) {
+  PlugIn_SaveSegmentSafetyPersistentCache();
+  wxLog::FlushActive();
+  if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1")) {
+    wxLogMessage("WR_HEADLESS_ROUTE_TEST process_exit code=%d", exit_code);
+    wxLog::FlushActive();
+    _Exit(exit_code);
+  }
+  wxTheApp->ExitMainLoop();
+}
+
 static bool TextMatchesFilter(const wxString& text, const wxString& filter) {
   return filter.IsEmpty() || text.Lower().Find(filter.Lower()) != wxNOT_FOUND;
 }
@@ -111,6 +122,36 @@ static double ReadExperimentalChartSafetyPrewarmMarginNm() {
               10.0);
   if (!std::isfinite(margin_nm)) margin_nm = 10.0;
   return wxMax(0.0, wxMin(60.0, margin_nm));
+}
+
+static void ApplyHeadlessRouteSafetyOverrides(RouteMapConfiguration& configuration,
+                                              const wxString& context) {
+  wxString detect_land_override = EnvString("WR_HEADLESS_DETECT_LAND");
+  if (!detect_land_override.IsEmpty()) {
+    configuration.DetectLand = detect_land_override.IsSameAs("1") ||
+                               detect_land_override.IsSameAs("true", false);
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST override context=%s DetectLand=%d.",
+        context, configuration.DetectLand ? 1 : 0);
+  }
+
+  wxString margin_override = EnvString("WR_HEADLESS_SAFETY_MARGIN_NM");
+  if (!margin_override.IsEmpty()) {
+    double margin_nm = EnvDouble("WR_HEADLESS_SAFETY_MARGIN_NM",
+                                 configuration.SafetyMarginLand);
+    if (std::isfinite(margin_nm)) {
+      configuration.SafetyMarginLand = wxMax(0.0, margin_nm);
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST override context=%s "
+          "SafetyMarginLand=%.3f.",
+          context, configuration.SafetyMarginLand);
+    } else {
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST warning invalid "
+          "WR_HEADLESS_SAFETY_MARGIN_NM=\"%s\"; keeping %.3f.",
+          margin_override, configuration.SafetyMarginLand);
+    }
+  }
 }
 
 static const int kMaxChartSafetyMissingTileRetries = 4;
@@ -181,14 +222,26 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
   const int radius_tiles =
       wxMin(12, base_radius_tiles +
                     2 * wxMax(0, configuration.chart_safety_missing_tile_retry_count));
-  double min_lat = configuration.chart_safety_missing_tile_first_min_lat -
-                   radius_tiles * tile_degrees;
-  double max_lat = configuration.chart_safety_missing_tile_first_min_lat +
-                   (radius_tiles + 1) * tile_degrees;
-  double min_lon = configuration.chart_safety_missing_tile_first_min_lon -
-                   radius_tiles * tile_degrees;
-  double max_lon = configuration.chart_safety_missing_tile_first_min_lon +
-                   (radius_tiles + 1) * tile_degrees;
+  double missing_min_lat =
+      std::isfinite(configuration.chart_safety_missing_tile_min_lat)
+          ? configuration.chart_safety_missing_tile_min_lat
+          : configuration.chart_safety_missing_tile_first_min_lat;
+  double missing_max_lat =
+      std::isfinite(configuration.chart_safety_missing_tile_max_lat)
+          ? configuration.chart_safety_missing_tile_max_lat
+          : configuration.chart_safety_missing_tile_first_min_lat + tile_degrees;
+  double missing_min_lon =
+      std::isfinite(configuration.chart_safety_missing_tile_min_lon)
+          ? configuration.chart_safety_missing_tile_min_lon
+          : configuration.chart_safety_missing_tile_first_min_lon;
+  double missing_max_lon =
+      std::isfinite(configuration.chart_safety_missing_tile_max_lon)
+          ? configuration.chart_safety_missing_tile_max_lon
+          : configuration.chart_safety_missing_tile_first_min_lon + tile_degrees;
+  double min_lat = missing_min_lat - radius_tiles * tile_degrees;
+  double max_lat = missing_max_lat + radius_tiles * tile_degrees;
+  double min_lon = missing_min_lon - radius_tiles * tile_degrees;
+  double max_lon = missing_max_lon + radius_tiles * tile_degrees;
   min_lat = wxMax(-90.0, min_lat);
   max_lat = wxMin(90.0, max_lat);
 
@@ -201,6 +254,7 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
   wxLogMessage(
       "WR_GRID_TILE_REQUESTED context=%s route=\"%s to %s\" "
       "retry=%d first_tile=(%d,%d) first_tile_min=(%.6f,%.6f) "
+      "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
       "radius_tiles=%d bbox=[lat %.6f..%.6f lon %.6f..%.6f] ok=%d "
       "built_tiles=%d reused_tiles=%d build_ms=%d grid_cache_size=%d "
       "message=\"%s\".",
@@ -209,7 +263,9 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
       configuration.chart_safety_missing_tile_first_lat_tile,
       configuration.chart_safety_missing_tile_first_lon_tile,
       configuration.chart_safety_missing_tile_first_min_lat,
-      configuration.chart_safety_missing_tile_first_min_lon, radius_tiles,
+      configuration.chart_safety_missing_tile_first_min_lon,
+      missing_min_lat, missing_max_lat, missing_min_lon, missing_max_lon,
+      radius_tiles,
       min_lat, max_lat, min_lon, max_lon, ok ? 1 : 0,
       result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
       result.grid_cache_size, result.message);
@@ -646,11 +702,23 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       m_bShowReport(false),
       m_bShowPlot(false),
       m_bShowFilter(false),
+      m_mChartAwarenessSettings(NULL),
       m_weather_routing_pi(plugin),
       m_positionOnRoute(nullptr),
       m_RoutingTablePanel(nullptr) {
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/Plugins/WeatherRouting" ));
+
+  m_mConfiguration->AppendSeparator();
+  m_mChartAwarenessSettings =
+      new wxMenuItem(m_mConfiguration, wxID_ANY,
+                     _("Chart Awareness Settings..."), wxEmptyString,
+                     wxITEM_NORMAL);
+  m_mConfiguration->Append(m_mChartAwarenessSettings);
+  m_mConfiguration->Bind(
+      wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRouting::OnChartAwarenessSettings), this,
+      m_mChartAwarenessSettings->GetId());
 
   wxIcon icon;
   icon.CopyFromBitmap(*_img_WeatherRouting);
@@ -908,6 +976,12 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
 WeatherRouting::~WeatherRouting() {
   // Disconnect Events
+  if (m_mChartAwarenessSettings) {
+    m_mConfiguration->Unbind(
+        wxEVT_COMMAND_MENU_SELECTED,
+        &WeatherRouting::OnChartAwarenessSettings, this,
+        m_mChartAwarenessSettings->GetId());
+  }
   if (m_colpane)
     m_colpane->Disconnect(
         wxEVT_COLLAPSIBLEPANE_CHANGED,
@@ -976,20 +1050,35 @@ WeatherRouting::~WeatherRouting() {
     m_RoutingProgressGauge = NULL;
   }
 
-  m_SettingsDialog.SaveSettings();
+  const bool headless_route_test = !EnvString("WR_HEADLESS_ROUTE_TEST").IsEmpty();
+  if (!headless_route_test) {
+    m_SettingsDialog.SaveSettings();
+  } else {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST shutdown: skipping interactive settings dialog "
+        "save to avoid dereferencing destroyed controls during headless app "
+        "teardown.");
+  }
 
-  wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  if (!headless_route_test) {
+    wxFileConfig* pConf = GetOCPNConfigObject();
+    pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
 
-  wxPoint p = GetPosition();
-  pConf->Write(_T ( "DialogX" ), p.x);
-  pConf->Write(_T ( "DialogY" ), p.y);
+    wxPoint p = GetPosition();
+    pConf->Write(_T ( "DialogX" ), p.x);
+    pConf->Write(_T ( "DialogY" ), p.y);
 
-  pConf->Write(_T ( "DialogWidth" ), m_size.x);
-  pConf->Write(_T ( "DialogHeight" ), m_size.y);
-  pConf->Write(_T ( "DialogSplit" ), m_panel->m_splitter1->GetSashPosition());
+    pConf->Write(_T ( "DialogWidth" ), m_size.x);
+    pConf->Write(_T ( "DialogHeight" ), m_size.y);
+    pConf->Write(_T ( "DialogSplit" ), m_panel->m_splitter1->GetSashPosition());
 
-  SaveXML(m_FileName.GetFullPath());
+    SaveXML(m_FileName.GetFullPath());
+  } else {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST shutdown: skipping Weather Routing dialog/XML "
+        "settings save because OpenCPN config services may already be "
+        "tearing down.");
+  }
 
   for (std::list<WeatherRoute*>::iterator it = m_WeatherRoutes.begin();
        it != m_WeatherRoutes.end(); it++)
@@ -3136,7 +3225,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       double end_lon = EnvDouble("WR_HEADLESS_END_LON", NAN);
       if (!std::isnan(start_lat) && !std::isnan(start_lon) &&
           !std::isnan(end_lat) && !std::isnan(end_lon)) {
-        RouteMapConfiguration configuration;
+        RouteMapConfiguration configuration = DefaultConfiguration();
         if (!m_WeatherRoutes.empty() && m_WeatherRoutes.front() &&
             m_WeatherRoutes.front()->routemapoverlay) {
           configuration =
@@ -3159,6 +3248,22 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.StartLon = start_lon;
         configuration.EndLat = end_lat;
         configuration.EndLon = end_lon;
+        ApplyHeadlessRouteSafetyOverrides(configuration, _("created_route"));
+        wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
+        if (!headless_start_time.IsEmpty()) {
+          wxDateTime parsed_start_time;
+          if (parsed_start_time.ParseISOCombined(headless_start_time, 'T')) {
+            configuration.StartTime = parsed_start_time;
+          } else {
+            wxLogMessage(
+                "WR_HEADLESS_ROUTE_TEST warning invalid WR_HEADLESS_START_TIME="
+                "\"%s\"; using configuration start time \"%s\".",
+                headless_start_time,
+                configuration.StartTime.IsValid()
+                    ? configuration.StartTime.FormatISOCombined()
+                    : _("invalid"));
+          }
+        }
         RouteMap::Positions.push_back(RouteMapPosition(
             configuration.Start, start_lat, start_lon));
         RouteMap::Positions.push_back(
@@ -3179,12 +3284,11 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.DepartureTimeOptimizationStepMinutes =
             EnvLong("WR_HEADLESS_OPT_STEP_MIN", 60);
         if (!AddConfiguration(configuration)) {
-          wxLogMessage(
-              "WR_HEADLESS_ROUTE_TEST abort reason=create_route_failed "
-              "start=(%.6f,%.6f) end=(%.6f,%.6f).",
-              start_lat, start_lon, end_lat, end_lon);
-          if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-            wxTheApp->ExitMainLoop();
+        wxLogMessage(
+            "WR_HEADLESS_ROUTE_TEST abort reason=create_route_failed "
+            "start=(%.6f,%.6f) end=(%.6f,%.6f).",
+            start_lat, start_lon, end_lat, end_lon);
+          FinishHeadlessRouteTestProcess(2);
           return;
         }
         selected_route = m_WeatherRoutes.back()->routemapoverlay;
@@ -3201,13 +3305,56 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
             "match=\"%s\". Provide WR_HEADLESS_START_LAT/LON and "
             "WR_HEADLESS_END_LAT/LON to create a runtime route.",
             match);
-        if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-          wxTheApp->ExitMainLoop();
+        FinishHeadlessRouteTestProcess(2);
         return;
       }
     }
 
     RouteMapConfiguration selected_config = selected_route->GetConfiguration();
+    bool selected_config_changed = false;
+    double original_safety_margin = selected_config.SafetyMarginLand;
+    ApplyHeadlessRouteSafetyOverrides(selected_config, _("selected_route"));
+    if (selected_config.SafetyMarginLand != original_safety_margin)
+      selected_config_changed = true;
+    wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
+    if (!headless_start_time.IsEmpty()) {
+      wxDateTime parsed_start_time;
+      if (parsed_start_time.ParseISOCombined(headless_start_time, 'T')) {
+        selected_config.StartTime = parsed_start_time;
+        selected_config_changed = true;
+      } else {
+        wxLogMessage(
+            "WR_HEADLESS_ROUTE_TEST warning invalid WR_HEADLESS_START_TIME="
+            "\"%s\" for selected route; keeping \"%s\".",
+            headless_start_time,
+            selected_config.StartTime.IsValid()
+                ? selected_config.StartTime.FormatISOCombined()
+                : _("invalid"));
+      }
+    }
+    if (mode.IsSameAs("single-opt", false) ||
+        mode.IsSameAs("departure-opt", false)) {
+      selected_config.DepartureTimeOptimizationEnabled = true;
+      selected_config.DepartureTimeOptimizationRangeMinutes =
+          EnvLong("WR_HEADLESS_OPT_RANGE_MIN",
+                  selected_config.DepartureTimeOptimizationRangeMinutes);
+      selected_config.DepartureTimeOptimizationStepMinutes =
+          EnvLong("WR_HEADLESS_OPT_STEP_MIN",
+                  selected_config.DepartureTimeOptimizationStepMinutes);
+      selected_config_changed = true;
+    }
+    wxString departure_opt_override = EnvString("WR_HEADLESS_DEPARTURE_OPT");
+    if (!departure_opt_override.IsEmpty()) {
+      selected_config.DepartureTimeOptimizationEnabled =
+          departure_opt_override.IsSameAs("1") ||
+          departure_opt_override.IsSameAs("true", false);
+      selected_config_changed = true;
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST override context=selected_route "
+          "DepartureTimeOptimizationEnabled=%d.",
+          selected_config.DepartureTimeOptimizationEnabled ? 1 : 0);
+    }
+    if (selected_config_changed) selected_route->SetConfiguration(selected_config);
     bool departure_opt = mode.IsSameAs("single-opt", false) ||
                          mode.IsSameAs("departure-opt", false) ||
                          selected_config.DepartureTimeOptimizationEnabled;
@@ -3221,6 +3368,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       selected_config.chart_safety_missing_tile_first_lon_tile = 0;
       selected_config.chart_safety_missing_tile_first_min_lat = NAN;
       selected_config.chart_safety_missing_tile_first_min_lon = NAN;
+      selected_config.chart_safety_missing_tile_min_lat = NAN;
+      selected_config.chart_safety_missing_tile_max_lat = NAN;
+      selected_config.chart_safety_missing_tile_min_lon = NAN;
+      selected_config.chart_safety_missing_tile_max_lon = NAN;
       selected_route->SetConfiguration(selected_config);
       Start(selected_route);
       started = true;
@@ -3231,8 +3382,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
           "WR_HEADLESS_ROUTE_TEST abort route=\"%s to %s\" "
           "reason=start_failed.",
           selected_config.Start, selected_config.End);
-      if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-        wxTheApp->ExitMainLoop();
+      FinishHeadlessRouteTestProcess(2);
       return;
     }
 
@@ -3241,6 +3391,14 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
     wxStopWatch timer;
     while (timer.Time() < timeout_ms) {
       bool active = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty();
+      if (!active && departure_opt) {
+        for (auto route : m_DepartureOptimizationRoutes) {
+          if (route && !route->Finished()) {
+            active = true;
+            break;
+          }
+        }
+      }
       if (!active) break;
       wxMilliSleep(50);
       wxYieldIfNeeded();
@@ -3317,9 +3475,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         timed_out ? 1 : 0, static_cast<unsigned long>(routes.size()),
         complete, failed, running, waiting);
 
-    wxLog::FlushActive();
-    if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-      wxTheApp->ExitMainLoop();
+    if (m_tCompute.IsRunning()) m_tCompute.Stop();
+    if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+    if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+    FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
     return;
   }
 
@@ -3373,8 +3532,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         "WR_HEADLESS_ROUTE_TEST abort reason=no_matching_multileg_group "
         "groups_seen=%lu.",
         static_cast<unsigned long>(seen_groups.size()));
-    if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-      wxTheApp->ExitMainLoop();
+    FinishHeadlessRouteTestProcess(2);
     return;
   }
 
@@ -3387,8 +3545,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
   if (!started) {
     wxLogMessage("WR_HEADLESS_ROUTE_TEST abort group=%s reason=start_failed.",
                  selected_group);
-    if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-      wxTheApp->ExitMainLoop();
+    FinishHeadlessRouteTestProcess(2);
     return;
   }
 
@@ -3453,9 +3610,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       static_cast<unsigned long>(m_MultiLegOptimizationCandidates.size()),
       complete, failed, running, waiting);
 
-  wxLog::FlushActive();
-  if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1"))
-    wxTheApp->ExitMainLoop();
+  if (m_tCompute.IsRunning()) m_tCompute.Stop();
+  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+  if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+  FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
 }
 
 void WeatherRouting::CursorRouteChanged() {
@@ -4659,10 +4817,15 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
     candidate.chart_safety_missing_tile_first_lon_tile = 0;
     candidate.chart_safety_missing_tile_first_min_lat = NAN;
     candidate.chart_safety_missing_tile_first_min_lon = NAN;
+    candidate.chart_safety_missing_tile_min_lat = NAN;
+    candidate.chart_safety_missing_tile_max_lat = NAN;
+    candidate.chart_safety_missing_tile_min_lon = NAN;
+    candidate.chart_safety_missing_tile_max_lon = NAN;
 
     if (!AddConfiguration(candidate)) continue;
     RouteMapOverlay* candidateRoute = m_WeatherRoutes.back()->routemapoverlay;
     candidateRoute->LoadBoat();
+    candidateRoute->ResetFinished();
     m_DepartureOptimizationRoutes.push_back(candidateRoute);
     Start(candidateRoute);
   }
@@ -4686,6 +4849,10 @@ void WeatherRouting::StartCurrentRouteComputations() {
       configuration.chart_safety_missing_tile_first_lon_tile = 0;
       configuration.chart_safety_missing_tile_first_min_lat = NAN;
       configuration.chart_safety_missing_tile_first_min_lon = NAN;
+      configuration.chart_safety_missing_tile_min_lat = NAN;
+      configuration.chart_safety_missing_tile_max_lat = NAN;
+      configuration.chart_safety_missing_tile_min_lon = NAN;
+      configuration.chart_safety_missing_tile_max_lon = NAN;
       (*it)->SetConfiguration(configuration);
       Start(*it);
     }
@@ -4709,6 +4876,10 @@ void WeatherRouting::StartAllRouteComputations() {
     configuration.chart_safety_missing_tile_first_lon_tile = 0;
     configuration.chart_safety_missing_tile_first_min_lat = NAN;
     configuration.chart_safety_missing_tile_first_min_lon = NAN;
+    configuration.chart_safety_missing_tile_min_lat = NAN;
+    configuration.chart_safety_missing_tile_max_lat = NAN;
+    configuration.chart_safety_missing_tile_min_lon = NAN;
+    configuration.chart_safety_missing_tile_max_lon = NAN;
     weatherroute->routemapoverlay->SetConfiguration(configuration);
   }
   StartAll();
@@ -5103,6 +5274,53 @@ void WeatherRouting::OnSaveAllAsTracks(wxCommandEvent& event) {
     SaveAsTrack(*reinterpret_cast<WeatherRoute*>(
                      wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(i)))
                      ->routemapoverlay);
+}
+
+void WeatherRouting::OnChartAwarenessSettings(wxCommandEvent& event) {
+  wxDialog dialog(this, wxID_ANY, _("Chart Awareness Settings"),
+                  wxDefaultPosition, wxDefaultSize,
+                  wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);
+  wxCheckBox* persistent = new wxCheckBox(
+      &dialog, wxID_ANY, _("Use Persistent Certified Safe-Area Cache"));
+  persistent->SetValue(m_weather_routing_pi.UsePersistentChartSafeCache());
+  top->Add(persistent, 0, wxALL | wxEXPAND, 10);
+
+  wxButton* clear =
+      new wxButton(&dialog, wxID_ANY, _("Clear Persistent Certified Safe-Area Cache"));
+  top->Add(clear, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
+
+  wxStaticText* note = new wxStaticText(
+      &dialog, wxID_ANY,
+      _("The cache stores only areas previously proven chart-safe by OpenCPN "
+        "for matching chart and safety settings."));
+  note->Wrap(420);
+  top->Add(note, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
+
+  wxStdDialogButtonSizer* buttons = new wxStdDialogButtonSizer();
+  wxButton* ok = new wxButton(&dialog, wxID_OK);
+  wxButton* cancel = new wxButton(&dialog, wxID_CANCEL);
+  buttons->AddButton(ok);
+  buttons->AddButton(cancel);
+  buttons->Realize();
+  top->Add(buttons, 0, wxALL | wxALIGN_RIGHT, 10);
+
+  clear->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+    bool ok = PlugIn_ClearSegmentSafetyPersistentCache();
+    wxLogMessage("WR_CERT_SAFE_CACHE clear_requested success=%d", ok ? 1 : 0);
+    wxMessageBox(ok ? _("Persistent certified safe-area cache cleared.")
+                    : _("Unable to clear persistent certified safe-area cache."),
+                 _("Chart Awareness Settings"), wxOK | wxICON_INFORMATION,
+                 this);
+  });
+
+  dialog.SetSizerAndFit(top);
+  if (dialog.ShowModal() == wxID_OK) {
+    m_weather_routing_pi.SetUsePersistentChartSafeCache(
+        persistent->GetValue());
+    wxLogMessage("WR_CERT_SAFE_CACHE ui_set enabled=%d",
+                 persistent->GetValue() ? 1 : 0);
+  }
 }
 
 void WeatherRouting::OnSettings(wxCommandEvent& event) {
@@ -6626,6 +6844,10 @@ bool WeatherRouting::TryScoutRouteForChartSafety(
   scout.chart_safety_missing_tile_first_lon_tile = 0;
   scout.chart_safety_missing_tile_first_min_lat = NAN;
   scout.chart_safety_missing_tile_first_min_lon = NAN;
+  scout.chart_safety_missing_tile_min_lat = NAN;
+  scout.chart_safety_missing_tile_max_lat = NAN;
+  scout.chart_safety_missing_tile_min_lon = NAN;
+  scout.chart_safety_missing_tile_max_lon = NAN;
 
   wxLogMessage(
       "WR_SCOUT_ROUTE start route=\"%s to %s\" departure=\"%s\" "
@@ -6790,6 +7012,10 @@ bool WeatherRouting::RetryRouteWithChartSafetyPropagation(
   configuration.chart_safety_missing_tile_first_lon_tile = 0;
   configuration.chart_safety_missing_tile_first_min_lat = NAN;
   configuration.chart_safety_missing_tile_first_min_lon = NAN;
+  configuration.chart_safety_missing_tile_min_lat = NAN;
+  configuration.chart_safety_missing_tile_max_lat = NAN;
+  configuration.chart_safety_missing_tile_min_lon = NAN;
+  configuration.chart_safety_missing_tile_max_lon = NAN;
   routemapoverlay->SetConfiguration(configuration);
   routemapoverlay->SetFailureReason(
       _("Retrying with chart-backed land checks during propagation"));
@@ -7198,6 +7424,10 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   configuration.chart_safety_missing_tile_first_lon_tile = 0;
   configuration.chart_safety_missing_tile_first_min_lat = NAN;
   configuration.chart_safety_missing_tile_first_min_lon = NAN;
+  configuration.chart_safety_missing_tile_min_lat = NAN;
+  configuration.chart_safety_missing_tile_max_lat = NAN;
+  configuration.chart_safety_missing_tile_min_lon = NAN;
+  configuration.chart_safety_missing_tile_max_lon = NAN;
   routemapoverlay->SetConfiguration(configuration);
 
   /* initialize crossing land routine from main thread as it is
@@ -7313,14 +7543,19 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
     wxLogMessage(
         "WR_GRID_TILE_RETRY_EXHAUSTED route=\"%s to %s\" retries=%d "
         "missing_rejections=%ld first_tile=(%d,%d) "
-        "first_tile_min=(%.6f,%.6f).",
+        "first_tile_min=(%.6f,%.6f) "
+        "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f].",
         configuration.Start, configuration.End,
         configuration.chart_safety_missing_tile_retry_count,
         configuration.chart_safety_missing_tile_rejections,
         configuration.chart_safety_missing_tile_first_lat_tile,
         configuration.chart_safety_missing_tile_first_lon_tile,
         configuration.chart_safety_missing_tile_first_min_lat,
-        configuration.chart_safety_missing_tile_first_min_lon);
+        configuration.chart_safety_missing_tile_first_min_lon,
+        configuration.chart_safety_missing_tile_min_lat,
+        configuration.chart_safety_missing_tile_max_lat,
+        configuration.chart_safety_missing_tile_min_lon,
+        configuration.chart_safety_missing_tile_max_lon);
     return false;
   }
 
@@ -7328,14 +7563,19 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
   wxLogMessage(
       "WR_GRID_TILE_RETRY_ROUTE route=\"%s to %s\" retry=%d/%d "
       "missing_rejections=%ld first_tile=(%d,%d) "
-      "first_tile_min=(%.6f,%.6f).",
+      "first_tile_min=(%.6f,%.6f) "
+      "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f].",
       configuration.Start, configuration.End, next_retry,
       kMaxChartSafetyMissingTileRetries,
       configuration.chart_safety_missing_tile_rejections,
       configuration.chart_safety_missing_tile_first_lat_tile,
       configuration.chart_safety_missing_tile_first_lon_tile,
       configuration.chart_safety_missing_tile_first_min_lat,
-      configuration.chart_safety_missing_tile_first_min_lon);
+      configuration.chart_safety_missing_tile_first_min_lon,
+      configuration.chart_safety_missing_tile_min_lat,
+      configuration.chart_safety_missing_tile_max_lat,
+      configuration.chart_safety_missing_tile_min_lon,
+      configuration.chart_safety_missing_tile_max_lon);
 
   PrewarmExperimentalChartSafetyMissingTileNeighborhood(
       configuration, _("route missing-tile retry"));
@@ -7346,6 +7586,10 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
   configuration.chart_safety_missing_tile_first_lon_tile = 0;
   configuration.chart_safety_missing_tile_first_min_lat = NAN;
   configuration.chart_safety_missing_tile_first_min_lon = NAN;
+  configuration.chart_safety_missing_tile_min_lat = NAN;
+  configuration.chart_safety_missing_tile_max_lat = NAN;
+  configuration.chart_safety_missing_tile_min_lon = NAN;
+  configuration.chart_safety_missing_tile_max_lon = NAN;
   routemapoverlay->SetConfiguration(configuration);
   routemapoverlay->Reset();
   Start(routemapoverlay);

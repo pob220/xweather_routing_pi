@@ -501,6 +501,7 @@ private:
   void OnExportRouteAsGPX(wxCommandEvent& event);
   /** Callback invoked when user clicks "Save All as Tracks" menu item. */
   void OnSaveAllAsTracks(wxCommandEvent& event);
+  void OnChartAwarenessSettings(wxCommandEvent& event);
   void OnSettings(wxCommandEvent& event);
   void OnStatistics(wxCommandEvent& event);
   void OnReport(wxCommandEvent& event);
@@ -749,6 +750,7 @@ private:
   bool m_bShowReport;
   bool m_bShowPlot;
   bool m_bShowFilter;
+  wxMenuItem* m_mChartAwarenessSettings;
 
   wxPoint m_downPos, m_startPos, m_startMouse;
   wxTimer m_tDownTimer;

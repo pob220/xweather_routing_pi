@@ -160,6 +160,10 @@ public:
   void SetColorScheme(PI_ColorScheme cs);
   static wxString StandardPath();
   void ShowMenuItems(bool show);
+  bool UsePersistentChartSafeCache() const {
+    return m_use_persistent_chart_safe_cache;
+  }
+  void SetUsePersistentChartSafeCache(bool enabled);
 
   wxWindow* GetParentWindow() { return m_parent_window; }
 
@@ -180,6 +184,7 @@ private:
   bool SaveConfig();
 
   bool b_in_boundary_reply;
+  bool m_use_persistent_chart_safe_cache;
 
   wxFileConfig* m_pconfig;
   wxWindow* m_parent_window;

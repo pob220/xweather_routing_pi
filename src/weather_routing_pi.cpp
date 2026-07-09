@@ -28,6 +28,7 @@
 #include <wx/timer.h>
 #include <wx/treectrl.h>
 #include <wx/fileconf.h>
+#include <cstring>
 
 #include "Utilities.h"
 #include "Boat.h"
@@ -113,6 +114,7 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
   // End of from Shipdriver
 
   b_in_boundary_reply = false;
+  m_use_persistent_chart_safe_cache = false;
   m_tCursorLatLon.Connect(
       wxEVT_TIMER, wxTimerEventHandler(weather_routing_pi::OnCursorLatLonTimer),
       NULL, this);
@@ -181,6 +183,7 @@ int weather_routing_pi::Init() {
 }
 
 bool weather_routing_pi::DeInit() {
+  PlugIn_SaveSegmentSafetyPersistentCache();
   m_tCursorLatLon.Stop();
   if (m_pWeather_Routing) m_pWeather_Routing->Close();
   WeatherRouting* wr = m_pWeather_Routing;
@@ -457,6 +460,7 @@ public:
     weather_routing_pi* plugin = m_plugin;
     delete this;
 
+    wxLogMessage("WR_HEADLESS_ROUTE_TEST timer_fire");
     if (!plugin->m_pWeather_Routing) plugin->NewWR();
     if (!plugin->m_pWeather_Routing) {
       wxLogMessage("WR_HEADLESS_ROUTE_TEST abort reason=weather_routing_unavailable");
@@ -478,6 +482,7 @@ void weather_routing_pi::MaybeStartHeadlessRouteTest() {
   // Weather Routing immediately can resolve waypoint GUIDs before the waypoint
   // manager is ready, so defer this test-only entry point until app startup has
   // settled.
+  wxLogMessage("WR_HEADLESS_ROUTE_TEST timer_scheduled mode=%s", enabled);
   HeadlessRouteTestStarter* starter = new HeadlessRouteTestStarter(this);
   starter->StartOnce(5000);
 }
@@ -599,6 +604,20 @@ bool weather_routing_pi::LoadConfig() {
   if (!pConf) return false;
 
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("UsePersistentCertifiedSafeAreaCache"),
+              &m_use_persistent_chart_safe_cache, false);
+  const char* clear_cache = getenv("WR_HEADLESS_CLEAR_CERT_SAFE_CACHE");
+  if (clear_cache && !strcmp(clear_cache, "1"))
+    PlugIn_ClearSegmentSafetyPersistentCache();
+  const char* cache_override = getenv("WR_HEADLESS_PERSISTENT_CERT_SAFE_CACHE");
+  if (cache_override) {
+    wxString value(cache_override);
+    value.MakeLower();
+    m_use_persistent_chart_safe_cache =
+        value == "1" || value == "true" || value == "yes";
+  }
+  PlugIn_SetSegmentSafetyPersistentCacheEnabled(
+      m_use_persistent_chart_safe_cache ? 1 : 0);
   return true;
 }
 
@@ -608,7 +627,17 @@ bool weather_routing_pi::SaveConfig() {
   if (!pConf) return false;
 
   pConf->SetPath(_T ( "/PlugIns/WeatherRouting" ));
+  pConf->Write(_T("UsePersistentCertifiedSafeAreaCache"),
+               m_use_persistent_chart_safe_cache);
+  PlugIn_SetSegmentSafetyPersistentCacheEnabled(
+      m_use_persistent_chart_safe_cache ? 1 : 0);
   return true;
+}
+
+void weather_routing_pi::SetUsePersistentChartSafeCache(bool enabled) {
+  m_use_persistent_chart_safe_cache = enabled;
+  PlugIn_SetSegmentSafetyPersistentCacheEnabled(enabled ? 1 : 0);
+  SaveConfig();
 }
 
 void weather_routing_pi::SetColorScheme(PI_ColorScheme cs) {
