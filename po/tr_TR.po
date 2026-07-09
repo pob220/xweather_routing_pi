@@ -961,7 +961,7 @@ msgid "Load"
 msgstr "Yükle"
 
 #: src/WeatherRouting.cpp:1844
-msgid "File contains duplicate position name, discaring\n"
+msgid "File contains duplicate position name, discarding\n"
 msgstr "Dosya yinelenen konum adı içeriyor, ayırıyor\n"
 
 #: src/WeatherRouting.cpp:1946

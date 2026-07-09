@@ -5865,7 +5865,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
                 warnonce = false;
                 wxMessageDialog mdlg(
                     this,
-                    _("File contains duplicate position name, discaring\n"),
+                    _("File contains duplicate position name, discarding\n"),
                     _("Weather Routing"), wxOK | wxICON_WARNING);
                 mdlg.ShowModal();
               }

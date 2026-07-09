@@ -961,8 +961,8 @@ msgid "Load"
 msgstr "Memuat"
 
 #: src/WeatherRouting.cpp:1844
-msgid "File contains duplicate position name, discaring\n"
-msgstr "File berisi nama posisi duplikat, discaring\n"
+msgid "File contains duplicate position name, discarding\n"
+msgstr "File berisi nama posisi duplikat, discarding\n"
 
 #: src/WeatherRouting.cpp:1946
 msgid "Unrecognized xml node"

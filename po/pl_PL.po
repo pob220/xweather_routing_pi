@@ -961,7 +961,7 @@ msgid "Load"
 msgstr "Ładuj"
 
 #: src/WeatherRouting.cpp:1844
-msgid "File contains duplicate position name, discaring\n"
+msgid "File contains duplicate position name, discarding\n"
 msgstr "Plik zawiera zduplikowane nazwy pozycji, porzucenie\n"
 
 #: src/WeatherRouting.cpp:1946

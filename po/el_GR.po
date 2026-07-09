@@ -964,7 +964,7 @@ msgid "Load"
 msgstr "Φόρτωση"
 
 #: src/WeatherRouting.cpp:1844
-msgid "File contains duplicate position name, discaring\n"
+msgid "File contains duplicate position name, discarding\n"
 msgstr "Το αρχείο περιέχει διπλό όνομα θέσης\n"
 
 #: src/WeatherRouting.cpp:1946
