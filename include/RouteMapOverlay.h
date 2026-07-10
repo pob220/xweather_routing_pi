@@ -261,6 +261,14 @@ public:
   void UpdateDestination();
 
   /**
+   * Builds a bounded reverse reachability diagnostic when forward propagation
+   * collapses before reaching the destination.  This does not change route
+   * completion state; it only records/logs whether recent forward frontiers
+   * appear connectable to a destination-side reachable funnel.
+   */
+  bool AnalyzeReverseReachabilityForFrontierCollapse(const wxString& trigger);
+
+  /**
    * Validates the reconstructed destination route against land constraints.
    *
    * This is a final safety net after propagation/direct-to-destination checks.

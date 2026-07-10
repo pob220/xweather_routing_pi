@@ -2315,6 +2315,237 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   return false;
 }
 
+bool RouteMapOverlay::AnalyzeReverseReachabilityForFrontierCollapse(
+    const wxString& trigger) {
+  wxStopWatch timer;
+  RouteMapConfiguration configuration = GetConfiguration();
+  if (!configuration.UseReverseReachabilityRecovery) return false;
+  if (ReachedDestination()) return false;
+
+  configuration.ReverseRecoveryUsed = false;
+  configuration.ReverseRecoveryStatus = _("frontier collapse diagnostic");
+  configuration.ReverseFailureReason.Clear();
+  configuration.ReverseLayersBuilt = 0;
+  configuration.ReverseNodesGenerated = 0;
+  configuration.ReverseNodesFeasible = 0;
+  configuration.ReverseConnectionFound = false;
+  configuration.ReverseConnectionTime = wxDateTime();
+  configuration.ReverseFinalValidationPass = false;
+  {
+    Lock();
+    m_reverseReachabilityDebugPoints.clear();
+    Unlock();
+  }
+
+  if (origin.empty()) {
+    configuration.ReverseRecoveryStatus = _("frontier diagnostic failed");
+    configuration.ReverseFailureReason = _("no forward isochrones available");
+    SetConfigurationPreserveResult(configuration);
+    wxLogMessage(
+        "WR_REVERSE_FRONTIER_COLLAPSE_RESULT route=\"%s -> %s\" "
+        "trigger=\"%s\" status=failed reason=\"%s\" layers=0 "
+        "nodes_generated=0 nodes_feasible=0 elapsed_ms=%ld",
+        configuration.Start, configuration.End, trigger,
+        configuration.ReverseFailureReason, timer.Time());
+    return false;
+  }
+
+  int requested_layers = configuration.ReverseReachabilitySearchBackIsochrones;
+  if (requested_layers <= 0) requested_layers = 6;
+  const int max_layers = wxMin(12, requested_layers);
+  const int max_positions_per_isochron = 360;
+  const int max_nodes_per_layer = 96;
+  double horizon_hours = configuration.ReverseReachabilityHorizonHours;
+
+  wxDateTime destination_time = configuration.time;
+  if (!destination_time.IsValid() && !origin.empty())
+    destination_time = origin.back()->time;
+  ReverseEtaEstimate eta_estimate =
+      EstimateReverseDestinationTime(origin, configuration, max_layers);
+  if (eta_estimate.valid && eta_estimate.destination_time.IsValid() &&
+      (!destination_time.IsValid() ||
+       eta_estimate.destination_time > destination_time)) {
+    destination_time = eta_estimate.destination_time;
+  }
+  if (!destination_time.IsValid()) {
+    configuration.ReverseRecoveryStatus = _("frontier diagnostic failed");
+    configuration.ReverseFailureReason = _("no valid destination ETA window");
+    SetConfigurationPreserveResult(configuration);
+    wxLogMessage(
+        "WR_REVERSE_FRONTIER_COLLAPSE_RESULT route=\"%s -> %s\" "
+        "trigger=\"%s\" status=failed reason=\"%s\" layers=0 "
+        "nodes_generated=0 nodes_feasible=0 elapsed_ms=%ld",
+        configuration.Start, configuration.End, trigger,
+        configuration.ReverseFailureReason, timer.Time());
+    return false;
+  }
+
+  wxString failure_reason = GetFailureReason();
+  wxLogMessage(
+      "WR_REVERSE_FRONTIER_COLLAPSE_START route=\"%s -> %s\" "
+      "trigger=\"%s\" failure_reason=\"%s\" destination=(%.8f,%.8f) "
+      "destination_time=\"%s\" eta_estimate=%d closest_frontier=(%.8f,%.8f) "
+      "closest_distance_nm=%.3f estimated_sog=%.3f layers_requested=%d "
+      "max_layers=%d horizon_hours=%.2f origin_size=%lu",
+      configuration.Start, configuration.End, trigger, failure_reason,
+      configuration.EndLat, configuration.EndLon,
+      destination_time.FormatISOCombined(), eta_estimate.valid ? 1 : 0,
+      eta_estimate.valid ? eta_estimate.source_lat : NAN,
+      eta_estimate.valid ? eta_estimate.source_lon : NAN,
+      eta_estimate.valid ? eta_estimate.distance_to_destination_nm : NAN,
+      eta_estimate.valid ? eta_estimate.estimated_sog : NAN, requested_layers,
+      max_layers, horizon_hours, static_cast<unsigned long>(origin.size()));
+
+  std::vector<ReverseReachNode> nodes;
+  std::vector<ReverseReachabilityDebugPoint> debug_points;
+  nodes.reserve(1 + max_layers * max_nodes_per_layer);
+  ReverseReachNode destination;
+  destination.lat = configuration.EndLat;
+  destination.lon = configuration.EndLon;
+  destination.time = destination_time;
+  nodes.push_back(destination);
+  debug_points.push_back(ReverseReachabilityDebugPoint(
+      destination.lat, destination.lon, 0, true));
+
+  std::vector<int> later_layer;
+  later_layer.push_back(0);
+  int best_connection = -1;
+  long safety_rejections = 0;
+  long weather_rejections = 0;
+
+  int layer = 1;
+  for (IsoChronList::reverse_iterator rit = origin.rbegin();
+       rit != origin.rend() && layer <= max_layers; ++rit, ++layer) {
+    IsoChron* isochron = *rit;
+    if (!isochron || !isochron->time.IsValid()) continue;
+    if (isochron->time >= destination_time) continue;
+    if (horizon_hours > 0.0 &&
+        (destination_time - isochron->time).GetSeconds().ToDouble() >
+            horizon_hours * 3600.0)
+      break;
+
+    std::vector<Position*> positions;
+    CollectIsoChronPositions(isochron, positions);
+    std::sort(positions.begin(), positions.end(),
+              [&](Position* a, Position* b) {
+                return DistGreatCircle(a->lat, a->lon, configuration.EndLat,
+                                       configuration.EndLon) <
+                       DistGreatCircle(b->lat, b->lon, configuration.EndLat,
+                                       configuration.EndLon);
+              });
+    size_t original_position_count = positions.size();
+    if (static_cast<int>(positions.size()) > max_positions_per_isochron)
+      positions.resize(max_positions_per_isochron);
+
+    std::vector<int> this_layer;
+    long generated_before = configuration.ReverseNodesGenerated;
+    long feasible_before = configuration.ReverseNodesFeasible;
+    long safety_before = safety_rejections;
+    long weather_before = weather_rejections;
+
+    for (Position* position : positions) {
+      if (static_cast<int>(this_layer.size()) >= max_nodes_per_layer) break;
+      for (int successor : later_layer) {
+        configuration.ReverseNodesGenerated++;
+        ReverseSegmentFeasibility feasibility = CanSailSegment(
+            position, nodes[successor].lat, nodes[successor].lon, isochron,
+            nodes[successor].time, configuration);
+        if (!feasibility.feasible) {
+          if (feasibility.failure_reason == _("chart safety"))
+            ++safety_rejections;
+          else
+            ++weather_rejections;
+          continue;
+        }
+
+        ReverseReachNode node;
+        node.lat = position->lat;
+        node.lon = position->lon;
+        node.time = isochron->time;
+        node.successor = successor;
+        node.heading_to_successor = feasibility.heading;
+        node.data_mask = feasibility.data_mask;
+        node.source_position = position;
+        nodes.push_back(node);
+        int node_index = static_cast<int>(nodes.size()) - 1;
+        this_layer.push_back(node_index);
+        debug_points.push_back(ReverseReachabilityDebugPoint(
+            node.lat, node.lon, layer, false));
+        configuration.ReverseNodesFeasible++;
+        break;
+      }
+    }
+
+    wxLogMessage(
+        "WR_REVERSE_FRONTIER_COLLAPSE_LAYER route=\"%s -> %s\" "
+        "layer=%d time=\"%s\" positions=%lu positions_checked=%lu "
+        "successors=%lu generated=%ld feasible=%ld retained=%lu "
+        "safety_rejections=%ld weather_rejections=%ld",
+        configuration.Start, configuration.End, layer,
+        isochron->time.FormatISOCombined(),
+        static_cast<unsigned long>(original_position_count),
+        static_cast<unsigned long>(positions.size()),
+        static_cast<unsigned long>(later_layer.size()),
+        configuration.ReverseNodesGenerated - generated_before,
+        configuration.ReverseNodesFeasible - feasible_before,
+        static_cast<unsigned long>(this_layer.size()),
+        safety_rejections - safety_before, weather_rejections - weather_before);
+
+    if (this_layer.empty()) break;
+    configuration.ReverseLayersBuilt++;
+    best_connection = this_layer.front();
+    later_layer.swap(this_layer);
+  }
+
+  if (best_connection >= 0) {
+    configuration.ReverseConnectionFound = true;
+    configuration.ReverseConnectionTime = nodes[best_connection].time;
+    configuration.ReverseRecoveryStatus =
+        _("frontier diagnostic found destination-reachable corridor");
+    for (int node = best_connection; node >= 0; node = nodes[node].successor) {
+      debug_points.push_back(ReverseReachabilityDebugPoint(
+          nodes[node].lat, nodes[node].lon, 0, true));
+      if (nodes[node].successor < 0) break;
+    }
+    wxLogMessage(
+        "WR_REVERSE_FRONTIER_COLLAPSE_RESULT route=\"%s -> %s\" "
+        "trigger=\"%s\" status=connection_found connection=(%.8f,%.8f) "
+        "connection_time=\"%s\" layers=%ld nodes_generated=%ld "
+        "nodes_feasible=%ld safety_rejections=%ld weather_rejections=%ld "
+        "elapsed_ms=%ld note=\"diagnostic-only, route state unchanged\"",
+        configuration.Start, configuration.End, trigger,
+        nodes[best_connection].lat, nodes[best_connection].lon,
+        nodes[best_connection].time.FormatISOCombined(),
+        configuration.ReverseLayersBuilt, configuration.ReverseNodesGenerated,
+        configuration.ReverseNodesFeasible, safety_rejections,
+        weather_rejections, timer.Time());
+  } else {
+    configuration.ReverseConnectionFound = false;
+    configuration.ReverseRecoveryStatus = _("frontier diagnostic failed");
+    configuration.ReverseFailureReason =
+        configuration.ReverseNodesGenerated > 0
+            ? _("No destination-reachable reverse corridor found")
+            : _("No reverse reachability candidates generated");
+    wxLogMessage(
+        "WR_REVERSE_FRONTIER_COLLAPSE_RESULT route=\"%s -> %s\" "
+        "trigger=\"%s\" status=no_connection reason=\"%s\" layers=%ld "
+        "nodes_generated=%ld nodes_feasible=%ld safety_rejections=%ld "
+        "weather_rejections=%ld elapsed_ms=%ld",
+        configuration.Start, configuration.End, trigger,
+        configuration.ReverseFailureReason, configuration.ReverseLayersBuilt,
+        configuration.ReverseNodesGenerated, configuration.ReverseNodesFeasible,
+        safety_rejections, weather_rejections, timer.Time());
+  }
+
+  {
+    Lock();
+    m_reverseReachabilityDebugPoints.swap(debug_points);
+    Unlock();
+  }
+  SetConfigurationPreserveResult(configuration);
+  return configuration.ReverseConnectionFound;
+}
+
 void RouteMapOverlay::UpdateDestination() {
   RouteMapConfiguration configuration = GetConfiguration();
   const bool defer_chart_validation_to_main =

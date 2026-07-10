@@ -5701,6 +5701,23 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
         if (retryQueued) continue;
       }
 
+      RouteMapConfiguration reverseDiagnosticConfiguration =
+          routemapoverlay->GetConfiguration();
+      if (reverseDiagnosticConfiguration.UseReverseReachabilityRecovery &&
+          routemapoverlay->Finished() && !routemapoverlay->ReachedDestination()) {
+        wxStopWatch reverseDiagnosticTimer;
+        bool connectionFound =
+            routemapoverlay->AnalyzeReverseReachabilityForFrontierCollapse(
+                _("route failed before reaching destination"));
+        finalValidationMs += reverseDiagnosticTimer.Time();
+        wxLogMessage(
+            "WR_REVERSE_FRONTIER_COLLAPSE_UI route=\"%s -> %s\" "
+            "connection_found=%d elapsed_ms=%ld",
+            reverseDiagnosticConfiguration.Start,
+            reverseDiagnosticConfiguration.End, connectionFound ? 1 : 0,
+            reverseDiagnosticTimer.Time());
+      }
+
       m_panel->m_gProgress->SetValue(m_RoutesToRun - m_WaitingRouteMaps.size() -
                                      m_RunningRouteMaps.size());
       sectionTimer.Start();
