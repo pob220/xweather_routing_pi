@@ -1793,10 +1793,13 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
       clear_destination_plotdata = true;
       wxLogMessage(
           "FINAL_ROUTE_SAFETY pass=0 route=\"%s -> %s\" "
+          "validation_mode=fine_authoritative "
+          "persistent_cache_used_in_final_validation=0 "
+          "final_validation_forced_fine_masks=1 "
           "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
           "reason=\"%s\"",
-          configuration.Start, configuration.End, checked_segments + 1,
-          parent->lat, parent->lon, child->lat, child->lon,
+          configuration.Start, configuration.End,
+          checked_segments + 1, parent->lat, parent->lon, child->lat, child->lon,
           failure_reason);
       wxLogMessage(
           "WR_UI_TIMING ValidateDestinationRouteLand total_ms=%ld "
@@ -1808,8 +1811,12 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
     ++checked_segments;
   }
 
-  wxLogMessage("FINAL_ROUTE_SAFETY pass=1 route=\"%s -> %s\" segments=%d",
-               configuration.Start, configuration.End, checked_segments);
+  wxLogMessage(
+      "FINAL_ROUTE_SAFETY pass=1 route=\"%s -> %s\" segments=%d "
+      "validation_mode=fine_authoritative "
+      "persistent_cache_used_in_final_validation=0 "
+      "final_validation_forced_fine_masks=1",
+      configuration.Start, configuration.End, checked_segments);
   wxLogMessage(
       "WR_UI_TIMING ValidateDestinationRouteLand total_ms=%ld "
       "route=\"%s -> %s\" segments=%d ui_thread=%d pass=1",
@@ -2090,6 +2097,38 @@ RouteMapOverlay::ReverseSegmentFeasibility RouteMapOverlay::CanSailSegment(
   int data_mask = start->data_mask;
   double dt = probe.PropagateToPoint(end_lat, end_lon, configuration, heading,
                                      data_mask, true);
+  bool endpoint_bridge =
+      DistGreatCircle(end_lat, end_lon, configuration.EndLat,
+                      configuration.EndLon) < 0.01;
+  if ((std::isnan(dt) || dt > available_seconds) &&
+      configuration.land_crossing && endpoint_bridge &&
+      configuration.SafetyMarginLand > 0.0) {
+    RouteMapConfiguration relaxed_configuration = configuration;
+    relaxed_configuration.SafetyMarginLand = 0.0;
+    relaxed_configuration.land_crossing = false;
+    Position relaxed_probe(start->lat, start->lon, nullptr,
+                           start->parent_heading, start->parent_bearing,
+                           start->polar, start->tacks, start->jibes,
+                           start->sail_plan_changes, start->data_mask,
+                           start->grib_is_data_deficient);
+    double relaxed_heading = NAN;
+    int relaxed_data_mask = start->data_mask;
+    double relaxed_dt =
+        relaxed_probe.PropagateToPoint(end_lat, end_lon, relaxed_configuration,
+                                       relaxed_heading, relaxed_data_mask, true);
+    if (!std::isnan(relaxed_dt) && relaxed_dt <= available_seconds) {
+      dt = relaxed_dt;
+      heading = relaxed_heading;
+      data_mask = relaxed_data_mask;
+      wxLogMessage(
+          "WR_REVERSE_REACHABILITY_ENDPOINT_MARGIN_RELAXED route=\"%s -> %s\" "
+          "segment=(%.8f,%.8f)->(%.8f,%.8f) margin_nm=%.3f dt=%.1f "
+          "available=%.1f",
+          configuration.Start, configuration.End, start->lat, start->lon,
+          end_lat, end_lon, configuration.SafetyMarginLand, dt,
+          available_seconds);
+    }
+  }
   if (std::isnan(dt) || dt > available_seconds) {
     result.failure_reason = configuration.land_crossing
                                 ? _("chart safety")
@@ -2171,6 +2210,15 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
                                  : wxString("invalid"),
       eta_estimate.valid ? 1 : 0);
 
+  const wxDateTime initial_destination_time = destination_time;
+  int destination_time_attempt = 0;
+  const int destination_time_slack_minutes[] = {15, 30, 60};
+
+retry_reverse_destination_time:
+  configuration.ReverseLayersBuilt = 0;
+  configuration.ReverseNodesGenerated = 0;
+  configuration.ReverseNodesFeasible = 0;
+
   std::vector<ReverseReachNode> nodes;
   std::vector<ReverseReachabilityDebugPoint> debug_points;
   nodes.reserve(1 + max_layers * max_nodes_per_layer);
@@ -2184,7 +2232,9 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
 
   std::vector<int> later_layer;
   later_layer.push_back(0);
-  int best_connection = -1;
+  std::vector<int> connection_candidates;
+  long safety_rejections = 0;
+  long weather_rejections = 0;
 
   IsoChronList::reverse_iterator rit = origin.rbegin();
   if (rit != origin.rend() &&
@@ -2214,6 +2264,8 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
     std::vector<int> this_layer;
     long generated_before = configuration.ReverseNodesGenerated;
     long feasible_before = configuration.ReverseNodesFeasible;
+    long safety_before = safety_rejections;
+    long weather_before = weather_rejections;
 
     for (Position* position : positions) {
       if (static_cast<int>(this_layer.size()) >= max_nodes_per_layer) break;
@@ -2222,7 +2274,13 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
         ReverseSegmentFeasibility feasibility = CanSailSegment(
             position, nodes[successor].lat, nodes[successor].lon, isochron,
             nodes[successor].time, configuration);
-        if (!feasibility.feasible) continue;
+        if (!feasibility.feasible) {
+          if (feasibility.failure_reason == _("chart safety"))
+            ++safety_rejections;
+          else
+            ++weather_rejections;
+          continue;
+        }
 
         ReverseReachNode node;
         node.lat = position->lat;
@@ -2235,6 +2293,7 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
         nodes.push_back(node);
         int node_index = static_cast<int>(nodes.size()) - 1;
         this_layer.push_back(node_index);
+        connection_candidates.push_back(node_index);
         debug_points.push_back(ReverseReachabilityDebugPoint(
             node.lat, node.lon, layer, false));
         configuration.ReverseNodesFeasible++;
@@ -2255,20 +2314,37 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
     }
 
     configuration.ReverseLayersBuilt++;
-    best_connection = this_layer.front();
     later_layer.swap(this_layer);
     wxLogMessage(
         "WR_REVERSE_REACHABILITY_LAYER route=\"%s -> %s\" layer=%d "
-        "time=\"%s\" positions=%lu generated=%ld feasible=%ld retained=%lu",
+        "time=\"%s\" positions=%lu generated=%ld feasible=%ld retained=%lu "
+        "safety_rejections=%ld weather_rejections=%ld",
         configuration.Start, configuration.End, layer,
         isochron->time.FormatISOCombined(),
         static_cast<unsigned long>(positions.size()),
         configuration.ReverseNodesGenerated - generated_before,
         configuration.ReverseNodesFeasible - feasible_before,
-        static_cast<unsigned long>(later_layer.size()));
+        static_cast<unsigned long>(later_layer.size()),
+        safety_rejections - safety_before, weather_rejections - weather_before);
   }
 
-  if (best_connection < 0) {
+  if (connection_candidates.empty()) {
+    if (destination_time_attempt <
+        static_cast<int>(sizeof(destination_time_slack_minutes) /
+                         sizeof(destination_time_slack_minutes[0]))) {
+      destination_time =
+          initial_destination_time +
+          wxTimeSpan::Minutes(
+              destination_time_slack_minutes[destination_time_attempt]);
+      ++destination_time_attempt;
+      wxLogMessage(
+          "WR_REVERSE_REACHABILITY_RETRY_TIME route=\"%s -> %s\" "
+          "attempt=%d destination_time=\"%s\" slack_minutes=%d",
+          configuration.Start, configuration.End, destination_time_attempt,
+          destination_time.FormatISOCombined(),
+          destination_time_slack_minutes[destination_time_attempt - 1]);
+      goto retry_reverse_destination_time;
+    }
     {
       Lock();
       m_reverseReachabilityDebugPoints.swap(debug_points);
@@ -2282,82 +2358,144 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
     wxLogMessage(
         "WR_REVERSE_REACHABILITY_RESULT route=\"%s -> %s\" status=failed "
         "reason=\"%s\" layers=%ld nodes_generated=%ld nodes_feasible=%ld "
-        "elapsed_ms=%ld",
+        "safety_rejections=%ld weather_rejections=%ld elapsed_ms=%ld",
         configuration.Start, configuration.End,
         configuration.ReverseFailureReason, configuration.ReverseLayersBuilt,
         configuration.ReverseNodesGenerated, configuration.ReverseNodesFeasible,
-        timer.Time());
+        safety_rejections, weather_rejections, timer.Time());
     return false;
   }
 
-  std::vector<int> chain;
-  for (int node = best_connection; node >= 0; node = nodes[node].successor) {
-    chain.push_back(node);
-    if (nodes[node].successor < 0) break;
+  std::sort(connection_candidates.begin(), connection_candidates.end(),
+            [&](int a, int b) {
+              const ReverseReachNode& na = nodes[a];
+              const ReverseReachNode& nb = nodes[b];
+              if (na.time.IsValid() && nb.time.IsValid() && na.time != nb.time)
+                return na.time > nb.time;
+              double da = DistGreatCircle(na.lat, na.lon, configuration.EndLat,
+                                          configuration.EndLon);
+              double db = DistGreatCircle(nb.lat, nb.lon, configuration.EndLat,
+                                          configuration.EndLon);
+              return da < db;
+            });
+
+  connection_candidates.erase(
+      std::unique(connection_candidates.begin(), connection_candidates.end()),
+      connection_candidates.end());
+
+  int bridge_candidates_tested = 0;
+  int bridge_candidates_invalid = 0;
+  int bridge_candidates_rejected = 0;
+  int accepted_connection = -1;
+  std::vector<int> accepted_chain;
+  wxString last_validation_failure;
+
+  for (int candidate_node : connection_candidates) {
+    std::vector<int> chain;
+    for (int node = candidate_node; node >= 0; node = nodes[node].successor) {
+      chain.push_back(node);
+      if (nodes[node].successor < 0) break;
+    }
+    if (chain.size() < 2 || !nodes[candidate_node].source_position) {
+      ++bridge_candidates_invalid;
+      continue;
+    }
+
+    delete destination_position;
+    destination_position = nullptr;
+    Position* parent = nodes[candidate_node].source_position;
+    for (size_t i = 0; i + 1 < chain.size(); ++i) {
+      const ReverseReachNode& edge = nodes[chain[i]];
+      const ReverseReachNode& target = nodes[chain[i + 1]];
+      Position* next = new Position(
+          target.lat, target.lon, parent, edge.heading_to_successor, NAN,
+          parent ? parent->polar : -1, parent ? parent->tacks : 0,
+          parent ? parent->jibes : 0, parent ? parent->sail_plan_changes : 0,
+          edge.data_mask, parent ? parent->grib_is_data_deficient : false);
+      parent = next;
+    }
+
+    RouteMapConfiguration validation_configuration = configuration;
+    destination_position = parent;
+    last_destination_position = destination_position;
+    m_EndTime = nodes[0].time;
+    clear_destination_plotdata = true;
+    SetFinished(true);
+    validation_configuration.ReverseConnectionFound = true;
+    validation_configuration.ReverseConnectionTime = nodes[candidate_node].time;
+    ++bridge_candidates_tested;
+
+    wxLogMessage(
+        "WR_REVERSE_REACHABILITY_BRIDGE route=\"%s -> %s\" "
+        "candidate=%d/%lu connection=(%.8f,%.8f) connection_time=\"%s\" "
+        "chain_nodes=%lu",
+        configuration.Start, configuration.End, bridge_candidates_tested,
+        static_cast<unsigned long>(connection_candidates.size()),
+        nodes[candidate_node].lat, nodes[candidate_node].lon,
+        nodes[candidate_node].time.FormatISOCombined(),
+        static_cast<unsigned long>(chain.size()));
+
+    if (ValidateDestinationRouteLand(validation_configuration) &&
+        ValidatePlottedDestinationRouteLand(validation_configuration)) {
+      configuration = validation_configuration;
+      accepted_connection = candidate_node;
+      accepted_chain = chain;
+      break;
+    }
+
+    last_validation_failure = GetFailureReason();
+    ++bridge_candidates_rejected;
+    delete destination_position;
+    destination_position = nullptr;
+    last_destination_position =
+        ClosestPosition(configuration.EndLat, configuration.EndLon);
+    m_EndTime = wxDateTime();
+    SetFinished(false);
   }
-  for (int node : chain) {
-    if (node >= 0 && node < static_cast<int>(nodes.size()))
-      debug_points.push_back(ReverseReachabilityDebugPoint(
-          nodes[node].lat, nodes[node].lon, 0, true));
+
+  if (accepted_connection >= 0) {
+    for (int node : accepted_chain) {
+      if (node >= 0 && node < static_cast<int>(nodes.size()))
+        debug_points.push_back(ReverseReachabilityDebugPoint(
+            nodes[node].lat, nodes[node].lon, 0, true));
+    }
+    {
+      Lock();
+      m_reverseReachabilityDebugPoints.swap(debug_points);
+      Unlock();
+    }
+    configuration.ReverseRecoveryStatus = _("complete");
+    configuration.ReverseFinalValidationPass = true;
+    configuration.ReverseConnectionFound = true;
+    configuration.ReverseConnectionTime = nodes[accepted_connection].time;
+    wxLogMessage(
+        "WR_REVERSE_REACHABILITY_RESULT route=\"%s -> %s\" status=complete "
+        "layers=%ld nodes_generated=%ld nodes_feasible=%ld "
+        "bridge_candidates=%lu tested=%d rejected=%d invalid=%d "
+        "accepted_connection=(%.8f,%.8f) accepted_connection_time=\"%s\" "
+        "final_validation=pass safety_rejections=%ld "
+        "weather_rejections=%ld elapsed_ms=%ld",
+        configuration.Start, configuration.End,
+        configuration.ReverseLayersBuilt, configuration.ReverseNodesGenerated,
+        configuration.ReverseNodesFeasible,
+        static_cast<unsigned long>(connection_candidates.size()),
+        bridge_candidates_tested, bridge_candidates_rejected,
+        bridge_candidates_invalid, nodes[accepted_connection].lat,
+        nodes[accepted_connection].lon,
+        nodes[accepted_connection].time.FormatISOCombined(), safety_rejections,
+        weather_rejections, timer.Time());
+    return true;
   }
+
   {
     Lock();
     m_reverseReachabilityDebugPoints.swap(debug_points);
     Unlock();
   }
-  if (chain.size() < 2 || !nodes[best_connection].source_position) {
-    configuration.ReverseRecoveryStatus = _("failed");
-    configuration.ReverseFailureReason = _("reverse chain reconstruction failed");
-    return false;
-  }
-
-  delete destination_position;
-  destination_position = nullptr;
-  Position* parent = nodes[best_connection].source_position;
-  for (size_t i = 0; i + 1 < chain.size(); ++i) {
-    const ReverseReachNode& edge = nodes[chain[i]];
-    const ReverseReachNode& target = nodes[chain[i + 1]];
-    Position* next = new Position(
-        target.lat, target.lon, parent, edge.heading_to_successor, NAN,
-        parent ? parent->polar : -1, parent ? parent->tacks : 0,
-        parent ? parent->jibes : 0, parent ? parent->sail_plan_changes : 0,
-        edge.data_mask, parent ? parent->grib_is_data_deficient : false);
-    parent = next;
-  }
-
-  destination_position = parent;
-  last_destination_position = destination_position;
-  m_EndTime = nodes[0].time;
-  clear_destination_plotdata = true;
-  SetFinished(true);
-  configuration.ReverseConnectionFound = true;
-  configuration.ReverseConnectionTime = nodes[best_connection].time;
-
-  wxLogMessage(
-      "WR_REVERSE_REACHABILITY_CONNECT route=\"%s -> %s\" "
-      "connection=(%.8f,%.8f) connection_time=\"%s\" chain_nodes=%lu",
-      configuration.Start, configuration.End, nodes[best_connection].lat,
-      nodes[best_connection].lon,
-      nodes[best_connection].time.FormatISOCombined(),
-      static_cast<unsigned long>(chain.size()));
-
-  if (ValidateDestinationRouteLand(configuration) &&
-      ValidatePlottedDestinationRouteLand(configuration)) {
-    configuration.ReverseRecoveryStatus = _("complete");
-    configuration.ReverseFinalValidationPass = true;
-    wxLogMessage(
-        "WR_REVERSE_REACHABILITY_RESULT route=\"%s -> %s\" status=complete "
-        "layers=%ld nodes_generated=%ld nodes_feasible=%ld "
-        "final_validation=pass elapsed_ms=%ld",
-        configuration.Start, configuration.End,
-        configuration.ReverseLayersBuilt, configuration.ReverseNodesGenerated,
-        configuration.ReverseNodesFeasible, timer.Time());
-    return true;
-  }
-
   configuration.ReverseRecoveryStatus = _("failed");
-  configuration.ReverseFailureReason =
-      _("Reverse recovery candidate failed final safety validation");
+  configuration.ReverseFailureReason = last_validation_failure.IsEmpty()
+                                           ? _("No chart-safe reverse bridge found")
+                                           : last_validation_failure;
   configuration.ReverseFinalValidationPass = false;
   delete destination_position;
   destination_position = nullptr;
@@ -2368,10 +2506,15 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   wxLogMessage(
       "WR_REVERSE_REACHABILITY_RESULT route=\"%s -> %s\" status=failed "
       "reason=\"%s\" layers=%ld nodes_generated=%ld nodes_feasible=%ld "
-      "final_validation=fail elapsed_ms=%ld",
+      "bridge_candidates=%lu tested=%d rejected=%d invalid=%d "
+      "safety_rejections=%ld weather_rejections=%ld final_validation=fail "
+      "elapsed_ms=%ld",
       configuration.Start, configuration.End,
       configuration.ReverseFailureReason, configuration.ReverseLayersBuilt,
       configuration.ReverseNodesGenerated, configuration.ReverseNodesFeasible,
+      static_cast<unsigned long>(connection_candidates.size()),
+      bridge_candidates_tested, bridge_candidates_rejected,
+      bridge_candidates_invalid, safety_rejections, weather_rejections,
       timer.Time());
   return false;
 }

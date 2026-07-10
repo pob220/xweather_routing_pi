@@ -60,6 +60,8 @@ static const int UI_TIMING_COMPLETED_ROUTES_PER_TICK = 4;
 static const long UI_TIMING_LOG_THRESHOLD_MS = 100;
 static bool s_loggedDetectLandGshhsWarning = false;
 
+static double LongitudeDegreesForNm(double nm, double lat);
+
 static wxString EnvString(const char* name) {
   const char* value = getenv(name);
   return value ? wxString::FromUTF8(value) : wxString();
@@ -145,6 +147,70 @@ static double ReadExperimentalChartSafetyPrewarmMarginNm() {
   return wxMax(0.0, wxMin(60.0, margin_nm));
 }
 
+static double ReadExperimentalChartSafetyDetourPrewarmFraction() {
+  double fraction = 0.25;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("ExperimentalChartSafetyDetourPrewarmFraction"), &fraction,
+              0.25);
+  if (!std::isfinite(fraction)) fraction = 0.25;
+  return wxMax(0.0, wxMin(0.75, fraction));
+}
+
+static double ReadExperimentalChartSafetyDetourPrewarmMaxNm() {
+  double max_nm = 45.0;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("ExperimentalChartSafetyDetourPrewarmMaxNm"), &max_nm, 45.0);
+  if (!std::isfinite(max_nm)) max_nm = 45.0;
+  return wxMax(0.0, wxMin(120.0, max_nm));
+}
+
+static double ReadExperimentalChartSafetyDetourPrewarmMinLegNm() {
+  double min_leg_nm = 40.0;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("ExperimentalChartSafetyDetourPrewarmMinLegNm"), &min_leg_nm,
+              40.0);
+  if (!std::isfinite(min_leg_nm)) min_leg_nm = 40.0;
+  return wxMax(0.0, wxMin(240.0, min_leg_nm));
+}
+
+static double ChartSafetyAdaptivePrewarmAllowanceNm(
+    const RouteMapConfiguration& configuration) {
+  double leg_distance_nm = DistGreatCircle_Plugin(
+      configuration.StartLat, configuration.StartLon, configuration.EndLat,
+      configuration.EndLon);
+  if (!std::isfinite(leg_distance_nm) || leg_distance_nm <= 0.0) return 0.0;
+
+  double fraction = ReadExperimentalChartSafetyDetourPrewarmFraction();
+  double max_nm = ReadExperimentalChartSafetyDetourPrewarmMaxNm();
+  double min_leg_nm = ReadExperimentalChartSafetyDetourPrewarmMinLegNm();
+  double adaptive_distance_nm = wxMax(0.0, leg_distance_nm - min_leg_nm);
+  double allowance_nm = wxMin(max_nm, adaptive_distance_nm * fraction);
+
+  /*
+   * If MaxDivertedCourse is very small, keep the adaptive allowance tighter.
+   * At ordinary offshore settings (60-90 degrees) use the full allowance so
+   * the initial grid can cover either side of islands/headlands.
+   */
+  double course_factor = wxMin(1.0, wxMax(0.25,
+                                         configuration.MaxDivertedCourse / 90.0));
+  return allowance_nm * course_factor;
+}
+
+static void ExpandBboxByNm(double& min_lat, double& max_lat, double& min_lon,
+                           double& max_lon, double margin_nm) {
+  if (!std::isfinite(margin_nm) || margin_nm <= 0.0) return;
+  double mid_lat = 0.5 * (min_lat + max_lat);
+  double lat_margin_degrees = margin_nm / 60.0;
+  double lon_margin_degrees = LongitudeDegreesForNm(margin_nm, mid_lat);
+  min_lat = wxMax(-90.0, min_lat - lat_margin_degrees);
+  max_lat = wxMin(90.0, max_lat + lat_margin_degrees);
+  min_lon -= lon_margin_degrees;
+  max_lon += lon_margin_degrees;
+}
+
 static void ApplyHeadlessRouteSafetyOverrides(RouteMapConfiguration& configuration,
                                               const wxString& context) {
   wxString detect_land_override = EnvString("WR_HEADLESS_DETECT_LAND");
@@ -175,7 +241,7 @@ static void ApplyHeadlessRouteSafetyOverrides(RouteMapConfiguration& configurati
   }
 }
 
-static const int kMaxChartSafetyMissingTileRetries = 4;
+static const int kDefaultMaxChartSafetyMissingTileRetries = 16;
 static const long kChartSafetyScoutMaxMs = 90000;
 static const double kChartSafetyPrewarmEdgeBufferNm = 3.0;
 
@@ -207,6 +273,15 @@ static double LongitudeDegreesForNm(double nm, double lat) {
   return nm / (60.0 * fabs(coslat));
 }
 
+static int ReadExperimentalChartSafetyMissingTileMaxRetries() {
+  long retries = kDefaultMaxChartSafetyMissingTileRetries;
+  wxFileConfig* pConf = GetOCPNConfigObject();
+  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->Read(_T("ExperimentalChartSafetyMissingTileMaxRetries"), &retries,
+              static_cast<long>(kDefaultMaxChartSafetyMissingTileRetries));
+  return static_cast<int>(wxMax(1L, wxMin(64L, retries)));
+}
+
 static PlugInSegmentSafetyOptions ChartSafetyRouteMaskOptions(
     const RouteMapConfiguration& configuration) {
   PlugInSegmentSafetyOptions options = {};
@@ -233,16 +308,16 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
   if (!use_chart_safety || !enforce_chart_safety) return;
 
   /*
-   * The OpenCPN prewarm API deliberately caps large bbox calls.  When a worker
-   * reports a concrete missing tile, prewarm a bounded tile neighbourhood
-   * around that exact gap on the main thread so retry does not depend on the
-   * order in which a broad bbox cap happened to visit tiles.
-   */
+   * When a worker reports concrete missing tiles, build a bounded
+   * neighbourhood around that exact aggregate gap on the main thread.  The
+   * broad route envelope is handled separately at route start; retries should
+   * not repeatedly expand and rebuild unrelated areas.
+  */
   const double tile_degrees = 0.05;
-  const int base_radius_tiles = 8;
+  const int base_radius_tiles = 2;
   const int radius_tiles =
-      wxMin(12, base_radius_tiles +
-                    2 * wxMax(0, configuration.chart_safety_missing_tile_retry_count));
+      wxMin(5, base_radius_tiles +
+                   wxMax(0, configuration.chart_safety_missing_tile_retry_count));
   double missing_min_lat =
       std::isfinite(configuration.chart_safety_missing_tile_min_lat)
           ? configuration.chart_safety_missing_tile_min_lat
@@ -259,10 +334,13 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
       std::isfinite(configuration.chart_safety_missing_tile_max_lon)
           ? configuration.chart_safety_missing_tile_max_lon
           : configuration.chart_safety_missing_tile_first_min_lon + tile_degrees;
+
   double min_lat = missing_min_lat - radius_tiles * tile_degrees;
   double max_lat = missing_max_lat + radius_tiles * tile_degrees;
   double min_lon = missing_min_lon - radius_tiles * tile_degrees;
   double max_lon = missing_max_lon + radius_tiles * tile_degrees;
+  double local_padding_nm = configuration.SafetyMarginLand + 1.0;
+  ExpandBboxByNm(min_lat, max_lat, min_lon, max_lon, local_padding_nm);
   min_lat = wxMax(-90.0, min_lat);
   max_lat = wxMin(90.0, max_lat);
 
@@ -276,9 +354,9 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
       "WR_GRID_TILE_REQUESTED context=%s route=\"%s to %s\" "
       "retry=%d first_tile=(%d,%d) first_tile_min=(%.6f,%.6f) "
       "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
-      "radius_tiles=%d bbox=[lat %.6f..%.6f lon %.6f..%.6f] ok=%d "
-      "built_tiles=%d reused_tiles=%d build_ms=%d grid_cache_size=%d "
-      "message=\"%s\".",
+      "radius_tiles=%d local_padding_nm=%.3f "
+      "bbox=[lat %.6f..%.6f lon %.6f..%.6f] ok=%d built_tiles=%d "
+      "reused_tiles=%d build_ms=%d grid_cache_size=%d message=\"%s\".",
       context, configuration.Start, configuration.End,
       configuration.chart_safety_missing_tile_retry_count,
       configuration.chart_safety_missing_tile_first_lat_tile,
@@ -286,8 +364,8 @@ static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
       configuration.chart_safety_missing_tile_first_min_lat,
       configuration.chart_safety_missing_tile_first_min_lon,
       missing_min_lat, missing_max_lat, missing_min_lon, missing_max_lon,
-      radius_tiles,
-      min_lat, max_lat, min_lon, max_lon, ok ? 1 : 0,
+      radius_tiles, local_padding_nm, min_lat, max_lat, min_lon, max_lon,
+      ok ? 1 : 0,
       result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
       result.grid_cache_size, result.message);
 }
@@ -314,11 +392,9 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
   double prewarm_margin_nm = configuration.SafetyMarginLand;
   if (enforce_chart_safety) {
     double configured_margin_nm = ReadExperimentalChartSafetyPrewarmMarginNm();
-    int retry_count = wxMin(
-        2, wxMax(0, configuration.chart_safety_missing_tile_retry_count));
-    prewarm_margin_nm +=
-        configured_margin_nm * (1 + retry_count) +
-        kChartSafetyPrewarmEdgeBufferNm;
+    prewarm_margin_nm += configured_margin_nm +
+                         kChartSafetyPrewarmEdgeBufferNm +
+                         ChartSafetyAdaptivePrewarmAllowanceNm(configuration);
   }
 
   PlugInSegmentSafetyResult result = {};
@@ -330,13 +406,7 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
     double max_lat = wxMax(configuration.StartLat, configuration.EndLat);
     double min_lon = wxMin(configuration.StartLon, configuration.EndLon);
     double max_lon = wxMax(configuration.StartLon, configuration.EndLon);
-    double mid_lat = 0.5 * (configuration.StartLat + configuration.EndLat);
-    double lat_margin_degrees = prewarm_margin_nm / 60.0;
-    double lon_margin_degrees = LongitudeDegreesForNm(prewarm_margin_nm, mid_lat);
-    min_lat = wxMax(-90.0, min_lat - lat_margin_degrees);
-    max_lat = wxMin(90.0, max_lat + lat_margin_degrees);
-    min_lon -= lon_margin_degrees;
-    max_lon += lon_margin_degrees;
+    ExpandBboxByNm(min_lat, max_lat, min_lon, max_lon, prewarm_margin_nm);
     prewarm_mode = _("expanded-bbox");
     PlugInSegmentSafetyOptions options =
         ChartSafetyRouteMaskOptions(configuration);
@@ -504,7 +574,6 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
   int point_cache_hits = 0;
   int grid_cache_size = 0;
   int grid_cache_evictions = 0;
-  bool capped = false;
 
   for (auto route : routes) {
     if (!route) continue;
@@ -545,15 +614,14 @@ static void PrewarmExperimentalChartSafetyForMultiLegEnvelope(
     grid_cache_size = wxMax(grid_cache_size, result.grid_cache_size);
     grid_cache_evictions =
         wxMax(grid_cache_evictions, result.grid_cache_evictions);
-    capped = capped || wxString(result.message).Find("capped") != wxNOT_FOUND;
   }
 
   wxString message = wxString::Format(
       "WeatherRouting Detect Land: chart safety optimisation corridor "
       "prewarm context=%s legs=%d failed=%d margin_nm=%.3f enforce=%d "
-      "elapsed_ms=%ld capped=%d ",
+      "elapsed_ms=%ld ",
       context, legs, failed, envelope_margin_nm, enforce_chart_safety ? 1 : 0,
-      timer.Time(), capped ? 1 : 0);
+      timer.Time());
   message += wxString::Format(
       "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
       "drying=%d unknown=%d point_queries=%d point_cache_hits=%d "
@@ -5679,7 +5747,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
           missingChartSafetyData && retryChartSafetyUse &&
           retryChartSafetyEnforce &&
           completedConfiguration.chart_safety_missing_tile_retry_count <
-              kMaxChartSafetyMissingTileRetries;
+              ReadExperimentalChartSafetyMissingTileMaxRetries();
       if (retryMissingChartSafetyData) {
         it = m_RunningRouteMaps.erase(it);
         if (RetryRouteAfterMissingChartSafetyTiles(routemapoverlay)) {
@@ -7582,6 +7650,28 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   if (configuration.DetectLand && use_chart_safety && enforce_chart_safety &&
       !configuration.UseChartSafetyForPropagation) {
     configuration.UseChartSafetyForPropagation = true;
+    if (!configuration.UseReverseReachabilityRecovery) {
+      configuration.UseReverseReachabilityRecovery = true;
+      wxLogMessage(
+          "WR_REVERSE_REACHABILITY auto-enabled for chart safety propagation "
+          "route=\"%s -> %s\" group=\"%s\" candidate_offset=%d leg=%d/%d",
+          configuration.Start, configuration.End, configuration.MultiLegGroupId,
+          configuration.DepartureTimeOptimizationOffsetMinutes,
+          configuration.MultiLegLegIndex, configuration.MultiLegLegCount);
+    }
+    routemapoverlay->SetConfiguration(configuration);
+  } else if (configuration.DetectLand && use_chart_safety &&
+             enforce_chart_safety &&
+             configuration.UseChartSafetyForPropagation &&
+             !configuration.UseReverseReachabilityRecovery) {
+    configuration.UseReverseReachabilityRecovery = true;
+    wxLogMessage(
+        "WR_REVERSE_REACHABILITY auto-enabled for existing chart safety "
+        "propagation route=\"%s -> %s\" group=\"%s\" candidate_offset=%d "
+        "leg=%d/%d",
+        configuration.Start, configuration.End, configuration.MultiLegGroupId,
+        configuration.DepartureTimeOptimizationOffsetMinutes,
+        configuration.MultiLegLegIndex, configuration.MultiLegLegCount);
     routemapoverlay->SetConfiguration(configuration);
   }
   wxString routeStartLog = wxString::Format(
@@ -7753,8 +7843,8 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
   ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
   if (!use_chart_safety || !enforce_chart_safety) return false;
 
-  if (configuration.chart_safety_missing_tile_retry_count >=
-      kMaxChartSafetyMissingTileRetries) {
+  int max_retries = ReadExperimentalChartSafetyMissingTileMaxRetries();
+  if (configuration.chart_safety_missing_tile_retry_count >= max_retries) {
     wxString reason = wxString::Format(
         _("Chart safety grid data unavailable for route corridor after %d "
           "prewarm retries"),
@@ -7785,8 +7875,7 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
       "missing_rejections=%ld first_tile=(%d,%d) "
       "first_tile_min=(%.6f,%.6f) "
       "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f].",
-      configuration.Start, configuration.End, next_retry,
-      kMaxChartSafetyMissingTileRetries,
+      configuration.Start, configuration.End, next_retry, max_retries,
       configuration.chart_safety_missing_tile_rejections,
       configuration.chart_safety_missing_tile_first_lat_tile,
       configuration.chart_safety_missing_tile_first_lon_tile,

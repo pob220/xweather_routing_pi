@@ -632,12 +632,6 @@ bool FinalRouteSegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
   ++s_finalRouteValidationChecks;
-  wxLogMessage(
-      "FINAL_ROUTE_SAFETY validation_mode=fine_authoritative "
-      "persistent_cache_used_in_final_validation=0 "
-      "final_validation_forced_fine_masks=1 "
-      "segment=(%.8f,%.8f)->(%.8f,%.8f) margin_nm=%.3f",
-      lat1, lon1, lat2, lon2, safety_margin_nm);
   if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &options, &result)) {
     bool rejects = GshhsSegmentSafetyHitsLand(lat1, lon1, lat2, lon2,
                                              safety_margin_nm);
