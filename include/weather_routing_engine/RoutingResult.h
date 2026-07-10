@@ -28,9 +28,26 @@ struct RoutingCandidateResult {
   wxString finalSafety;
   wxString failureReason;
   int offsetMinutes;
+  bool reverseRecoveryUsed;
+  wxString reverseRecoveryStatus;
+  long reverseLayersBuilt;
+  long reverseNodesGenerated;
+  long reverseNodesFeasible;
+  bool reverseConnectionFound;
+  wxDateTime reverseConnectionTime;
+  wxString reverseFailureReason;
+  bool reverseFinalValidationPass;
 
   RoutingCandidateResult()
-      : elapsedSeconds(-1), distanceNm(-1.0), offsetMinutes(0) {}
+      : elapsedSeconds(-1),
+        distanceNm(-1.0),
+        offsetMinutes(0),
+        reverseRecoveryUsed(false),
+        reverseLayersBuilt(-1),
+        reverseNodesGenerated(-1),
+        reverseNodesFeasible(-1),
+        reverseConnectionFound(false),
+        reverseFinalValidationPass(false) {}
 };
 
 struct RoutingResult {

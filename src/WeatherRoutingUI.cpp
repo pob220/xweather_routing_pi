@@ -1887,6 +1887,16 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
         "periods when facing strong currents."));
   fgSizer1121->Add(m_cbAnchoring, 0, wxALL, 5);
 
+  m_cbUseReverseReachabilityRecovery = new wxCheckBox(
+      sbOptions1->GetStaticBox(), wxID_ANY,
+      _("Use reverse reachability for final approach recovery"),
+      wxDefaultPosition, wxDefaultSize, wxCHK_3STATE);
+  m_cbUseReverseReachabilityRecovery->SetToolTip(_(
+      "When enabled, failed final approaches may run a bounded destination "
+      "reachability check and try a chart-safe connection from recent "
+      "isochrones. This is experimental and disabled by default."));
+  fgSizer1121->Add(m_cbUseReverseReachabilityRecovery, 0, wxALL, 5);
+
   fgSizer113->Add(fgSizer1121, 1, wxEXPAND, 5);
 
   wxFlexGridSizer* fgSizer115;

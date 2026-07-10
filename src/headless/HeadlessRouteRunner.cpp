@@ -55,6 +55,15 @@ weather_routing_engine::RoutingCandidateResult CandidateFromRoute(
     candidate.finalSafety = "unknown";
   }
   candidate.failureReason = route->GetFailureReason();
+  candidate.reverseRecoveryUsed = configuration.ReverseRecoveryUsed;
+  candidate.reverseRecoveryStatus = configuration.ReverseRecoveryStatus;
+  candidate.reverseLayersBuilt = configuration.ReverseLayersBuilt;
+  candidate.reverseNodesGenerated = configuration.ReverseNodesGenerated;
+  candidate.reverseNodesFeasible = configuration.ReverseNodesFeasible;
+  candidate.reverseConnectionFound = configuration.ReverseConnectionFound;
+  candidate.reverseConnectionTime = configuration.ReverseConnectionTime;
+  candidate.reverseFailureReason = configuration.ReverseFailureReason;
+  candidate.reverseFinalValidationPass = configuration.ReverseFinalValidationPass;
   return candidate;
 }
 

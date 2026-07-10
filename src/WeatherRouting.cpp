@@ -3236,6 +3236,44 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         }
       };
 
+  auto apply_reverse_reachability_options =
+      [&](RouteMapConfiguration& configuration) {
+        if (scenario_loaded) {
+          configuration.UseReverseReachabilityRecovery =
+              scenario.reverseReachability.enabled;
+          if (scenario.reverseReachability.hasSearchBackIsochrones)
+            configuration.ReverseReachabilitySearchBackIsochrones =
+                wxMax(1, scenario.reverseReachability.searchBackIsochrones);
+          if (scenario.reverseReachability.hasHorizonHours)
+            configuration.ReverseReachabilityHorizonHours =
+                wxMax(0.0, scenario.reverseReachability.horizonHours);
+          if (scenario.reverseReachability.hasDiagnostics)
+            configuration.ReverseReachabilityDiagnostics =
+                scenario.reverseReachability.diagnostics;
+        }
+        wxString env_reverse = EnvString("WR_HEADLESS_REVERSE_REACHABILITY");
+        if (!env_reverse.IsEmpty()) {
+          configuration.UseReverseReachabilityRecovery =
+              env_reverse.IsSameAs("1") ||
+              env_reverse.IsSameAs("true", false);
+        }
+        wxString env_reverse_back =
+            EnvString("WR_HEADLESS_REVERSE_SEARCH_BACK_ISOCHRONES");
+        if (!env_reverse_back.IsEmpty()) {
+          long value = 0;
+          if (env_reverse_back.ToLong(&value))
+            configuration.ReverseReachabilitySearchBackIsochrones =
+                wxMax(1L, value);
+        }
+        wxString env_reverse_diag =
+            EnvString("WR_HEADLESS_REVERSE_DIAGNOSTICS");
+        if (!env_reverse_diag.IsEmpty()) {
+          configuration.ReverseReachabilityDiagnostics =
+              env_reverse_diag.IsSameAs("1") ||
+              env_reverse_diag.IsSameAs("true", false);
+        }
+      };
+
   bool use_chart_safety = false;
   bool enforce_chart_safety = false;
   ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
@@ -3315,6 +3353,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         configuration.EndLat = end_lat;
         configuration.EndLon = end_lon;
         ApplyHeadlessRouteSafetyOverrides(configuration, _("created_route"));
+        apply_reverse_reachability_options(configuration);
         if (scenario_loaded && scenario.startTime.IsValid()) {
           configuration.StartTime = scenario.startTime;
         }
@@ -3420,6 +3459,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
     bool selected_config_changed = false;
     double original_safety_margin = selected_config.SafetyMarginLand;
     ApplyHeadlessRouteSafetyOverrides(selected_config, _("selected_route"));
+    apply_reverse_reachability_options(selected_config);
     if (selected_config.SafetyMarginLand != original_safety_margin)
       selected_config_changed = true;
     wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
@@ -6015,6 +6055,8 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
 
         configuration.InvertedRegions =
             AttributeBool(e, "InvertedRegions", false);
+        configuration.UseReverseReachabilityRecovery =
+            AttributeBool(e, "UseReverseReachabilityRecovery", false);
         configuration.Anchoring = AttributeBool(e, "Anchoring", false);
 
         configuration.FromDegree = AttributeDouble(e, "FromDegree", 0);
@@ -6167,6 +6209,8 @@ void WeatherRouting::SaveXML(wxString filename) {
     c->SetAttribute("OptimizeTacking", configuration.OptimizeTacking);
 
     c->SetAttribute("InvertedRegions", configuration.InvertedRegions);
+    c->SetAttribute("UseReverseReachabilityRecovery",
+                    configuration.UseReverseReachabilityRecovery);
     c->SetAttribute("Anchoring", configuration.Anchoring);
 
     c->SetDoubleAttribute("FromDegree", configuration.FromDegree);
@@ -7883,6 +7927,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.Currents = false;
   configuration.OptimizeTacking = false;
   configuration.InvertedRegions = false;
+  configuration.UseReverseReachabilityRecovery = false;
   configuration.Anchoring = false;
 
   configuration.FromDegree = 0;

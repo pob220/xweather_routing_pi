@@ -511,6 +511,26 @@ struct RouteMapConfiguration {
   bool ChartSafetyPropagationFallbackTried;
 
   /**
+   * Experimental recovery: when the normal forward search reaches the
+   * destination envelope but cannot construct a chart-safe final approach,
+   * build a bounded destination-reachable funnel and try to connect recent
+   * forward frontiers to it.  Disabled by default.
+   */
+  bool UseReverseReachabilityRecovery;
+  int ReverseReachabilitySearchBackIsochrones;
+  double ReverseReachabilityHorizonHours;
+  bool ReverseReachabilityDiagnostics;
+  bool ReverseRecoveryUsed;
+  wxString ReverseRecoveryStatus;
+  long ReverseLayersBuilt;
+  long ReverseNodesGenerated;
+  long ReverseNodesFeasible;
+  bool ReverseConnectionFound;
+  wxDateTime ReverseConnectionTime;
+  wxString ReverseFailureReason;
+  bool ReverseFinalValidationPass;
+
+  /**
    * If true, the route calculation will avoid exclusion boundaries.
    *
    * When enabled, the routing algorithm will check for and avoid entering any

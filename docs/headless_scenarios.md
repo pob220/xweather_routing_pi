@@ -119,10 +119,34 @@ The first milestone supports:
 - `safety.landMarginNm`
 - `safety.minimumDepthM`
 - `safety.persistentCertifiedCacheEnabled`
+- `reverseReachability.enabled`
+- `reverseReachability.searchBackIsochrones`
+- `reverseReachability.horizonHours`
+- `reverseReachability.diagnostics`
 
 `minimumDepthM` is parsed and retained in the scenario DTO. It is only applied
 when the current Weather Routing/OpenCPN route safety configuration exposes a
 matching option.
+
+`reverseReachability` is optional and defaults off. This first milestone is a
+bounded final-approach recovery/diagnostic pass, not arrival-time routing and
+not a bidirectional replacement for the forward isochrone solver. When enabled,
+the route engine keeps normal forward propagation, then after a failed direct
+final approach it builds a destination-reachable funnel from recent forward
+isochrones. Each reverse edge is accepted only if normal forward sailing
+physics can sail that segment inside the available time interval. Any recovered
+route still has to pass the normal final plotted-route safety validation.
+
+Example block:
+
+```json
+"reverseReachability": {
+  "enabled": true,
+  "searchBackIsochrones": 6,
+  "horizonHours": 0,
+  "diagnostics": true
+}
+```
 
 ## Result Schema
 
@@ -141,6 +165,15 @@ The result file contains:
   - `finalSafety`
   - `failureReason`
   - `offsetMinutes`
+  - `reverseRecoveryUsed`
+  - `reverseRecoveryStatus`
+  - `reverseLayersBuilt`
+  - `reverseNodesGenerated`
+  - `reverseNodesFeasible`
+  - `reverseConnectionFound`
+  - `reverseConnectionTime`
+  - `reverseFailureReason`
+  - `reverseFinalValidationPass`
 - `diagnostics`
 
 Diagnostics are intentionally sparse in this first milestone. Fields are omitted
@@ -161,7 +194,10 @@ Example result:
       "elapsed": 28299,
       "distanceNm": 54.52,
       "finalSafety": "pass",
-      "offsetMinutes": 0
+      "offsetMinutes": 0,
+      "reverseRecoveryUsed": false,
+      "reverseConnectionFound": false,
+      "reverseFinalValidationPass": false
     }
   ],
   "diagnostics": {}
@@ -187,6 +223,22 @@ Failure results still write JSON:
   ],
   "diagnostics": {}
 }
+```
+
+Use the reverse diagnostics example with:
+
+```sh
+cd ~/src/OpenCPN
+
+WR_HEADLESS_SCENARIO="$PWD/plugins/weather_routing_pi/testdata/scenarios/holyhead_dunlaoghaire_reverse.json" \
+WR_HEADLESS_OUTPUT=/tmp/wr_reverse_result.json \
+OPENCPN_PLUGIN_DIRS="$PWD/build/plugins/weather_routing_pi:/usr/lib/opencpn:/usr/lib64/opencpn" \
+./build/opencpn
+
+cat /tmp/wr_reverse_result.json
+
+rg "WR_REVERSE_REACHABILITY|FINAL_ROUTE_SAFETY|WR_HEADLESS" \
+  ~/.opencpn/opencpn.log | tail -200
 ```
 
 ## Known Failure Modes

@@ -433,6 +433,7 @@ void ConfigurationDialog::SetConfigurations(
   SET_CHECKBOX(OptimizeTacking);
 
   SET_CHECKBOX(InvertedRegions);
+  SET_CHECKBOX(UseReverseReachabilityRecovery);
   SET_CHECKBOX(Anchoring);
 
   SET_CHECKBOX(UseGrib);
@@ -739,6 +740,7 @@ void ConfigurationDialog::Update() {
     GET_CHECKBOX(OptimizeTacking);
 
     GET_CHECKBOX(InvertedRegions);
+    GET_CHECKBOX(UseReverseReachabilityRecovery);
     GET_CHECKBOX(Anchoring);
 
     GET_CHECKBOX(UseGrib);

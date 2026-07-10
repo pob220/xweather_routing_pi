@@ -151,6 +151,27 @@ bool LoadRoutingScenarioJson(
     }
   }
 
+  const Json::Value& reverse = root["reverseReachability"];
+  if (reverse.isObject()) {
+    bool bool_value = false;
+    int int_value = 0;
+    double double_value = 0.0;
+    if (JsonBool(reverse, "enabled", bool_value))
+      scenario.reverseReachability.enabled = bool_value;
+    if (JsonInt(reverse, "searchBackIsochrones", int_value)) {
+      scenario.reverseReachability.searchBackIsochrones = int_value;
+      scenario.reverseReachability.hasSearchBackIsochrones = true;
+    }
+    if (JsonDouble(reverse, "horizonHours", double_value)) {
+      scenario.reverseReachability.horizonHours = double_value;
+      scenario.reverseReachability.hasHorizonHours = true;
+    }
+    if (JsonBool(reverse, "diagnostics", bool_value)) {
+      scenario.reverseReachability.diagnostics = bool_value;
+      scenario.reverseReachability.hasDiagnostics = true;
+    }
+  }
+
   return true;
 }
 
@@ -179,6 +200,25 @@ bool SaveRoutingResultJson(
     if (!candidate.failureReason.IsEmpty())
       value["failureReason"] = candidate.failureReason.ToUTF8().data();
     value["offsetMinutes"] = candidate.offsetMinutes;
+    value["reverseRecoveryUsed"] = candidate.reverseRecoveryUsed;
+    if (!candidate.reverseRecoveryStatus.IsEmpty())
+      value["reverseRecoveryStatus"] =
+          candidate.reverseRecoveryStatus.ToUTF8().data();
+    AddOptionalLong(value, "reverseLayersBuilt",
+                    candidate.reverseLayersBuilt);
+    AddOptionalLong(value, "reverseNodesGenerated",
+                    candidate.reverseNodesGenerated);
+    AddOptionalLong(value, "reverseNodesFeasible",
+                    candidate.reverseNodesFeasible);
+    value["reverseConnectionFound"] = candidate.reverseConnectionFound;
+    if (candidate.reverseConnectionTime.IsValid())
+      value["reverseConnectionTime"] =
+          TimeToJson(candidate.reverseConnectionTime).ToUTF8().data();
+    if (!candidate.reverseFailureReason.IsEmpty())
+      value["reverseFailureReason"] =
+          candidate.reverseFailureReason.ToUTF8().data();
+    value["reverseFinalValidationPass"] =
+        candidate.reverseFinalValidationPass;
     candidates.append(value);
   }
   root["candidates"] = candidates;

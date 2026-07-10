@@ -63,6 +63,25 @@ struct RoutingScenarioSafety {
         hasPersistentCertifiedCacheEnabled(false) {}
 };
 
+struct RoutingScenarioReverseReachability {
+  bool enabled;
+  int searchBackIsochrones;
+  bool hasSearchBackIsochrones;
+  double horizonHours;
+  bool hasHorizonHours;
+  bool diagnostics;
+  bool hasDiagnostics;
+
+  RoutingScenarioReverseReachability()
+      : enabled(false),
+        searchBackIsochrones(6),
+        hasSearchBackIsochrones(false),
+        horizonHours(0.0),
+        hasHorizonHours(false),
+        diagnostics(false),
+        hasDiagnostics(false) {}
+};
+
 struct RoutingScenario {
   int schemaVersion;
   wxString name;
@@ -72,6 +91,7 @@ struct RoutingScenario {
   RoutingScenarioDepartureOptimization departureOptimization;
   RoutingScenarioEnvironment environment;
   RoutingScenarioSafety safety;
+  RoutingScenarioReverseReachability reverseReachability;
 
   RoutingScenario() : schemaVersion(1) {}
 };

@@ -434,6 +434,23 @@ private:
 
   std::atomic<bool> m_bUpdatingDestination;
 
+  struct ReverseSegmentFeasibility {
+    bool feasible;
+    double dt;
+    double heading;
+    int data_mask;
+    wxString failure_reason;
+
+    ReverseSegmentFeasibility()
+        : feasible(false), dt(NAN), heading(NAN), data_mask(0) {}
+  };
+
+  ReverseSegmentFeasibility CanSailSegment(
+      Position* start, double end_lat, double end_lon, IsoChron* start_isochron,
+      const wxDateTime& target_time, RouteMapConfiguration configuration);
+  bool TryReverseReachabilityRecovery(RouteMapConfiguration& configuration,
+                                      int isochrons_considered);
+
   /** Mutex for thread-safe access to route data. */
   wxMutex routemutex;
 

@@ -511,6 +511,7 @@ public:
   wxCheckBox* m_cbUseGrib;
   wxChoice* m_cClimatologyType;
   wxCheckBox* m_cbAvoidCycloneTracks;
+  wxCheckBox* m_cbUseReverseReachabilityRecovery;
   wxSpinCtrl*
       m_sUpwindEfficiency;  //!< Efficiency coefficient for upwind sailing
   wxSpinCtrl*
