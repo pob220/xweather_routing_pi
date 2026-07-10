@@ -96,6 +96,26 @@ static bool TextMatchesFilter(const wxString& text, const wxString& filter) {
   return filter.IsEmpty() || text.Lower().Find(filter.Lower()) != wxNOT_FOUND;
 }
 
+static void EnsureRuntimePosition(const wxString& name, double lat, double lon) {
+  for (auto& position : RouteMap::Positions) {
+    if (position.GUID.IsEmpty() && position.Name == name) {
+      position.lat = lat;
+      position.lon = lon;
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST runtime_position_reused name=\"%s\" "
+          "lat=%.6f lon=%.6f.",
+          name, lat, lon);
+      return;
+    }
+  }
+
+  RouteMap::Positions.push_back(RouteMapPosition(name, lat, lon));
+  wxLogMessage(
+      "WR_HEADLESS_ROUTE_TEST runtime_position_added name=\"%s\" "
+      "lat=%.6f lon=%.6f.",
+      name, lat, lon);
+}
+
 static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
                                                 bool& enforce_chart_safety) {
   use_chart_safety = false;
@@ -2631,6 +2651,7 @@ bool WeatherRouting::ApplyMultiLegOptimizationCandidate(int candidateIndex) {
   }
 
   int removedTemporaryRows = 0;
+  std::list<RouteMapOverlay*> temporaryRoutesToDelete;
   for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i) {
     MultiLegOptimizationCandidate& cleanupCandidate =
         m_MultiLegOptimizationCandidates[i];
@@ -2643,6 +2664,7 @@ bool WeatherRouting::ApplyMultiLegOptimizationCandidate(int candidateIndex) {
       if (route && RouteMapIsManaged(route)) {
         WeatherRoute* weatherroute = findWeatherRoute(route);
         if (weatherroute) weatherroute->Filtered = true;
+        temporaryRoutesToDelete.push_back(route);
         removedTemporaryRows++;
       }
     }
@@ -2673,6 +2695,13 @@ bool WeatherRouting::ApplyMultiLegOptimizationCandidate(int candidateIndex) {
           "not refresh as expected. The candidate rows were not deleted."),
         _("Weather Routing"), wxOK | wxICON_WARNING, this);
     return false;
+  }
+
+  if (!temporaryRoutesToDelete.empty()) {
+    DeleteRouteMaps(temporaryRoutesToDelete);
+    for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i)
+      if ((int)i != candidateIndex)
+        m_MultiLegOptimizationCandidates[i].routes.clear();
   }
 
   for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i)
@@ -3373,10 +3402,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                     : _("invalid"));
           }
         }
-        RouteMap::Positions.push_back(RouteMapPosition(
-            configuration.Start, start_lat, start_lon));
-        RouteMap::Positions.push_back(
-            RouteMapPosition(configuration.End, end_lat, end_lon));
+        EnsureRuntimePosition(configuration.Start, start_lat, start_lon);
+        EnsureRuntimePosition(configuration.End, end_lat, end_lon);
         configuration.IsMultiLegGenerated = false;
         configuration.MultiLegGroupId.Clear();
         configuration.MultiLegParentRouteGUID.Clear();
@@ -5927,9 +5954,16 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
               static bool warnonce = true;
               if (warnonce) {
                 warnonce = false;
+                wxLogMessage(
+                    "Weather Routing: duplicate position name \"%s\" in "
+                    "configuration file; discarding duplicate.",
+                    name);
                 wxMessageDialog mdlg(
                     this,
-                    _("File contains duplicate position name, discarding\n"),
+                    wxString::Format(
+                        _("File contains duplicate position name \"%s\"; "
+                          "discarding duplicate.\n"),
+                        name),
                     _("Weather Routing"), wxOK | wxICON_WARNING);
                 mdlg.ShowModal();
               }

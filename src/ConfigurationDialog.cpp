@@ -757,6 +757,7 @@ void ConfigurationDialog::Update() {
     GET_SPIN(ToDegree);
     GET_SPIN(ByDegrees);
 
+    m_WeatherRouting.PreserveMultiLegLegFieldsForDialog(*it, configuration);
     (*it)->SetConfiguration(configuration);
 
     /* if the start position changed, we must reset the route */

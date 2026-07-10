@@ -24,6 +24,7 @@
 #include <cmath>
 #include <functional>
 #include <list>
+#include <vector>
 
 #include "ocpn_plugin.h"
 #include "pidc.h"
@@ -1509,37 +1510,97 @@ std::list<PlotData>& RouteMapOverlay::GetPlotData(bool cursor_route) {
     RouteMapConfiguration configuration = GetConfiguration();
     Lock();
     IsoChronList::iterator it = origin.begin(), itp;
+    bool normal_plot_failed = false;
 
     for (Position* p = pos; p; p = p->parent)
       if (++it == origin.end()) {
-        Unlock();
-        return plotdata;
+        normal_plot_failed = true;
+        break;
       }
-    it--;
+    if (!normal_plot_failed) {
+      it--;
 
-    while (pos) {
-      itp = it;
-      itp--;
+      while (pos) {
+        itp = it;
+        itp--;
 
-      configuration.grib = (*it)->m_Grib;
-      configuration.time = (*it)->time;
-      // printf("grib time %p %d\n", configuration.grib, configuration.time);
+        configuration.grib = (*it)->m_Grib;
+        configuration.time = (*it)->time;
+        // printf("grib time %p %d\n", configuration.grib, configuration.time);
 
-      configuration.UsedDeltaTime = (*it)->delta;
-      PlotData data;
+        configuration.UsedDeltaTime = (*it)->delta;
+        PlotData data;
 
-      double dt = configuration.UsedDeltaTime;
-      data.time = (*it)->time;
+        double dt = configuration.UsedDeltaTime;
+        data.time = (*it)->time;
 
-      if (pos->GetPlotData(next, dt, configuration, data))
-        plotdata.push_front(data);
+        if (pos->GetPlotData(next, dt, configuration, data))
+          plotdata.push_front(data);
 
-      it = itp;
-      next = pos;
-      pos = pos->parent;
+        it = itp;
+        next = pos;
+        pos = pos->parent;
+      }
     }
 
     Unlock();
+
+    if (!cursor_route && plotdata.empty() && Finished() &&
+        ReachedDestination() && last_destination_position &&
+        last_destination_position->parent) {
+      std::vector<Position*> points;
+      for (Position* p = last_destination_position->parent; p; p = p->parent)
+        points.push_back(p);
+      std::reverse(points.begin(), points.end());
+
+      wxDateTime start_time = configuration.StartTime;
+      wxDateTime end_time = m_EndTime;
+      double total_seconds = 0.0;
+      if (start_time.IsValid() && end_time.IsValid() && end_time > start_time)
+        total_seconds = (end_time - start_time).GetSeconds().ToDouble();
+      const double segment_seconds =
+          points.empty() ? 0.0 : total_seconds / (points.size() + 1);
+
+      RoutePoint* fallback_next = last_destination_position;
+      for (std::vector<Position*>::reverse_iterator rit = points.rbegin();
+           rit != points.rend(); ++rit) {
+        Position* p = *rit;
+        PlotData data = PlotData();
+        const double dt = segment_seconds > 0.0 ? segment_seconds : 0.0;
+        data.time = end_time.IsValid()
+                        ? end_time - wxTimeSpan::Seconds(
+                                         wxRound((plotdata.size() + 1) * dt))
+                        : wxDateTime();
+        configuration.time = data.time;
+        configuration.UsedDeltaTime = dt;
+
+        if (!p->GetPlotData(fallback_next, dt, configuration, data)) {
+          data.lat = p->lat;
+          data.lon = p->lon;
+          data.tacks = p->tacks;
+          data.jibes = p->jibes;
+          data.sail_plan_changes = p->sail_plan_changes;
+          data.polar = p->polar;
+          data.delta = dt;
+          ll_gc_ll_reverse(p->lat, p->lon, fallback_next->lat,
+                           fallback_next->lon, &data.cog, &data.sog);
+          if (dt > 0.0)
+            data.sog *= 3600.0 / dt;
+          else
+            data.sog = 0.0;
+          data.stw = data.sog;
+          data.ctw = data.cog;
+        }
+        plotdata.push_front(data);
+        fallback_next = p;
+      }
+      wxLogMessage(
+          "WR_ROUTE_PLOTDATA_FALLBACK route=\"%s -> %s\" points=%lu "
+          "normal_plot_failed=%d",
+          configuration.Start, configuration.End,
+          static_cast<unsigned long>(plotdata.size()),
+          normal_plot_failed ? 1 : 0);
+    }
   }
   return plotdata;
 }

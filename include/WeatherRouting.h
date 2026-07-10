@@ -667,6 +667,12 @@ public:
     std::vector<RouteMapOverlay*> routes;
   };
 
+  void PreserveMultiLegLegFieldsForDialog(
+      RouteMapOverlay* routemapoverlay,
+      RouteMapConfiguration& configuration) const {
+    PreserveMultiLegLegFields(routemapoverlay, configuration);
+  }
+
   const std::vector<MultiLegOptimizationCandidate>&
   MultiLegOptimizationCandidates() const {
     return m_MultiLegOptimizationCandidates;
