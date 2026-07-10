@@ -37,12 +37,14 @@ set(TEST_SRC
     Utilities_tests.cpp
     RouteSimplifier_tests.cpp
     StabilityCorridor_tests.cpp
+    StabilityCorridorLifecycle_tests.cpp
     RoutingScenarioJson_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteSimplifier.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/StabilityCorridorCalculator.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/StabilityCorridorLifecycle.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )

@@ -19,6 +19,7 @@ src/RouteMapOverlay.cpp
 src/RouteWaypointExtractor.cpp
 src/RouteSimplifier.cpp
 src/StabilityRouteAdapter.cpp
+src/StabilityCorridorLifecycle.cpp
 src/RoutingTablePanel.cpp
 src/Utilities.cpp
 src/LineBufferOverlay.cpp
@@ -51,6 +52,7 @@ include/ConfigurationBatchDialog.h
 include/ConstraintChecker.h
 include/RouteSimplifier.h
 include/StabilityRouteAdapter.h
+include/StabilityCorridorLifecycle.h
 include/EditPolarDialog.h
 include/AboutDialog.h
 include/Polar.h

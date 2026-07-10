@@ -45,6 +45,7 @@
 #include "FilterRoutesDialog.h"
 #include "RoutingTablePanel.h"
 #include "RouteSimplifier.h"
+#include "StabilityCorridorLifecycle.h"
 #include "weather_routing_engine/StabilityCorridor.h"
 
 class weather_routing_pi;
@@ -273,6 +274,12 @@ public:
       const std::vector<std::vector<RouteMapOverlay*> >& candidates,
       size_t selectedCandidate, wxString* status = nullptr);
   void HideStabilityCorridor(const wxString& reason = wxString());
+  void CloseStabilityCorridorResults(bool keepVisible,
+                                     const wxString& reason);
+  bool StabilityCorridorKeepPreference() const {
+    return m_StabilityCorridorKeepPreference;
+  }
+  void SetStabilityCorridorKeepPreference(bool keep);
   void SelectWeatherRoutesForStability(
       const std::vector<RouteMapOverlay*>& routes);
   ConfigurationDialog m_ConfigurationDialog;
@@ -749,13 +756,18 @@ private:
 
   SimplifiedRouteGroupState m_SimplifiedRouteGroup;
 
-  bool m_StabilityCorridorVisible;
-  int m_StabilityCorridorFamilyId;
+  StabilityCorridorLifecycle m_StabilityCorridorLifecycle;
+  bool m_StabilityCorridorKeepPreference;
+  bool m_UpdatingStabilityRouteSelection;
   std::vector<RouteMapOverlay*> m_StabilityCorridorSourceRoutes;
   std::vector<weather_routing_engine::StabilityRoute>
       m_StabilityCorridorRoutes;
   weather_routing_engine::StabilityCorridorResult m_StabilityCorridorResult;
   void RenderStabilityCorridor(piDC& dc, PlugIn_ViewPort& vp);
+  void UpdateStabilityCorridorMenu();
+  void OnViewStabilityCorridor(wxCommandEvent& event);
+  void ValidateStabilityCorridorSelection(
+      const std::list<RouteMapOverlay*>& selectedRoutes);
   bool ShowStabilityCorridorData(
       const std::vector<RouteMapOverlay*>& sourceSignature,
       const std::vector<weather_routing_engine::StabilityRoute>& routes,
@@ -831,6 +843,7 @@ private:
   bool m_bShowPlot;
   bool m_bShowFilter;
   wxMenuItem* m_mChartAwarenessSettings;
+  wxMenuItem* m_mStabilityCorridorView;
 
   wxPoint m_downPos, m_startPos, m_startMouse;
   wxTimer m_tDownTimer;

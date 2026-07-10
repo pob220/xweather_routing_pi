@@ -192,6 +192,7 @@ SET(SRCS
             src/RouteWaypointExtractor.cpp
             src/RouteSimplifier.cpp
             src/StabilityRouteAdapter.cpp
+            src/StabilityCorridorLifecycle.cpp
             src/RoutingTablePanel.cpp
             src/Utilities.cpp
             src/LineBufferOverlay.cpp
@@ -227,6 +228,7 @@ SET (HDRS
             include/ConstraintChecker.h
             include/RouteSimplifier.h
             include/StabilityRouteAdapter.h
+            include/StabilityCorridorLifecycle.h
             include/EditPolarDialog.h
             include/AboutDialog.h
             include/Polar.h
