@@ -624,6 +624,13 @@ WeatherRoutingPanel::WeatherRoutingPanel(wxWindow* parent, wxWindowID id,
       _("Save the selected routing as a track in the 'Route & Mark' Manager"));
   fgSizer116->Add(m_bSaveAsTrack, 0, wxALL, 5);
 
+  m_bSimplifyRoute =
+      new wxButton(sbSizer29->GetStaticBox(), wxID_ANY, _("Simplify route..."),
+                   wxDefaultPosition, wxDefaultSize, 0);
+  m_bSimplifyRoute->SetToolTip(
+      _("Prepare a compact weather-aware route for route and GPX output"));
+  fgSizer116->Add(m_bSimplifyRoute, 0, wxALL, 5);
+
   m_bSaveAsRoute =
       new wxButton(sbSizer29->GetStaticBox(), wxID_ANY, _("Save as &route"),
                    wxDefaultPosition, wxDefaultSize, 0);
@@ -702,6 +709,9 @@ WeatherRoutingPanel::WeatherRoutingPanel(wxWindow* parent, wxWindowID id,
   m_bSaveAsTrack->Connect(
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRoutingPanel::OnSaveAsTrack), NULL, this);
+  m_bSimplifyRoute->Connect(
+      wxEVT_COMMAND_BUTTON_CLICKED,
+      wxCommandEventHandler(WeatherRoutingPanel::OnSimplifyRoute), NULL, this);
   m_bSaveAsRoute->Connect(
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRoutingPanel::OnSaveAsRoute), NULL, this);
@@ -754,6 +764,9 @@ WeatherRoutingPanel::~WeatherRoutingPanel() {
   m_bSaveAsTrack->Disconnect(
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRoutingPanel::OnSaveAsTrack), NULL, this);
+  m_bSimplifyRoute->Disconnect(
+      wxEVT_COMMAND_BUTTON_CLICKED,
+      wxCommandEventHandler(WeatherRoutingPanel::OnSimplifyRoute), NULL, this);
   m_bSaveAsRoute->Disconnect(
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRoutingPanel::OnSaveAsRoute), NULL, this);
@@ -1575,22 +1588,22 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   m_cbUseExperimentalChartSafety = new wxCheckBox(
       sbOptions->GetStaticBox(), wxID_ANY,
-      _("Use experimental chart-based land checks for diagnostics"),
+      _("Use chart-aware land checks"),
       wxDefaultPosition,
       wxDefaultSize, 0);
   m_cbUseExperimentalChartSafety->SetToolTip(
-      _("Use loaded vector/CM93 chart geometry for Detect Land. Experimental; "
-        "diagnostic only unless enforcement is enabled."));
+      _("Use loaded vector/CM93 chart geometry for Detect Land diagnostics. "
+        "Route rejection uses these checks when chart-aware land avoidance is "
+        "enabled."));
   fgSizer23->Add(m_cbUseExperimentalChartSafety, 1, wxALL | wxEXPAND, 5);
 
   m_cbEnforceExperimentalChartSafety = new wxCheckBox(
       sbOptions->GetStaticBox(), wxID_ANY,
-      _("Enforce experimental chart land checks"), wxDefaultPosition,
+      _("Enforce chart-aware land avoidance"), wxDefaultPosition,
       wxDefaultSize, 0);
   m_cbEnforceExperimentalChartSafety->SetToolTip(
-      _("Allow experimental chart-based checks to reject route candidates and "
-        "fail completed routes whose final track crosses chart land. This may "
-        "false-positive and should be used only for testing."));
+      _("Allow chart-backed checks to reject route candidates and fail "
+        "completed routes whose final track crosses chart land."));
   fgSizer23->Add(m_cbEnforceExperimentalChartSafety, 1, wxALL | wxEXPAND, 5);
 
   m_cbDetectBoundary =

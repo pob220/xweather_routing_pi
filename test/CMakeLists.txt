@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 
 project(weather_routing_pi_tests)
 set(CMAKE_CXX_STANDARD 17)
+set(WEATHER_ROUTING_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 message(STATUS "Building weather routing plugin tests")
 
 enable_testing ()
@@ -34,25 +35,29 @@ set(TEST_SRC
     Polar_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
-    ${CMAKE_SOURCE_DIR}/src/Utilities.cpp
-    ${CMAKE_SOURCE_DIR}/src/PolygonRegion.cpp
-    ${CMAKE_SOURCE_DIR}/src/Polar.cpp
-    ${CMAKE_SOURCE_DIR}/src/zuFile.cpp
+    RouteSimplifier_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteSimplifier.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
    
    add_executable(weather_routing_pi_tests ${TEST_SRC})
 
    # Uncomment include directories as needed - @todo tests should inherit this from main plugin
    target_include_directories(weather_routing_pi_tests 
-        PRIVATE
-            ${CMAKE_SOURCE_DIR}/src
-   #         ${CMAKE_SOURCE_DIR}/opencpn-libs/api-18/include
-            ${CMAKE_SOURCE_DIR}/opencpn-libs/libtess2/include
-            ${CMAKE_SOURCE_DIR}/opencpn-libs/tinyxml/include
-   #         ${CMAKE_SOURCE_DIR}/opencpn-libs/plugin_dc/dc_utils/include
-   #         ${CMAKE_SOURCE_DIR}/opencpn-libs/jsonlib/include
-   #         ${CMAKE_SOURCE_DIR}/opencpn-libs/odapi
-   #         ${CMAKE_SOURCE_DIR}/opencpn-libs/pugixml
+       PRIVATE
+            ${WEATHER_ROUTING_SOURCE_DIR}/src
+            ${WEATHER_ROUTING_SOURCE_DIR}/include
+   #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/api-18/include
+            ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/libtess2/include
+            ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/tinyxml/include
+            ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/odapi
+   #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/plugin_dc/dc_utils/include
+   #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/jsonlib/include
+   #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/odapi
+   #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/pugixml
             ${GTEST_INCLUDE_DIRS}
             ${wxWidgets_INCLUDE_DIRS}
     )
@@ -77,7 +82,7 @@ set(TEST_SRC
    # Workaround as per https://discourse.cmake.org/t/how-to-get-an-lc-rpath-and-rpath-prefix-on-a-dylib-on-macos/5540/5
    # TODO: Quinton: Make this robust on non-Mac platforms.
    set_target_properties(weather_routing_pi_tests PROPERTIES
-       BUILD_RPATH "../lib"
+       BUILD_RPATH "${CMAKE_BINARY_DIR}/lib"
        INSTALL_RPATH "../lib"    
        )
    
@@ -91,4 +96,4 @@ target_compile_definitions(weather_routing_pi_tests
 )
 
 include(GoogleTest)
-gtest_discover_tests(weather_routing_pi_tests)
+gtest_discover_tests(weather_routing_pi_tests DISCOVERY_MODE PRE_TEST)

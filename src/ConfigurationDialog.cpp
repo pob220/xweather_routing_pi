@@ -108,14 +108,11 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
                            "calculations."));
   m_cbUseExperimentalChartSafety->SetToolTip(
       _("Use OpenCPN chart-backed land checks for Detect Land diagnostics. "
-        "Experimental; may be slow for complex routes, multi-leg routing, and "
-        "departure optimisation. Route rejection still uses GSHHS unless "
-        "experimental enforcement is enabled."));
+        "Route rejection uses these checks when chart-aware land avoidance is "
+        "enabled."));
   m_cbEnforceExperimentalChartSafety->SetToolTip(
-      _("Allow experimental chart-backed land checks to reject route "
-        "candidates and fail completed routes whose final track crosses "
-        "chart land. This may false-positive and should be used only for "
-        "testing."));
+      _("Allow chart-backed land checks to reject route candidates and fail "
+        "completed routes whose final track crosses chart land."));
 
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
@@ -759,6 +756,7 @@ void ConfigurationDialog::Update() {
 
     m_WeatherRouting.PreserveMultiLegLegFieldsForDialog(*it, configuration);
     (*it)->SetConfiguration(configuration);
+    m_WeatherRouting.SaveLastUsedConfigurationDefaults(configuration);
 
     /* if the start position changed, we must reset the route */
     RouteMapConfiguration newc = (*it)->GetConfiguration();

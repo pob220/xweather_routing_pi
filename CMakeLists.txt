@@ -190,6 +190,7 @@ SET(SRCS
             src/RouteMap.cpp
             src/RouteMapOverlay.cpp
             src/RouteWaypointExtractor.cpp
+            src/RouteSimplifier.cpp
             src/RoutingTablePanel.cpp
             src/Utilities.cpp
             src/LineBufferOverlay.cpp
@@ -222,6 +223,7 @@ SET (HDRS
             include/FilterRoutesDialog.h
             include/ConfigurationBatchDialog.h
             include/ConstraintChecker.h
+            include/RouteSimplifier.h
             include/EditPolarDialog.h
             include/AboutDialog.h
             include/Polar.h

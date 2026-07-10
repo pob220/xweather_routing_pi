@@ -26,6 +26,7 @@
 #include <wx/listctrl.h>
 
 #include <map>
+#include <cstdint>
 #include <vector>
 
 #ifdef __OCPN__ANDROID__
@@ -43,6 +44,7 @@
 #include "PlotDialog.h"
 #include "FilterRoutesDialog.h"
 #include "RoutingTablePanel.h"
+#include "RouteSimplifier.h"
 
 class weather_routing_pi;
 class WeatherRouting;
@@ -495,6 +497,8 @@ private:
   void OnFilter(wxCommandEvent& event);
   /** Callback invoked when user clicks "Save as Track" menu item. */
   void OnSaveAsTrack(wxCommandEvent& event);
+  /** Prepare a validated compact route for route/GPX output. */
+  void OnSimplifyRoute(wxCommandEvent& event);
   /** Callback invoked when user clicks "Save as Route" menu item. */
   void OnSaveAsRoute(wxCommandEvent& event);
   /** Export route as GPX file. */
@@ -576,6 +580,27 @@ private:
   void ExportRoute(RouteMapOverlay& routemapoverlay);
   bool ValidateRouteForOutput(RouteMapOverlay& routemapoverlay,
                               const wxString& action);
+  std::vector<PlotData> FullOutputRoute(RouteMapOverlay& routemapoverlay) const;
+  std::vector<PlotData> RouteOutputPoints(RouteMapOverlay& routemapoverlay,
+                                          bool* simplified = nullptr);
+  uint64_t RouteGeometryFingerprint(
+      const std::vector<PlotData>& points) const;
+  RouteSimplificationResult SimplifyOutputRoute(
+      RouteMapOverlay& routemapoverlay,
+      const RouteSimplificationOptions& options);
+  RouteSimplificationResult SimplifyOutputRoutes(
+      const std::vector<RouteMapOverlay*>& routes,
+      const RouteSimplificationOptions& options);
+  bool SelectedSimplifiedGroup(
+      const std::vector<RouteMapOverlay*>& routes,
+      std::vector<PlotData>* points = nullptr) const;
+  void SaveCombinedRoute(const std::vector<RouteMapOverlay*>& routes,
+                         const std::vector<PlotData>& points);
+  void ExportCombinedRoute(const std::vector<RouteMapOverlay*>& routes,
+                           const std::vector<PlotData>& points);
+  bool ValidateSimplifiedOutputRoute(
+      RouteMapOverlay& routemapoverlay,
+      const std::vector<PlotData>& points, wxString* failure_reason);
   /**
    * Initiates route calculation for a specific route map overlay.
    *
@@ -647,6 +672,8 @@ public:
   bool ApplyMultiLegOptimizationCandidate(int candidateIndex);
   bool ApplyBestMultiLegOptimizationCandidate();
   void RunHeadlessRouteTestFromEnv();
+  void SaveLastUsedConfigurationDefaults(
+      const RouteMapConfiguration& configuration);
   struct MultiLegOptimizationCandidate {
     int offsetMinutes;
     wxDateTime departureTime;
@@ -690,8 +717,32 @@ public:
 
 private:
 
+  struct SimplifiedRouteState {
+    uint64_t original_fingerprint;
+    RouteSimplificationOptions options;
+    RouteSimplificationResult result;
+
+    SimplifiedRouteState() : original_fingerprint(0) {}
+  };
+
+  std::map<RouteMapOverlay*, SimplifiedRouteState> m_SimplifiedRoutes;
+
+  struct SimplifiedRouteGroupState {
+    bool valid;
+    std::vector<RouteMapOverlay*> routes;
+    std::vector<uint64_t> fingerprints;
+    RouteSimplificationOptions options;
+    RouteSimplificationResult result;
+
+    SimplifiedRouteGroupState() : valid(false) {}
+  };
+
+  SimplifiedRouteGroupState m_SimplifiedRouteGroup;
+
   void DeleteRouteMaps(std::list<RouteMapOverlay*> routemapoverlays);
   RouteMapConfiguration DefaultConfiguration();
+  void ApplyLastUsedConfigurationDefaults(
+      RouteMapConfiguration& configuration) const;
 
   void AddRoutingPanel();
 

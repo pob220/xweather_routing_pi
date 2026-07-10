@@ -267,6 +267,8 @@ protected:
   virtual void OnCompute(wxCommandEvent& event) { event.Skip(); }
   /** Callback invoked when user clicks "Save as Track" menu item. */
   virtual void OnSaveAsTrack(wxCommandEvent& event) { event.Skip(); }
+  /** Prepare a compact, weather-aware route for route/GPX output. */
+  virtual void OnSimplifyRoute(wxCommandEvent& event) { event.Skip(); }
   /** Callback invoked when user clicks "Save as Route" menu item. */
   virtual void OnSaveAsRoute(wxCommandEvent& event) { event.Skip(); }
   /** Callback invoked when user clicks "Export as GPX" menu item. */
@@ -285,6 +287,7 @@ public:
   wxListCtrl* m_lWeatherRoutes;
   wxButton* m_bCompute;
   wxButton* m_bSaveAsTrack;
+  wxButton* m_bSimplifyRoute;
   wxButton* m_bSaveAsRoute;
   wxButton* m_bExportRoute;
   wxGauge* m_gProgress;
