@@ -21,6 +21,8 @@
 #define _WEATHER_ROUTING_ROUTE_MAP_OVERLAY_H_
 
 #include <atomic>
+#include <cmath>
+#include <vector>
 
 #include "RouteMap.h"
 #include "LineBufferOverlay.h"
@@ -450,6 +452,25 @@ private:
       const wxDateTime& target_time, RouteMapConfiguration configuration);
   bool TryReverseReachabilityRecovery(RouteMapConfiguration& configuration,
                                       int isochrons_considered);
+
+  struct ReverseReachabilityDebugPoint {
+    double lat;
+    double lon;
+    int layer;
+    bool connected;
+
+    ReverseReachabilityDebugPoint()
+        : lat(NAN), lon(NAN), layer(0), connected(false) {}
+    ReverseReachabilityDebugPoint(double latitude, double longitude,
+                                  int layer_index, bool is_connected)
+        : lat(latitude),
+          lon(longitude),
+          layer(layer_index),
+          connected(is_connected) {}
+  };
+
+  void RenderReverseReachabilityDiagnostics(piDC& dc, PlugIn_ViewPort& vp);
+  std::vector<ReverseReachabilityDebugPoint> m_reverseReachabilityDebugPoints;
 
   /** Mutex for thread-safe access to route data. */
   wxMutex routemutex;

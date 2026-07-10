@@ -21,6 +21,7 @@
 #include <wx/glcanvas.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <list>
 
@@ -392,6 +393,34 @@ void RouteMapOverlay::RenderIsoRoute(IsoRoute* r, wxDateTime time,
     RenderIsoRoute(*it, time, cyan, magenta, dc, vp);
 }
 
+void RouteMapOverlay::RenderReverseReachabilityDiagnostics(
+    piDC& dc, PlugIn_ViewPort& vp) {
+  RouteMapConfiguration configuration = GetConfiguration();
+  if (!configuration.UseReverseReachabilityRecovery) return;
+
+  std::vector<ReverseReachabilityDebugPoint> points;
+  Lock();
+  points = m_reverseReachabilityDebugPoints;
+  Unlock();
+  if (points.empty()) return;
+
+  SetColor(dc, wxColour(160, 0, 220, 180), true);
+  SetWidth(dc, 2, true);
+  for (const ReverseReachabilityDebugPoint& point : points) {
+    if (!std::isfinite(point.lat) || !std::isfinite(point.lon)) continue;
+    wxPoint p;
+    WR_GetCanvasPixLL(&vp, &p, point.lat, point.lon);
+    if (point.connected) {
+      SetColor(dc, wxColour(255, 0, 255, 220), true);
+      dc.DrawLine(p.x - 5, p.y, p.x + 5, p.y);
+      dc.DrawLine(p.x, p.y - 5, p.x, p.y + 5);
+      SetColor(dc, wxColour(160, 0, 220, 180), true);
+    } else {
+      dc.DrawCircle(p.x, p.y, 3);
+    }
+  }
+}
+
 void RouteMapOverlay::RenderAlternateRoute(IsoRoute* r, bool each_parent,
                                            piDC& dc, PlugIn_ViewPort& vp) {
   Position* pos = r->skippoints->point;
@@ -606,6 +635,8 @@ void RouteMapOverlay::Render(wxDateTime time, SettingsDialog& settingsdialog,
         }
         Unlock();
       }
+
+      RenderReverseReachabilityDiagnostics(dc, nvp);
 
 #ifndef __OCPN__ANDROID__
       if (!dc.GetDC() && use_dl) {
@@ -1867,6 +1898,25 @@ struct ReverseReachNode {
         source_position(nullptr) {}
 };
 
+struct ReverseEtaEstimate {
+  bool valid;
+  wxDateTime destination_time;
+  wxDateTime source_time;
+  double source_lat;
+  double source_lon;
+  double distance_to_destination_nm;
+  double estimated_sog;
+  int isochron_index_from_end;
+
+  ReverseEtaEstimate()
+      : valid(false),
+        source_lat(NAN),
+        source_lon(NAN),
+        distance_to_destination_nm(NAN),
+        estimated_sog(NAN),
+        isochron_index_from_end(0) {}
+};
+
 void CollectIsoRoutePositions(IsoRoute* route, std::vector<Position*>& out) {
   if (!route || !route->skippoints) return;
   Position* p = route->skippoints->point;
@@ -1887,6 +1937,61 @@ void CollectIsoChronPositions(IsoChron* isochron,
   for (IsoRouteList::iterator it = isochron->routes.begin();
        it != isochron->routes.end(); ++it)
     CollectIsoRoutePositions(*it, out);
+}
+
+ReverseEtaEstimate EstimateReverseDestinationTime(
+    const IsoChronList& origin, const RouteMapConfiguration& configuration,
+    int max_layers) {
+  ReverseEtaEstimate best;
+  double best_distance = INFINITY;
+  int index_from_end = 0;
+  for (IsoChronList::const_reverse_iterator rit = origin.rbegin();
+       rit != origin.rend() && index_from_end <= max_layers;
+       ++rit, ++index_from_end) {
+    IsoChron* isochron = *rit;
+    if (!isochron || !isochron->time.IsValid() ||
+        !configuration.StartTime.IsValid() ||
+        isochron->time <= configuration.StartTime)
+      continue;
+
+    std::vector<Position*> positions;
+    CollectIsoChronPositions(isochron, positions);
+    for (Position* position : positions) {
+      double distance_to_destination =
+          DistGreatCircle(position->lat, position->lon, configuration.EndLat,
+                          configuration.EndLon);
+      if (distance_to_destination >= best_distance) continue;
+
+      double elapsed_hours =
+          (isochron->time - configuration.StartTime).GetSeconds().ToDouble() /
+          3600.0;
+      if (elapsed_hours <= 0.0) continue;
+
+      double made_good_nm =
+          DistGreatCircle(configuration.StartLat, configuration.StartLon,
+                          position->lat, position->lon);
+      double estimated_sog = made_good_nm / elapsed_hours;
+      if (!std::isfinite(estimated_sog) || estimated_sog < 0.5) continue;
+      if (estimated_sog > 20.0) estimated_sog = 20.0;
+
+      double remaining_hours = distance_to_destination / estimated_sog;
+      long remaining_seconds =
+          static_cast<long>(wxRound(remaining_hours * 3600.0));
+      if (remaining_seconds < 60) remaining_seconds = 60;
+
+      best.valid = true;
+      best.destination_time =
+          isochron->time + wxTimeSpan::Seconds(remaining_seconds);
+      best.source_time = isochron->time;
+      best.source_lat = position->lat;
+      best.source_lon = position->lon;
+      best.distance_to_destination_nm = distance_to_destination;
+      best.estimated_sog = estimated_sog;
+      best.isochron_index_from_end = index_from_end;
+      best_distance = distance_to_destination;
+    }
+  }
+  return best;
 }
 
 }  // namespace
@@ -1950,6 +2055,11 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   configuration.ReverseConnectionFound = false;
   configuration.ReverseConnectionTime = wxDateTime();
   configuration.ReverseFinalValidationPass = false;
+  {
+    Lock();
+    m_reverseReachabilityDebugPoints.clear();
+    Unlock();
+  }
 
   if (origin.size() < 2) {
     configuration.ReverseRecoveryStatus = _("failed");
@@ -1971,29 +2081,54 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   double horizon_hours = configuration.ReverseReachabilityHorizonHours;
   wxDateTime destination_time = origin.back()->time;
   if (!destination_time.IsValid()) destination_time = configuration.time;
+  ReverseEtaEstimate eta_estimate =
+      EstimateReverseDestinationTime(origin, configuration, max_layers);
+  if (eta_estimate.valid && eta_estimate.destination_time.IsValid() &&
+      (!destination_time.IsValid() ||
+       eta_estimate.destination_time > destination_time)) {
+    destination_time = eta_estimate.destination_time;
+    wxLogMessage(
+        "WR_REVERSE_REACHABILITY_ETA route=\"%s -> %s\" "
+        "closest_frontier=(%.8f,%.8f) frontier_time=\"%s\" "
+        "distance_to_destination_nm=%.3f estimated_sog=%.3f "
+        "estimated_destination_time=\"%s\" isochron_index_from_end=%d",
+        configuration.Start, configuration.End, eta_estimate.source_lat,
+        eta_estimate.source_lon, eta_estimate.source_time.FormatISOCombined(),
+        eta_estimate.distance_to_destination_nm, eta_estimate.estimated_sog,
+        eta_estimate.destination_time.FormatISOCombined(),
+        eta_estimate.isochron_index_from_end);
+  }
 
   wxLogMessage(
       "WR_REVERSE_REACHABILITY_START route=\"%s -> %s\" destination=(%.8f,"
       "%.8f) layers_requested=%d max_layers=%d horizon_hours=%.2f "
-      "isochrons_considered=%d",
+      "isochrons_considered=%d destination_time=\"%s\" eta_estimate=%d",
       configuration.Start, configuration.End, configuration.EndLat,
       configuration.EndLon, requested_layers, max_layers, horizon_hours,
-      isochrons_considered);
+      isochrons_considered,
+      destination_time.IsValid() ? destination_time.FormatISOCombined()
+                                 : wxString("invalid"),
+      eta_estimate.valid ? 1 : 0);
 
   std::vector<ReverseReachNode> nodes;
+  std::vector<ReverseReachabilityDebugPoint> debug_points;
   nodes.reserve(1 + max_layers * max_nodes_per_layer);
   ReverseReachNode destination;
   destination.lat = configuration.EndLat;
   destination.lon = configuration.EndLon;
   destination.time = destination_time;
   nodes.push_back(destination);
+  debug_points.push_back(ReverseReachabilityDebugPoint(
+      destination.lat, destination.lon, 0, true));
 
   std::vector<int> later_layer;
   later_layer.push_back(0);
   int best_connection = -1;
 
   IsoChronList::reverse_iterator rit = origin.rbegin();
-  if (rit != origin.rend()) ++rit;  // skip containing/final isochrone
+  if (rit != origin.rend() &&
+      (!destination_time.IsValid() || !(destination_time > (*rit)->time)))
+    ++rit;  // skip containing/final isochrone unless ETA window extends beyond it
   for (int layer = 1; rit != origin.rend() && layer <= max_layers;
        ++rit, ++layer) {
     IsoChron* isochron = *rit;
@@ -2039,6 +2174,8 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
         nodes.push_back(node);
         int node_index = static_cast<int>(nodes.size()) - 1;
         this_layer.push_back(node_index);
+        debug_points.push_back(ReverseReachabilityDebugPoint(
+            node.lat, node.lon, layer, false));
         configuration.ReverseNodesFeasible++;
         break;
       }
@@ -2071,6 +2208,11 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   }
 
   if (best_connection < 0) {
+    {
+      Lock();
+      m_reverseReachabilityDebugPoints.swap(debug_points);
+      Unlock();
+    }
     configuration.ReverseRecoveryStatus = _("failed");
     configuration.ReverseFailureReason =
         configuration.ReverseNodesGenerated > 0
@@ -2091,6 +2233,16 @@ bool RouteMapOverlay::TryReverseReachabilityRecovery(
   for (int node = best_connection; node >= 0; node = nodes[node].successor) {
     chain.push_back(node);
     if (nodes[node].successor < 0) break;
+  }
+  for (int node : chain) {
+    if (node >= 0 && node < static_cast<int>(nodes.size()))
+      debug_points.push_back(ReverseReachabilityDebugPoint(
+          nodes[node].lat, nodes[node].lon, 0, true));
+  }
+  {
+    Lock();
+    m_reverseReachabilityDebugPoints.swap(debug_points);
+    Unlock();
   }
   if (chain.size() < 2 || !nodes[best_connection].source_position) {
     configuration.ReverseRecoveryStatus = _("failed");

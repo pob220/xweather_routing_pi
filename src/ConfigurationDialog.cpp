@@ -513,6 +513,7 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
 
   // Options
   m_cbInvertedRegions->SetValue(false);
+  m_cbUseReverseReachabilityRecovery->SetValue(false);
   m_cbAnchoring->SetValue(false);
   m_cIntegrator->SetSelection(0);
   m_sWindStrength->SetValue(100);

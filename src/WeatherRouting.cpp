@@ -3356,6 +3356,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         apply_reverse_reachability_options(configuration);
         if (scenario_loaded && scenario.startTime.IsValid()) {
           configuration.StartTime = scenario.startTime;
+          configuration.UseCurrentTime = false;
         }
         wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
         if (!scenario_loaded && !headless_start_time.IsEmpty()) {
@@ -3467,6 +3468,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       wxDateTime parsed_start_time;
       if (parsed_start_time.ParseISOCombined(headless_start_time, 'T')) {
         selected_config.StartTime = parsed_start_time;
+        selected_config.UseCurrentTime = false;
         selected_config_changed = true;
       } else {
         wxLogMessage(
@@ -3477,6 +3479,11 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                 ? selected_config.StartTime.FormatISOCombined()
                 : _("invalid"));
       }
+    }
+    if (scenario_loaded && scenario.startTime.IsValid()) {
+      selected_config.StartTime = scenario.startTime;
+      selected_config.UseCurrentTime = false;
+      selected_config_changed = true;
     }
     if (mode.IsSameAs("single-opt", false) ||
         mode.IsSameAs("departure-opt", false)) {
@@ -7548,14 +7555,16 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
       "boat=\"%s\" polars=%lu use_grib=%d climatology=%d currents=%d "
       "detect_land=%d detect_boundary=%d chart_safety_use=%d "
       "chart_safety_enforce=%d chart_safety_propagation=%d "
-      "scout_eligible=%d safety_margin_land_nm=%.3f timestep=%.0f ",
+      "reverse_reachability=%d scout_eligible=%d "
+      "safety_margin_land_nm=%.3f timestep=%.0f ",
       configuration.boatFileName,
       static_cast<unsigned long>(configuration.boat.Polars.size()),
       configuration.UseGrib ? 1 : 0, configuration.ClimatologyType,
       configuration.Currents ? 1 : 0, configuration.DetectLand ? 1 : 0,
       configuration.DetectBoundary ? 1 : 0, use_chart_safety ? 1 : 0,
       enforce_chart_safety ? 1 : 0,
-      configuration.UseChartSafetyForPropagation ? 1 : 0, 0,
+      configuration.UseChartSafetyForPropagation ? 1 : 0,
+      configuration.UseReverseReachabilityRecovery ? 1 : 0, 0,
       configuration.SafetyMarginLand,
       configuration.DeltaTime);
   routeStartLog += wxString::Format(

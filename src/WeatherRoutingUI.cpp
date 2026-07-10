@@ -2651,6 +2651,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cbAnchoring->Connect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_cbUseReverseReachabilityRecovery->Connect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_cIntegrator->Connect(
       wxEVT_COMMAND_TEXT_UPDATED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
@@ -3476,6 +3479,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_sSafetyMarginLand->Disconnect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_cbUseReverseReachabilityRecovery->Disconnect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_sUpwindEfficiency->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
