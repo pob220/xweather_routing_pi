@@ -36,10 +36,14 @@ set(TEST_SRC
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
     RouteSimplifier_tests.cpp
+    StabilityCorridor_tests.cpp
+    RoutingScenarioJson_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteSimplifier.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/StabilityCorridorCalculator.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
    
@@ -54,6 +58,7 @@ set(TEST_SRC
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/libtess2/include
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/tinyxml/include
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/odapi
+            ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/jsonlib/include
    #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/plugin_dc/dc_utils/include
    #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/jsonlib/include
    #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/odapi
@@ -76,6 +81,7 @@ set(TEST_SRC
            # ocpn::json-schema-validator
            # ocpn::wxsvg
            ocpn::bzip2
+           ocpn::jsonlib
            ${ZLIB_LIBRARIES}
    )
    
@@ -93,6 +99,7 @@ target_compile_definitions(weather_routing_pi_tests
     PUBLIC
         USE_MOCK_DEFS CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR}"
         TESTDATADIR="${CMAKE_CURRENT_LIST_DIR}/testdata"
+        WEATHER_ROUTING_SOURCE_DIR="${WEATHER_ROUTING_SOURCE_DIR}"
 )
 
 include(GoogleTest)

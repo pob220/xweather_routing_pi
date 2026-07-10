@@ -45,6 +45,7 @@
 #include "FilterRoutesDialog.h"
 #include "RoutingTablePanel.h"
 #include "RouteSimplifier.h"
+#include "weather_routing_engine/StabilityCorridor.h"
 
 class weather_routing_pi;
 class WeatherRouting;
@@ -265,6 +266,15 @@ public:
   void Reset();
 
   void Render(piDC& dc, PlugIn_ViewPort& vp);
+  bool ShowStabilityCorridor(
+      const std::list<RouteMapOverlay*>& routes, RouteMapOverlay* selected,
+      wxString* status = nullptr);
+  bool ShowMultiLegStabilityCorridor(
+      const std::vector<std::vector<RouteMapOverlay*> >& candidates,
+      size_t selectedCandidate, wxString* status = nullptr);
+  void HideStabilityCorridor(const wxString& reason = wxString());
+  void SelectWeatherRoutesForStability(
+      const std::vector<RouteMapOverlay*>& routes);
   ConfigurationDialog m_ConfigurationDialog;
   ConfigurationBatchDialog m_ConfigurationBatchDialog;
   CursorPositionDialog m_CursorPositionDialog;
@@ -738,6 +748,19 @@ private:
   };
 
   SimplifiedRouteGroupState m_SimplifiedRouteGroup;
+
+  bool m_StabilityCorridorVisible;
+  int m_StabilityCorridorFamilyId;
+  std::vector<RouteMapOverlay*> m_StabilityCorridorSourceRoutes;
+  std::vector<weather_routing_engine::StabilityRoute>
+      m_StabilityCorridorRoutes;
+  weather_routing_engine::StabilityCorridorResult m_StabilityCorridorResult;
+  void RenderStabilityCorridor(piDC& dc, PlugIn_ViewPort& vp);
+  bool ShowStabilityCorridorData(
+      const std::vector<RouteMapOverlay*>& sourceSignature,
+      const std::vector<weather_routing_engine::StabilityRoute>& routes,
+      size_t selectedIndex,
+      const std::vector<RouteMapOverlay*>& selectedRoutes, wxString* status);
 
   void DeleteRouteMaps(std::list<RouteMapOverlay*> routemapoverlays);
   RouteMapConfiguration DefaultConfiguration();

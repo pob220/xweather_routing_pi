@@ -172,6 +172,27 @@ bool LoadRoutingScenarioJson(
     }
   }
 
+  const Json::Value& stability = root["stabilityCorridor"];
+  if (stability.isObject()) {
+    JsonBool(stability, "enabled", scenario.stabilityCorridor.enabled);
+    scenario.stabilityCorridor.source =
+        JsonString(stability, "source", scenario.stabilityCorridor.source);
+    JsonInt(stability, "minimumRoutes",
+            scenario.stabilityCorridor.minimumRoutes);
+    JsonDouble(stability, "maxEtaPenaltyMinutes",
+               scenario.stabilityCorridor.maxEtaPenaltyMinutes);
+    JsonDouble(stability, "gridResolutionNm",
+               scenario.stabilityCorridor.gridResolutionNm);
+    JsonDouble(stability, "innerAgreementThreshold",
+               scenario.stabilityCorridor.innerAgreementThreshold);
+    JsonDouble(stability, "outerAgreementThreshold",
+               scenario.stabilityCorridor.outerAgreementThreshold);
+    JsonBool(stability, "clusterRoutes",
+             scenario.stabilityCorridor.clusterRoutes);
+    JsonBool(stability, "writeGeoJson",
+             scenario.stabilityCorridor.writeGeoJson);
+  }
+
   return true;
 }
 
@@ -238,6 +259,32 @@ bool SaveRoutingResultJson(
   AddOptionalLong(diagnostics, "finalValidationMs",
                   result.diagnostics.finalValidationMs);
   root["diagnostics"] = diagnostics;
+
+  if (result.stabilityCorridor.requested) {
+    const auto& stability = result.stabilityCorridor;
+    Json::Value value(Json::objectValue);
+    value["status"] = stability.status.ToUTF8().data();
+    value["validRoutes"] = stability.validRoutes;
+    value["excludedRoutes"] = stability.excludedRoutes;
+    value["routeFamilies"] = stability.routeFamilies;
+    if (stability.selectedFamilyId >= 0)
+      value["selectedFamilyId"] = stability.selectedFamilyId;
+    value["dominantFamilyRoutes"] = stability.dominantFamilyRoutes;
+    value["medianWidthNm"] = stability.medianWidthNm;
+    value["maximumWidthNm"] = stability.maximumWidthNm;
+    value["etaSpreadMinutes"] = stability.etaSpreadMinutes;
+    value["innerThreshold"] = stability.innerThreshold;
+    value["outerThreshold"] = stability.outerThreshold;
+    if (!stability.representativeCandidateId.IsEmpty())
+      value["representativeCandidateId"] =
+          stability.representativeCandidateId.ToUTF8().data();
+    if (!stability.geoJsonPath.IsEmpty())
+      value["geoJsonPath"] = stability.geoJsonPath.ToUTF8().data();
+    if (!stability.failureReason.IsEmpty())
+      value["failureReason"] = stability.failureReason.ToUTF8().data();
+    value["calculationTimeMs"] = Json::Int64(stability.calculationTimeMs);
+    root["stabilityCorridor"] = value;
+  }
 
   wxFileName filename(path);
   if (!filename.GetPath().IsEmpty() && !filename.DirExists()) {

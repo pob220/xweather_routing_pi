@@ -82,6 +82,29 @@ struct RoutingScenarioReverseReachability {
         hasDiagnostics(false) {}
 };
 
+struct RoutingScenarioStabilityCorridor {
+  bool enabled;
+  wxString source;
+  int minimumRoutes;
+  double maxEtaPenaltyMinutes;
+  double gridResolutionNm;
+  double innerAgreementThreshold;
+  double outerAgreementThreshold;
+  bool clusterRoutes;
+  bool writeGeoJson;
+
+  RoutingScenarioStabilityCorridor()
+      : enabled(false),
+        source("departureCandidates"),
+        minimumRoutes(3),
+        maxEtaPenaltyMinutes(120.0),
+        gridResolutionNm(0.5),
+        innerAgreementThreshold(0.7),
+        outerAgreementThreshold(0.4),
+        clusterRoutes(true),
+        writeGeoJson(false) {}
+};
+
 struct RoutingScenario {
   int schemaVersion;
   wxString name;
@@ -92,6 +115,7 @@ struct RoutingScenario {
   RoutingScenarioEnvironment environment;
   RoutingScenarioSafety safety;
   RoutingScenarioReverseReachability reverseReachability;
+  RoutingScenarioStabilityCorridor stabilityCorridor;
 
   RoutingScenario() : schemaVersion(1) {}
 };

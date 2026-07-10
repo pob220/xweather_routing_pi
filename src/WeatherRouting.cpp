@@ -24,6 +24,8 @@
 #include <wx/dir.h>
 #include <wx/spinctrl.h>
 
+#include <json/json.h>
+
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
@@ -41,6 +43,7 @@
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "StabilityRouteAdapter.h"
 #include "headless/HeadlessRouteRunner.h"
 #include "georef.h"
 #include "icons.h"
@@ -63,6 +66,31 @@ static const long UI_TIMING_LOG_THRESHOLD_MS = 100;
 static bool s_loggedDetectLandGshhsWarning = false;
 
 namespace {
+
+bool InitializeHeadlessGribFromEnv(wxString* error) {
+  const char* configuredFile = getenv("WR_HEADLESS_GRIB_FILE");
+  const wxString gribFile = configuredFile ? wxString(configuredFile) : wxString();
+  if (gribFile.IsEmpty()) return true;
+  if (!wxFileExists(gribFile)) {
+    if (error)
+      *error = wxString::Format("GRIB file does not exist: %s", gribFile);
+    return false;
+  }
+
+  // GRIB_VALUES_REQUEST lazily creates the GRIB control object.  Opening the
+  // file then uses the GRIB plugin's existing public JSON message interface;
+  // Weather Routing neither parses the file nor depends on GRIB internals.
+  Json::Value initialize;
+  SendPluginMessage("GRIB_VALUES_REQUEST",
+                    Json::FastWriter().write(initialize));
+  Json::Value open;
+  open["grib_file"] = std::string(gribFile.ToUTF8());
+  SendPluginMessage("GRIB_APPLY_JSON_CONFIG", Json::FastWriter().write(open));
+  SendPluginMessage("GRIB_TIMELINE_REQUEST", "");
+  wxYieldIfNeeded();
+  wxLogMessage("WR_HEADLESS_GRIB initialized file=\"%s\"", gribFile);
+  return true;
+}
 
 class RouteSimplificationDialog : public wxDialog {
 public:
@@ -924,6 +952,8 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       m_RoutePositionDialog(this),
       m_BoatDialog(*this),
       m_SettingsDialog(this),
+      m_StabilityCorridorVisible(false),
+      m_StabilityCorridorFamilyId(-1),
       m_StatisticsDialog(this),
       m_ReportDialog(*this),
       m_PlotDialog(*this),
@@ -1484,6 +1514,8 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
 
   wxDateTime time = m_ConfigurationDialog.m_GribTimelineTime;
   if (!time.IsValid()) time = wxDateTime::UNow();
+
+  RenderStabilityCorridor(dc, vp);
 
   // Update highlighted row in the routing table panel if it exists
   if (m_RoutingTablePanel) {
@@ -3507,6 +3539,15 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         }
       };
 
+  wxString gribInitializationError;
+  if (!InitializeHeadlessGribFromEnv(&gribInitializationError)) {
+    wxLogMessage("WR_HEADLESS_GRIB failed reason=\"%s\"",
+                 gribInitializationError);
+    write_scenario_result("failed", gribInitializationError, {});
+    FinishHeadlessRouteTestProcess(2);
+    return;
+  }
+
   auto apply_reverse_reachability_options =
       [&](RouteMapConfiguration& configuration) {
         if (scenario_loaded) {
@@ -4693,7 +4734,8 @@ public:
         m_RouteMaps(routemaps),
         m_NominalStartTime(nominalStartTime),
         m_AutoRefreshTimer(this),
-        m_AutoRefreshCount(0) {
+        m_AutoRefreshCount(0),
+        m_UpdatingSelection(false) {
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
     m_List = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                             wxLC_REPORT | wxLC_SINGLE_SEL);
@@ -4708,6 +4750,20 @@ public:
       m_List->InsertColumn(i, columns[i]);
 
     topSizer->Add(m_List, 1, wxEXPAND | wxALL, 5);
+
+    wxBoxSizer* corridorSizer = new wxBoxSizer(wxHORIZONTAL);
+    m_ShowCorridor = new wxCheckBox(
+        this, wxID_ANY, _("Show stability corridor for selected route"));
+    m_ShowCorridor->SetToolTip(
+        _("Show route-agreement bands for the selected completed departure "
+          "candidate. This is descriptive, not a safety guarantee."));
+    m_ShowCorridor->Enable(false);
+    corridorSizer->Add(m_ShowCorridor, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+    m_CorridorStatus = new wxStaticText(
+        this, wxID_ANY, _("Waiting for completed routes..."));
+    corridorSizer->Add(m_CorridorStatus, 1,
+                       wxALL | wxALIGN_CENTER_VERTICAL, 5);
+    topSizer->Add(corridorSizer, 0, wxEXPAND);
 
     wxBoxSizer* buttonSizer = new wxBoxSizer(wxHORIZONTAL);
     wxButton* refresh = new wxButton(this, wxID_REFRESH, _("Refresh"));
@@ -4726,20 +4782,32 @@ public:
     close->Bind(wxEVT_BUTTON,
                 [this](wxCommandEvent&) {
                   StopAutoRefresh();
+                  m_WeatherRouting->HideStabilityCorridor("results_closed");
                   EndModal(wxID_OK);
                 });
+    m_ShowCorridor->Bind(wxEVT_CHECKBOX,
+                         [this](wxCommandEvent&) { UpdateCorridor(); });
+    m_List->Bind(wxEVT_LIST_ITEM_SELECTED,
+                 [this](wxListEvent&) { UpdateCorridor(); });
+    m_List->Bind(wxEVT_LIST_ITEM_DESELECTED,
+                 [this](wxListEvent&) { UpdateCorridor(); });
     Bind(wxEVT_TIMER, &DepartureTimeOptimizationResultsDialog::OnAutoRefresh,
          this);
     Bind(wxEVT_CLOSE_WINDOW,
          [this](wxCloseEvent&) {
            StopAutoRefresh();
+           m_WeatherRouting->HideStabilityCorridor("results_closed");
            EndModal(wxID_OK);
          });
     Populate();
     UpdateAutoRefresh();
   }
 
-  ~DepartureTimeOptimizationResultsDialog() override { StopAutoRefresh(); }
+  ~DepartureTimeOptimizationResultsDialog() override {
+    StopAutoRefresh();
+    if (m_WeatherRouting)
+      m_WeatherRouting->HideStabilityCorridor("results_destroyed");
+  }
 
 private:
   static const int AUTO_REFRESH_INTERVAL_MS = 1000;
@@ -4839,8 +4907,54 @@ private:
     m_List->SetColumnWidth(col, wxLIST_AUTOSIZE_USEHEADER);
   }
 
+  RouteMapOverlay* SelectedRoute() const {
+    long selected = m_List->GetNextItem(-1, wxLIST_NEXT_ALL,
+                                        wxLIST_STATE_SELECTED);
+    if (selected < 0) return NULL;
+    const long routeIndex = m_List->GetItemData(selected);
+    if (routeIndex < 0 ||
+        routeIndex >= static_cast<long>(m_RouteMaps.size()))
+      return NULL;
+    auto route = m_RouteMaps.begin();
+    std::advance(route, routeIndex);
+    return *route;
+  }
+
+  void UpdateCorridor() {
+    if (m_UpdatingSelection || !m_WeatherRouting) return;
+    RouteMapOverlay* selected = SelectedRoute();
+    if (!m_ShowCorridor->GetValue()) {
+      m_WeatherRouting->HideStabilityCorridor("checkbox_disabled");
+      if (m_ShowCorridor->IsEnabled())
+        m_CorridorStatus->SetLabel(
+            _("Select a completed route to display its stability family."));
+      return;
+    }
+    if (!selected || !selected->Finished() ||
+        !selected->ReachedDestination()) {
+      m_WeatherRouting->HideStabilityCorridor("selection_not_complete");
+      m_CorridorStatus->SetLabel(
+          _("A completed route is required to display a stability corridor."));
+      return;
+    }
+    m_CorridorStatus->SetLabel(_("Calculating stability corridor..."));
+    Layout();
+    Update();
+    wxString status;
+    if (!m_WeatherRouting->ShowStabilityCorridor(m_RouteMaps, selected,
+                                                  &status)) {
+      m_CorridorStatus->SetLabel(status.IsEmpty()
+                                     ? _("No stability corridor is available.")
+                                     : status);
+      return;
+    }
+    m_CorridorStatus->SetLabel(status);
+  }
+
   void Populate() {
     wxStopWatch timer;
+    RouteMapOverlay* selectedRoute = SelectedRoute();
+    m_UpdatingSelection = true;
     m_List->DeleteAllItems();
 
     RouteMapOverlay* bestRoute = NULL;
@@ -4857,15 +4971,22 @@ private:
       }
     }
 
+    size_t routeIndex = 0;
+    int completeRoutes = 0;
     for (auto routemap : m_RouteMaps) {
       WeatherRoute* weatherroute = FindWeatherRoute(routemap);
-      if (!weatherroute) continue;
+      if (!weatherroute) {
+        ++routeIndex;
+        continue;
+      }
       weatherroute->Update(m_WeatherRouting);
 
       RouteMapConfiguration configuration = routemap->GetConfiguration();
       long row = m_List->InsertItem(m_List->GetItemCount(),
                                     routemap == bestRoute ? _("Best") : _T(""));
       bool complete = routemap->Finished() && routemap->ReachedDestination();
+      if (complete) ++completeRoutes;
+      m_List->SetItemData(row, static_cast<long>(routeIndex));
       SetCell(row, 1,
               FormatOffset(configuration.DepartureTimeOptimizationOffsetMinutes));
       SetCell(row, 2, weatherroute->StartTime);
@@ -4890,7 +5011,27 @@ private:
       SetCell(row, 13, MetricOrNA(weatherroute->Tacks, complete));
       SetCell(row, 14, MetricOrNA(weatherroute->Comfort, complete));
       SetCell(row, 15, weatherroute->State);
+      if (routemap == selectedRoute)
+        m_List->SetItemState(row, wxLIST_STATE_SELECTED,
+                             wxLIST_STATE_SELECTED);
+      ++routeIndex;
     }
+    const bool pending = HasPendingRoutes();
+    const bool available = !pending && completeRoutes >= 3;
+    m_ShowCorridor->Enable(available);
+    if (!available) {
+      if (m_ShowCorridor->GetValue()) m_ShowCorridor->SetValue(false);
+      m_WeatherRouting->HideStabilityCorridor(
+          pending ? "optimization_running" : "too_few_completed_routes");
+      m_CorridorStatus->SetLabel(
+          pending ? _("Waiting for completed routes...")
+                  : _("No stability corridor: fewer than 3 completed routes."));
+    } else if (!selectedRoute) {
+      m_CorridorStatus->SetLabel(
+          _("Select a completed route to display its stability family."));
+    }
+    m_UpdatingSelection = false;
+    if (available && m_ShowCorridor->GetValue()) UpdateCorridor();
     long totalMs = timer.Time();
     if (totalMs >= UI_TIMING_LOG_THRESHOLD_MS)
       wxLogMessage(
@@ -4906,6 +5047,9 @@ private:
   wxListCtrl* m_List;
   wxTimer m_AutoRefreshTimer;
   int m_AutoRefreshCount;
+  wxCheckBox* m_ShowCorridor;
+  wxStaticText* m_CorridorStatus;
+  bool m_UpdatingSelection;
 };
 
 void WeatherRouting::ShowDepartureTimeOptimizationResults(
@@ -4931,6 +5075,224 @@ void WeatherRouting::ShowDepartureTimeOptimizationResults(
       m_tRoutingProgress.IsRunning() ? 1 : 0);
 }
 
+bool WeatherRouting::ShowStabilityCorridor(
+    const std::list<RouteMapOverlay*>& routes, RouteMapOverlay* selected,
+    wxString* status) {
+  if (!selected) {
+    if (status) *status = _("A completed route is required.");
+    HideStabilityCorridor("no_selection");
+    return false;
+  }
+
+  const std::vector<RouteMapOverlay*> source(routes.begin(), routes.end());
+  const auto selectedIt = std::find(source.begin(), source.end(), selected);
+  if (selectedIt == source.end()) {
+    if (status) *status = _("The selected route is not in this result set.");
+    return false;
+  }
+  const std::vector<weather_routing_engine::StabilityRoute> stabilityRoutes =
+      source == m_StabilityCorridorSourceRoutes &&
+              m_StabilityCorridorResult.success
+          ? m_StabilityCorridorRoutes
+          : BuildValidatedStabilityRoutes(source);
+  return ShowStabilityCorridorData(
+      source, stabilityRoutes,
+      static_cast<size_t>(selectedIt - source.begin()), {selected}, status);
+}
+
+bool WeatherRouting::ShowMultiLegStabilityCorridor(
+    const std::vector<std::vector<RouteMapOverlay*> >& candidates,
+    size_t selectedCandidate, wxString* status) {
+  if (selectedCandidate >= candidates.size() ||
+      candidates[selectedCandidate].empty()) {
+    if (status) *status = _("A completed route is required.");
+    HideStabilityCorridor("no_multi_leg_selection");
+    return false;
+  }
+  std::vector<RouteMapOverlay*> signature;
+  for (const auto& candidate : candidates) {
+    signature.insert(signature.end(), candidate.begin(), candidate.end());
+    signature.push_back(NULL);
+  }
+  const std::vector<weather_routing_engine::StabilityRoute> stabilityRoutes =
+      signature == m_StabilityCorridorSourceRoutes &&
+              m_StabilityCorridorResult.success
+          ? m_StabilityCorridorRoutes
+          : BuildValidatedMultiLegStabilityRoutes(candidates);
+  return ShowStabilityCorridorData(
+      signature, stabilityRoutes,
+      selectedCandidate, candidates[selectedCandidate], status);
+}
+
+bool WeatherRouting::ShowStabilityCorridorData(
+    const std::vector<RouteMapOverlay*>& sourceSignature,
+    const std::vector<weather_routing_engine::StabilityRoute>& routes,
+    size_t selectedIndex,
+    const std::vector<RouteMapOverlay*>& selectedRoutes, wxString* status) {
+  if (selectedRoutes.empty() || !selectedRoutes.front()) return false;
+  const bool cacheHit = sourceSignature == m_StabilityCorridorSourceRoutes &&
+                        m_StabilityCorridorResult.success;
+  if (!cacheHit) {
+    wxStopWatch timer;
+    m_StabilityCorridorSourceRoutes = sourceSignature;
+    m_StabilityCorridorRoutes = routes;
+    RouteMapConfiguration configuration =
+        selectedRoutes.front()->GetConfiguration();
+    weather_routing_engine::StabilityCorridorOptions options;
+    wxLogMessage(
+        "WR_STABILITY_CORRIDOR_START source=gui result_set=%p candidates=%lu "
+        "minimum_routes=%d grid_resolution_nm=%.3f inner=%.3f outer=%.3f "
+        "cache=miss authoritative_final_validation=1 descriptive_only=1",
+        sourceSignature.empty() ? NULL : sourceSignature.front(),
+        static_cast<unsigned long>(routes.size()), options.minimumRoutes,
+        options.gridResolutionNm, options.innerAgreementThreshold,
+        options.outerAgreementThreshold);
+    const auto segmentSafety =
+        [&](const weather_routing_engine::StabilityPoint& first,
+            const weather_routing_engine::StabilityPoint& last) {
+          return CheckStabilitySafetySegment(configuration, first, last);
+        };
+    const auto cellSafety = [&](double minLat, double minLon, double maxLat,
+                                double maxLon) {
+      return CheckStabilitySafetyCell(configuration, minLat, minLon, maxLat,
+                                      maxLon);
+    };
+    m_StabilityCorridorResult =
+        weather_routing_engine::StabilityCorridorCalculator::Calculate(
+            m_StabilityCorridorRoutes, options, segmentSafety, cellSafety);
+    for (const auto& family : m_StabilityCorridorResult.families)
+      wxLogMessage(
+          "WR_STABILITY_CORRIDOR_CLUSTER source=gui family=%d routes=%lu "
+          "representative=%lu median_width_nm=%.3f max_width_nm=%.3f "
+          "eta_spread_min=%.1f",
+          family.id, static_cast<unsigned long>(family.routeIndices.size()),
+          static_cast<unsigned long>(family.representativeRouteIndex),
+          family.medianWidthNm, family.maximumWidthNm,
+          family.etaSpreadMinutes);
+    wxLogMessage(
+        "WR_STABILITY_CORRIDOR_BUILD source=gui valid=%d excluded=%d "
+        "families=%lu cells=%d unsafe_cells_excluded=%d elapsed_ms=%ld",
+        m_StabilityCorridorResult.validRoutes,
+        m_StabilityCorridorResult.excludedRoutes,
+        static_cast<unsigned long>(m_StabilityCorridorResult.families.size()),
+        m_StabilityCorridorResult.rasterCellsUsed,
+        m_StabilityCorridorResult.unsafeCellsExcluded, timer.Time());
+  } else {
+    wxLogMessage(
+        "WR_STABILITY_CORRIDOR_START source=gui result_set=%p candidates=%lu "
+        "cache=hit",
+        sourceSignature.empty() ? NULL : sourceSignature.front(),
+        static_cast<unsigned long>(routes.size()));
+  }
+
+  const int familyId =
+      weather_routing_engine::StabilityCorridorCalculator::FindFamilyForRoute(
+          m_StabilityCorridorResult, selectedIndex);
+  if (!m_StabilityCorridorResult.success || familyId < 0) {
+    m_StabilityCorridorVisible = false;
+    m_StabilityCorridorFamilyId = -1;
+    const wxString reason = m_StabilityCorridorResult.failureReason.IsEmpty()
+                                ? _("The selected route has too few similar "
+                                    "completed routes.")
+                                : m_StabilityCorridorResult.failureReason;
+    if (status) *status = reason;
+    wxLogMessage(
+        "WR_STABILITY_CORRIDOR_RESULT source=gui status=unavailable "
+        "selected_index=%lu family=-1 cache=%s reason=\"%s\"",
+        static_cast<unsigned long>(selectedIndex), cacheHit ? "hit" : "miss",
+        reason);
+    RequestRefresh(GetOCPNCanvasWindow());
+    return false;
+  }
+
+  const weather_routing_engine::RouteFamily* selectedFamily = NULL;
+  for (const auto& family : m_StabilityCorridorResult.families)
+    if (family.id == familyId) selectedFamily = &family;
+  if (!selectedFamily) return false;
+
+  m_StabilityCorridorVisible = true;
+  m_StabilityCorridorFamilyId = familyId;
+  SelectWeatherRoutesForStability(selectedRoutes);
+  if (status)
+    *status = wxString::Format(
+        _("Stability corridor: family %d - %lu of %d validated routes"),
+        familyId + 1,
+        static_cast<unsigned long>(selectedFamily->routeIndices.size()),
+        m_StabilityCorridorResult.validRoutes);
+  wxLogMessage(
+      "WR_STABILITY_CORRIDOR_RESULT source=gui status=complete family=%d "
+      "routes=%lu valid=%d cache=%s elapsed_ms=%ld",
+      familyId, static_cast<unsigned long>(selectedFamily->routeIndices.size()),
+      m_StabilityCorridorResult.validRoutes, cacheHit ? "hit" : "miss",
+      m_StabilityCorridorResult.calculationTimeMs);
+  wxLogMessage(
+      "WR_STABILITY_CORRIDOR_DISPLAY family=%d selected_route=%p "
+      "inner_cells=%lu outer_cells=%lu",
+      familyId, selectedRoutes.front(),
+      static_cast<unsigned long>(selectedFamily->innerCells.size()),
+      static_cast<unsigned long>(selectedFamily->outerCells.size()));
+  RequestRefresh(GetOCPNCanvasWindow());
+  return true;
+}
+
+void WeatherRouting::SelectWeatherRoutesForStability(
+    const std::vector<RouteMapOverlay*>& routes) {
+  if (routes.empty() || !m_panel || !m_panel->m_lWeatherRoutes) return;
+  long firstSelectedRow = -1;
+  for (long row = 0; row < m_panel->m_lWeatherRoutes->GetItemCount(); ++row) {
+    WeatherRoute* weatherRoute = reinterpret_cast<WeatherRoute*>(
+        wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(row)));
+    const bool selected = weatherRoute &&
+                          std::find(routes.begin(), routes.end(),
+                                    weatherRoute->routemapoverlay) !=
+                              routes.end();
+    if (selected && firstSelectedRow < 0) firstSelectedRow = row;
+    m_panel->m_lWeatherRoutes->SetItemState(
+        row, selected ? wxLIST_STATE_SELECTED : 0, wxLIST_STATE_SELECTED);
+  }
+  if (firstSelectedRow < 0) return;
+  m_panel->m_lWeatherRoutes->SetItemState(
+      firstSelectedRow, wxLIST_STATE_FOCUSED, wxLIST_STATE_FOCUSED);
+  m_panel->m_lWeatherRoutes->EnsureVisible(firstSelectedRow);
+  OnWeatherRouteSelected();
+}
+
+void WeatherRouting::HideStabilityCorridor(const wxString& reason) {
+  if (m_StabilityCorridorVisible)
+    wxLogMessage("WR_STABILITY_CORRIDOR_HIDE family=%d reason=\"%s\"",
+                 m_StabilityCorridorFamilyId, reason);
+  m_StabilityCorridorVisible = false;
+  m_StabilityCorridorFamilyId = -1;
+  RequestRefresh(GetOCPNCanvasWindow());
+}
+
+void WeatherRouting::RenderStabilityCorridor(piDC& dc,
+                                             PlugIn_ViewPort& vp) {
+  if (!m_StabilityCorridorVisible) return;
+  const weather_routing_engine::RouteFamily* selectedFamily = NULL;
+  for (const auto& family : m_StabilityCorridorResult.families)
+    if (family.id == m_StabilityCorridorFamilyId) selectedFamily = &family;
+  if (!selectedFamily) return;
+
+  const auto drawCells = [&](
+      const std::vector<weather_routing_engine::StabilityCell>& cells,
+      const wxColour& colour) {
+    dc.SetPen(*wxTRANSPARENT_PEN);
+    dc.SetBrush(wxBrush(colour));
+    for (const auto& cell : cells) {
+      wxPoint points[4];
+      GetCanvasPixLL(&vp, &points[0], cell.minLat, cell.minLon);
+      GetCanvasPixLL(&vp, &points[1], cell.minLat, cell.maxLon);
+      GetCanvasPixLL(&vp, &points[2], cell.maxLat, cell.maxLon);
+      GetCanvasPixLL(&vp, &points[3], cell.maxLat, cell.minLon);
+      dc.DrawPolygon(4, points);
+    }
+  };
+  drawCells(selectedFamily->outerCells, wxColour(50, 155, 210, 45));
+  drawCells(selectedFamily->innerCells, wxColour(25, 95, 190, 80));
+  dc.SetBrush(*wxTRANSPARENT_BRUSH);
+}
+
 class MultiLegDepartureOptimizationResultsDialog : public wxDialog {
 public:
   explicit MultiLegDepartureOptimizationResultsDialog(WeatherRouting* parent)
@@ -4940,7 +5302,8 @@ public:
                  wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER),
         m_WeatherRouting(parent),
         m_AutoRefreshTimer(this),
-        m_AutoRefreshCount(0) {
+        m_AutoRefreshCount(0),
+        m_UpdatingSelection(false) {
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
     m_List = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                             wxLC_REPORT | wxLC_SINGLE_SEL);
@@ -4952,6 +5315,20 @@ public:
       m_List->InsertColumn(i, columns[i]);
 
     topSizer->Add(m_List, 1, wxEXPAND | wxALL, 5);
+
+    wxBoxSizer* corridorSizer = new wxBoxSizer(wxHORIZONTAL);
+    m_ShowCorridor = new wxCheckBox(
+        this, wxID_ANY, _("Show stability corridor for selected route"));
+    m_ShowCorridor->SetToolTip(
+        _("Show route-agreement bands for the selected completed departure "
+          "candidate. This is descriptive, not a safety guarantee."));
+    m_ShowCorridor->Enable(false);
+    corridorSizer->Add(m_ShowCorridor, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+    m_CorridorStatus = new wxStaticText(
+        this, wxID_ANY, _("Waiting for completed routes..."));
+    corridorSizer->Add(m_CorridorStatus, 1,
+                       wxALL | wxALIGN_CENTER_VERTICAL, 5);
+    topSizer->Add(corridorSizer, 0, wxEXPAND);
 
     wxBoxSizer* buttonSizer = new wxBoxSizer(wxHORIZONTAL);
     wxButton* refresh = new wxButton(this, wxID_REFRESH, _("Refresh"));
@@ -4991,6 +5368,12 @@ public:
                 [this](wxCommandEvent&) {
                   CloseDialog();
                 });
+    m_ShowCorridor->Bind(wxEVT_CHECKBOX,
+                         [this](wxCommandEvent&) { UpdateCorridor(); });
+    m_List->Bind(wxEVT_LIST_ITEM_SELECTED,
+                 [this](wxListEvent&) { UpdateCorridor(); });
+    m_List->Bind(wxEVT_LIST_ITEM_DESELECTED,
+                 [this](wxListEvent&) { UpdateCorridor(); });
     Bind(wxEVT_TIMER, &MultiLegDepartureOptimizationResultsDialog::OnAutoRefresh,
          this);
     Bind(wxEVT_CLOSE_WINDOW,
@@ -5001,7 +5384,11 @@ public:
     UpdateAutoRefresh();
   }
 
-  ~MultiLegDepartureOptimizationResultsDialog() override { StopAutoRefresh(); }
+  ~MultiLegDepartureOptimizationResultsDialog() override {
+    StopAutoRefresh();
+    if (m_WeatherRouting)
+      m_WeatherRouting->HideStabilityCorridor("multi_leg_results_destroyed");
+  }
 
 private:
   static const int AUTO_REFRESH_INTERVAL_MS = 1000;
@@ -5015,6 +5402,7 @@ private:
 
   bool ApplyBest() {
     if (!m_WeatherRouting) return false;
+    m_WeatherRouting->HideStabilityCorridor("multi_leg_candidate_applied");
     bool applied = m_WeatherRouting->ApplyBestMultiLegOptimizationCandidate();
     Populate();
     UpdateAutoRefresh();
@@ -5029,6 +5417,7 @@ private:
                    wxOK | wxICON_WARNING, this);
       return false;
     }
+    m_WeatherRouting->HideStabilityCorridor("multi_leg_candidate_applied");
     bool applied = m_WeatherRouting->ApplyMultiLegOptimizationCandidate(index);
     Populate();
     UpdateAutoRefresh();
@@ -5037,8 +5426,10 @@ private:
 
   void DiscardAndClose() {
     StopAutoRefresh();
-    if (m_WeatherRouting)
+    if (m_WeatherRouting) {
+      m_WeatherRouting->HideStabilityCorridor("multi_leg_candidates_discarded");
       m_WeatherRouting->CloseMultiLegDepartureOptimizationResults();
+    }
     EndModal(wxID_OK);
   }
 
@@ -5071,8 +5462,10 @@ private:
     }
 
     StopAutoRefresh();
-    if (m_WeatherRouting)
+    if (m_WeatherRouting) {
+      m_WeatherRouting->HideStabilityCorridor("multi_leg_results_closed");
       m_WeatherRouting->CloseMultiLegDepartureOptimizationResults();
+    }
     EndModal(wxID_OK);
   }
 
@@ -5129,12 +5522,56 @@ private:
     m_List->SetColumnWidth(col, wxLIST_AUTOSIZE_USEHEADER);
   }
 
+  void UpdateCorridor() {
+    if (m_UpdatingSelection || !m_WeatherRouting) return;
+    if (!m_ShowCorridor->GetValue()) {
+      m_WeatherRouting->HideStabilityCorridor("checkbox_disabled");
+      if (m_ShowCorridor->IsEnabled())
+        m_CorridorStatus->SetLabel(
+            _("Select a completed route to display its stability family."));
+      return;
+    }
+    const int selected = SelectedCandidateIndex();
+    const auto& candidates = m_WeatherRouting->MultiLegOptimizationCandidates();
+    if (selected < 0 || selected >= static_cast<int>(candidates.size()) ||
+        !candidates[selected].complete) {
+      m_WeatherRouting->HideStabilityCorridor("selection_not_complete");
+      m_CorridorStatus->SetLabel(
+          _("A completed route is required to display a stability corridor."));
+      return;
+    }
+    std::vector<std::vector<RouteMapOverlay*> > routes;
+    routes.reserve(candidates.size());
+    for (const auto& candidate : candidates) routes.push_back(candidate.routes);
+    m_CorridorStatus->SetLabel(_("Calculating stability corridor..."));
+    Layout();
+    Update();
+    wxString status;
+    if (!m_WeatherRouting->ShowMultiLegStabilityCorridor(
+            routes, static_cast<size_t>(selected), &status)) {
+      m_CorridorStatus->SetLabel(status.IsEmpty()
+                                     ? _("No stability corridor is available.")
+                                     : status);
+      return;
+    }
+    m_CorridorStatus->SetLabel(status);
+  }
+
   void Populate() {
+    const int selectedCandidate = SelectedCandidateIndex();
+    m_UpdatingSelection = true;
     m_List->DeleteAllItems();
-    if (!m_WeatherRouting) return;
+    if (!m_WeatherRouting) {
+      m_UpdatingSelection = false;
+      return;
+    }
 
     const auto& candidates = m_WeatherRouting->MultiLegOptimizationCandidates();
-    for (const auto& candidate : candidates) {
+    int completeRoutes = 0;
+    for (size_t candidateIndex = 0; candidateIndex < candidates.size();
+         ++candidateIndex) {
+      const auto& candidate = candidates[candidateIndex];
+      if (candidate.complete) ++completeRoutes;
       wxString marker;
       if (candidate.applied)
         marker = _("Applied");
@@ -5160,13 +5597,39 @@ private:
         else reason = candidate.failedLegName;
       }
       SetCell(row, 8, reason);
+      if (static_cast<int>(candidateIndex) == selectedCandidate)
+        m_List->SetItemState(row, wxLIST_STATE_SELECTED,
+                             wxLIST_STATE_SELECTED);
     }
+    const bool available =
+        !m_WeatherRouting->MultiLegDepartureOptimizationActive() &&
+        completeRoutes >= 3;
+    m_ShowCorridor->Enable(available);
+    if (!available) {
+      if (m_ShowCorridor->GetValue()) m_ShowCorridor->SetValue(false);
+      m_WeatherRouting->HideStabilityCorridor(
+          m_WeatherRouting->MultiLegDepartureOptimizationActive()
+              ? "optimization_running"
+              : "too_few_completed_routes");
+      m_CorridorStatus->SetLabel(
+          m_WeatherRouting->MultiLegDepartureOptimizationActive()
+              ? _("Waiting for completed routes...")
+              : _("No stability corridor: fewer than 3 completed routes."));
+    } else if (selectedCandidate < 0) {
+      m_CorridorStatus->SetLabel(
+          _("Select a completed route to display its stability family."));
+    }
+    m_UpdatingSelection = false;
+    if (available && m_ShowCorridor->GetValue()) UpdateCorridor();
   }
 
   WeatherRouting* m_WeatherRouting;
   wxListCtrl* m_List;
   wxTimer m_AutoRefreshTimer;
   int m_AutoRefreshCount;
+  wxCheckBox* m_ShowCorridor;
+  wxStaticText* m_CorridorStatus;
+  bool m_UpdatingSelection;
 };
 
 void WeatherRouting::ShowMultiLegDepartureOptimizationResults() {
@@ -8728,6 +9191,18 @@ void WeatherRouting::Reset() {
 
 void WeatherRouting::DeleteRouteMaps(
     std::list<RouteMapOverlay*> routemapoverlays) {
+  for (RouteMapOverlay* route : routemapoverlays) {
+    if (std::find(m_StabilityCorridorSourceRoutes.begin(),
+                  m_StabilityCorridorSourceRoutes.end(),
+                  route) != m_StabilityCorridorSourceRoutes.end()) {
+      HideStabilityCorridor("candidate_deleted");
+      m_StabilityCorridorSourceRoutes.clear();
+      m_StabilityCorridorRoutes.clear();
+      m_StabilityCorridorResult =
+          weather_routing_engine::StabilityCorridorResult();
+      break;
+    }
+  }
   bool current = false;
   for (std::list<RouteMapOverlay*>::iterator it = routemapoverlays.begin();
        it != routemapoverlays.end(); it++) {

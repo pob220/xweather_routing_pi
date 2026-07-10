@@ -50,6 +50,40 @@ struct RoutingCandidateResult {
         reverseFinalValidationPass(false) {}
 };
 
+struct StabilityCorridorSummary {
+  bool requested;
+  wxString status;
+  int validRoutes;
+  int excludedRoutes;
+  int routeFamilies;
+  int selectedFamilyId;
+  int dominantFamilyRoutes;
+  double medianWidthNm;
+  double maximumWidthNm;
+  double etaSpreadMinutes;
+  double innerThreshold;
+  double outerThreshold;
+  wxString representativeCandidateId;
+  wxString geoJsonPath;
+  wxString failureReason;
+  long calculationTimeMs;
+
+  StabilityCorridorSummary()
+      : requested(false),
+        status("not_requested"),
+        validRoutes(0),
+        excludedRoutes(0),
+        routeFamilies(0),
+        selectedFamilyId(-1),
+        dominantFamilyRoutes(0),
+        medianWidthNm(0.0),
+        maximumWidthNm(0.0),
+        etaSpreadMinutes(0.0),
+        innerThreshold(0.0),
+        outerThreshold(0.0),
+        calculationTimeMs(0) {}
+};
+
 struct RoutingResult {
   int schemaVersion;
   wxString scenario;
@@ -57,6 +91,7 @@ struct RoutingResult {
   wxString failureReason;
   std::vector<RoutingCandidateResult> candidates;
   RoutingDiagnostics diagnostics;
+  StabilityCorridorSummary stabilityCorridor;
 
   RoutingResult() : schemaVersion(1), status("unknown") {}
 };

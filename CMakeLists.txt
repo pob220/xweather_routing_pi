@@ -191,6 +191,7 @@ SET(SRCS
             src/RouteMapOverlay.cpp
             src/RouteWaypointExtractor.cpp
             src/RouteSimplifier.cpp
+            src/StabilityRouteAdapter.cpp
             src/RoutingTablePanel.cpp
             src/Utilities.cpp
             src/LineBufferOverlay.cpp
@@ -208,6 +209,7 @@ SET(SRCS
             src/IsoRoute.cpp
             src/headless/HeadlessRouteRunner.cpp
             src/headless/RoutingScenarioJson.cpp
+            src/engine/StabilityCorridorCalculator.cpp
 )
 
 SET (HDRS
@@ -224,6 +226,7 @@ SET (HDRS
             include/ConfigurationBatchDialog.h
             include/ConstraintChecker.h
             include/RouteSimplifier.h
+            include/StabilityRouteAdapter.h
             include/EditPolarDialog.h
             include/AboutDialog.h
             include/Polar.h
@@ -249,6 +252,7 @@ SET (HDRS
             include/weather_routing_engine/RoutingDiagnostics.h
             include/weather_routing_engine/RoutingResult.h
             include/weather_routing_engine/RoutingScenario.h
+            include/weather_routing_engine/StabilityCorridor.h
             src/headless/HeadlessRouteRunner.h
             src/headless/RoutingScenarioJson.h
 )

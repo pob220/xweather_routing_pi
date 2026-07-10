@@ -39,6 +39,13 @@ services as the GUI path. It assumes:
 The scenario file does not currently name a GRIB file or polar file. Those are
 still supplied by the existing OpenCPN/Weather Routing configuration.
 
+For repeatable integration tests, `WR_HEADLESS_GRIB_FILE` can name an existing
+GRIB file. The runner asks the GRIB plugin to open it through the plugin's
+public message interface before routing starts. Weather Routing does not parse
+the file or depend on GRIB internals. Without this variable, a fresh headless
+process may report `no weather data at route time/window` until another
+component has initialized the GRIB timeline.
+
 ## Environment Variables
 
 `WR_HEADLESS_SCENARIO` points to a JSON scenario file.
@@ -46,6 +53,10 @@ still supplied by the existing OpenCPN/Weather Routing configuration.
 `WR_HEADLESS_OUTPUT` optionally points to the JSON result file. The runner writes
 an initial `running` result when the scenario starts and overwrites it with the
 final result when the run completes or fails.
+
+`WR_HEADLESS_GRIB_FILE` optionally names the GRIB file to open through the GRIB
+plugin's existing JSON message interface. The file must exist and cover the
+scenario's route area and departure/arrival window.
 
 The existing `WR_HEADLESS_ROUTE_TEST` path remains supported. If
 `WR_HEADLESS_SCENARIO` is set without `WR_HEADLESS_ROUTE_TEST`, the plugin still
@@ -123,6 +134,15 @@ The first milestone supports:
 - `reverseReachability.searchBackIsochrones`
 - `reverseReachability.horizonHours`
 - `reverseReachability.diagnostics`
+- `stabilityCorridor.enabled`
+- `stabilityCorridor.source` (currently `departureCandidates`)
+- `stabilityCorridor.minimumRoutes`
+- `stabilityCorridor.maxEtaPenaltyMinutes`
+- `stabilityCorridor.gridResolutionNm`
+- `stabilityCorridor.innerAgreementThreshold`
+- `stabilityCorridor.outerAgreementThreshold`
+- `stabilityCorridor.clusterRoutes`
+- `stabilityCorridor.writeGeoJson`
 
 `minimumDepthM` is parsed and retained in the scenario DTO. It is only applied
 when the current Weather Routing/OpenCPN route safety configuration exposes a
@@ -145,6 +165,53 @@ Example block:
   "searchBackIsochrones": 6,
   "horizonHours": 0,
   "diagnostics": true
+}
+```
+
+`stabilityCorridor` is optional and does not change route computation. It is a
+post-processing diagnostic over completed departure candidates which pass
+authoritative final-route validation. Routes are grouped into spatial families;
+the representative line is a real medoid route, not an averaged route. When
+`writeGeoJson` is true, the runner writes a sibling
+`*.stability.geojson` file containing separate inner/outer raster-cell polygons
+and the medoid line for each eligible family.
+
+```json
+"stabilityCorridor": {
+  "enabled": true,
+  "source": "departureCandidates",
+  "minimumRoutes": 3,
+  "maxEtaPenaltyMinutes": 120,
+  "gridResolutionNm": 0.5,
+  "innerAgreementThreshold": 0.7,
+  "outerAgreementThreshold": 0.4,
+  "clusterRoutes": true,
+  "writeGeoJson": true
+}
+```
+
+The agreement thresholds describe route agreement, not meteorological
+probability. Cells which fail the active chart-safety check are omitted. The
+corridor remains descriptive and is not used to accept or rank routes.
+
+Example result section:
+
+```json
+"stabilityCorridor": {
+  "status": "complete",
+  "validRoutes": 9,
+  "excludedRoutes": 4,
+  "routeFamilies": 2,
+  "selectedFamilyId": 0,
+  "dominantFamilyRoutes": 7,
+  "medianWidthNm": 2.4,
+  "maximumWidthNm": 8.7,
+  "etaSpreadMinutes": 43.0,
+  "innerThreshold": 0.7,
+  "outerThreshold": 0.4,
+  "representativeCandidateId": "candidate-0",
+  "geoJsonPath": "/tmp/wr_result.stability.geojson",
+  "calculationTimeMs": 18
 }
 ```
 
@@ -175,6 +242,16 @@ The result file contains:
   - `reverseFailureReason`
   - `reverseFinalValidationPass`
 - `diagnostics`
+- `stabilityCorridor`
+  - `status`
+  - `validRoutes`, `excludedRoutes`
+  - `routeFamilies`, `selectedFamilyId`, `dominantFamilyRoutes`
+  - `medianWidthNm`, `maximumWidthNm`, `etaSpreadMinutes`
+  - `innerThreshold`, `outerThreshold`
+  - `representativeCandidateId`
+  - `geoJsonPath`
+  - `calculationTimeMs`
+  - `failureReason`
 
 Diagnostics are intentionally sparse in this first milestone. Fields are omitted
 when the existing computation path does not expose them cleanly.
@@ -238,6 +315,24 @@ OPENCPN_PLUGIN_DIRS="$PWD/build/plugins/weather_routing_pi:/usr/lib/opencpn:/usr
 cat /tmp/wr_reverse_result.json
 
 rg "WR_REVERSE_REACHABILITY|FINAL_ROUTE_SAFETY|WR_HEADLESS" \
+  ~/.opencpn/opencpn.log | tail -200
+```
+
+Use the stability-corridor example with:
+
+```sh
+cd ~/src/OpenCPN
+
+WR_HEADLESS_SCENARIO="$PWD/plugins/weather_routing_pi/testdata/scenarios/holyhead_dunlaoghaire_stability.json" \
+WR_HEADLESS_OUTPUT=/tmp/wr_stability_result.json \
+WR_HEADLESS_GRIB_FILE=/path/to/environment.grb \
+OPENCPN_PLUGIN_DIRS="$PWD/build/plugins/weather_routing_pi:/usr/lib/opencpn:/usr/lib64/opencpn" \
+./build/opencpn
+
+cat /tmp/wr_stability_result.json
+python3 -m json.tool /tmp/wr_stability_result.stability.geojson >/dev/null
+
+rg "WR_STABILITY_CORRIDOR|FINAL_ROUTE_SAFETY|WR_GRID_THREAD_VIOLATION" \
   ~/.opencpn/opencpn.log | tail -200
 ```
 
