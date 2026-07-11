@@ -631,8 +631,13 @@ private:
    */
   void Start(RouteMapOverlay* routemapoverlay);
   void StartAll();
-  bool TryScoutRouteForChartSafety(RouteMapOverlay* routemapoverlay,
-                                   RouteMapConfiguration& configuration);
+  bool CollectChartSafetyScoutGeometry(
+      RouteMapOverlay* routemapoverlay,
+      std::vector<std::pair<double, double> >* geometry,
+      bool* reached_destination);
+  void PrepareChartSafetyScoutEnvelopes(
+      const std::vector<RouteMapOverlay*>& routemapoverlays,
+      const wxString& context);
   bool RetryRouteWithChartSafetyPropagation(
       RouteMapOverlay* routemapoverlay);
   bool RetryRouteAfterMissingChartSafetyTiles(RouteMapOverlay* routemapoverlay);

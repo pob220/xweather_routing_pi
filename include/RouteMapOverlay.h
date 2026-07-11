@@ -221,6 +221,14 @@ public:
   std::list<PlotData>& GetPlotData(bool cursor_route = false);
 
   /**
+   * Returns the parent chain ending at the frontier position closest to the
+   * configured destination.  This is intended for post-computation scout
+   * prewarm hints when a scout made progress but did not reach its target.
+   * Call only after the route worker has stopped.
+   */
+  std::vector<std::pair<double, double> > GetClosestFrontierGeometry();
+
+  /**
    * Gets specific route information based on type.
    * @param type Type of information to retrieve.
    * @param cursor_route If true, gets info for cursor route, otherwise for

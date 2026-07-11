@@ -1473,6 +1473,27 @@ void RouteMapOverlay::GetLLBounds(double& latmin, double& latmax,
   }
 }
 
+std::vector<std::pair<double, double> >
+RouteMapOverlay::GetClosestFrontierGeometry() {
+  std::vector<std::pair<double, double> > geometry;
+  RouteMapConfiguration configuration = GetConfiguration();
+  Position* closest =
+      ClosestPosition(configuration.EndLat, configuration.EndLon);
+  if (!closest) return geometry;
+
+  std::vector<Position*> chain;
+  for (Position* point = closest; point; point = point->parent)
+    chain.push_back(point);
+  std::reverse(chain.begin(), chain.end());
+  geometry.reserve(chain.size());
+  for (std::vector<Position*>::const_iterator it = chain.begin();
+       it != chain.end(); ++it) {
+    if (*it && std::isfinite((*it)->lat) && std::isfinite((*it)->lon))
+      geometry.push_back(std::make_pair((*it)->lat, (*it)->lon));
+  }
+  return geometry;
+}
+
 void RouteMapOverlay::RequestGrib(wxDateTime time) {
   Json::Value v;
   time = time.FromUTC();
