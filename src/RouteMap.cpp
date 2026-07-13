@@ -202,7 +202,9 @@ RouteMapConfiguration::RouteMapConfiguration()
       chart_safety_missing_tile_min_lat(NAN),
       chart_safety_missing_tile_max_lat(NAN),
       chart_safety_missing_tile_min_lon(NAN),
-      chart_safety_missing_tile_max_lon(NAN) {}
+      chart_safety_missing_tile_max_lon(NAN),
+      chart_safety_start_endpoint_reach_nm(0.0),
+      chart_safety_end_endpoint_reach_nm(0.0) {}
 
 double RouteMapConfiguration::GetBoatLat() {
   if (s_plugin_instance) return s_plugin_instance->m_boat_lat;
@@ -296,7 +298,10 @@ OD_FindClosestBoundaryLineCrossing RouteMap::ODFindClosestBoundaryLineCrossing =
 
 std::list<RouteMapPosition> RouteMap::Positions;
 
-RouteMap::RouteMap() {}
+RouteMap::RouteMap()
+    : m_bNeedsGrib(false),
+      m_bNeedsChartSafetyData(false),
+      m_NewGrib(NULL) {}
 
 RouteMap::~RouteMap() { Clear(); }
 
@@ -312,6 +317,49 @@ static void DeleteIsoRouteList(IsoRouteList& routes) {
   for (IsoRouteList::iterator it = routes.begin(); it != routes.end(); ++it)
     delete *it;
   routes.clear();
+}
+
+struct PositionPropagationState {
+  Position* position;
+  bool propagated;
+  PropagationError propagation_error;
+};
+
+static void SnapshotIsoRoutePropagationState(
+    IsoRoute* route, std::vector<PositionPropagationState>* states) {
+  if (!route || !route->skippoints || !route->skippoints->point || !states)
+    return;
+
+  Position* position = route->skippoints->point;
+  do {
+    PositionPropagationState state = {position, position->propagated,
+                                      position->propagation_error};
+    states->push_back(state);
+    position = position->next;
+  } while (position && position != route->skippoints->point);
+
+  for (IsoRouteList::iterator child = route->children.begin();
+       child != route->children.end(); ++child)
+    SnapshotIsoRoutePropagationState(*child, states);
+}
+
+static void SnapshotIsoChronPropagationState(
+    IsoChron* isochron, std::vector<PositionPropagationState>* states) {
+  if (!isochron || !states) return;
+  states->clear();
+  for (IsoRouteList::iterator route = isochron->routes.begin();
+       route != isochron->routes.end(); ++route)
+    SnapshotIsoRoutePropagationState(*route, states);
+}
+
+static void RestoreIsoChronPropagationState(
+    const std::vector<PositionPropagationState>& states) {
+  for (std::vector<PositionPropagationState>::const_iterator state =
+           states.begin();
+       state != states.end(); ++state) {
+    state->position->propagated = state->propagated;
+    state->position->propagation_error = state->propagation_error;
+  }
 }
 
 void RouteMap::PositionLatLon(wxString Name, double& lat, double& lon) {
@@ -355,6 +403,11 @@ bool RouteMap::ReduceList(IsoRouteList& merged, IsoRouteList& routelist,
 /* enlarge the map by 1 level */
 bool RouteMap::Propagate() {
   Lock();
+
+  if (m_bNeedsChartSafetyData) {
+    Unlock();
+    return false;
+  }
 
   if (m_bNeedsGrib) {  // waiting for timer in main thread to request the grib
     Unlock();
@@ -422,8 +475,7 @@ bool RouteMap::Propagate() {
   m_NewGrib = 0;
   m_SharedNewGrib.SetGribRecordSet(0);
 
-  // request the next grib
-  // in a different thread (grib record averaging going in parallel)
+  // Request the next GRIB while propagation uses the current record.
   delta = DetermineDeltaTime();
   m_NewTime += wxTimeSpan(0, 0, delta);
   m_bNeedsGrib = configuration.UseGrib;
@@ -431,6 +483,7 @@ bool RouteMap::Propagate() {
   Unlock();
 
   IsoRouteList routelist;
+  std::vector<PositionPropagationState> sourcePropagationState;
   wxStopWatch propagateTimer;
   if (origin.empty()) {
     // The routing calculation has not started yet.
@@ -485,6 +538,8 @@ bool RouteMap::Propagate() {
       return false;
     }
 
+    if (ConstraintChecker::IsExperimentalChartSafetyEnforced())
+      SnapshotIsoChronPropagationState(origin.back(), &sourcePropagationState);
     origin.back()->PropagateIntoList(routelist, configuration);
   }
   long propagateMs = propagateTimer.Time();
@@ -498,8 +553,8 @@ bool RouteMap::Propagate() {
         "first_tile_min=(%.6f,%.6f) "
         "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
         "propagate_ms=%ld "
-        "generated=%ld accepted=%ld. Aborting this attempt so the main "
-        "thread can prewarm missing chart-safety tiles and retry.",
+        "generated=%ld accepted=%ld. Discarding this provisional isochrone "
+        "and pausing for main-thread chart-safety request service.",
         m_Configuration.Start, m_Configuration.End,
         configuration.chart_safety_missing_tile_rejections,
         configuration.chart_safety_missing_tile_first_lat_tile,
@@ -513,6 +568,39 @@ bool RouteMap::Propagate() {
         configuration.generated_candidate_count,
         configuration.accepted_candidate_count);
     DeleteIsoRouteList(routelist);
+    // Position::Propagate marks every source frontier point as propagated.
+    // Restore the exact pre-layer state so the same frontier can be replayed
+    // after the main thread publishes the requested chart mask.
+    RestoreIsoChronPropagationState(sourcePropagationState);
+    Lock();
+    // Restore the prepared record and time for the compatibility replay path.
+    // Normal operation prewarms the deterministic tile halo and does not enter
+    // this path; exact worker requests remain a safe last-resort backstop.
+    m_NewTime = time;
+    m_SharedNewGrib = shared_grib;
+    m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
+    m_bNeedsGrib = false;
+    m_bNeedsChartSafetyData = true;
+    m_Configuration.chart_safety_missing_tile_rejections =
+        configuration.chart_safety_missing_tile_rejections;
+    m_Configuration.chart_safety_missing_tile_first_lat_tile =
+        configuration.chart_safety_missing_tile_first_lat_tile;
+    m_Configuration.chart_safety_missing_tile_first_lon_tile =
+        configuration.chart_safety_missing_tile_first_lon_tile;
+    m_Configuration.chart_safety_missing_tile_first_min_lat =
+        configuration.chart_safety_missing_tile_first_min_lat;
+    m_Configuration.chart_safety_missing_tile_first_min_lon =
+        configuration.chart_safety_missing_tile_first_min_lon;
+    m_Configuration.chart_safety_missing_tile_min_lat =
+        configuration.chart_safety_missing_tile_min_lat;
+    m_Configuration.chart_safety_missing_tile_max_lat =
+        configuration.chart_safety_missing_tile_max_lat;
+    m_Configuration.chart_safety_missing_tile_min_lon =
+        configuration.chart_safety_missing_tile_min_lon;
+    m_Configuration.chart_safety_missing_tile_max_lon =
+        configuration.chart_safety_missing_tile_max_lon;
+    Unlock();
+    return false;
   }
 
   IsoChron* update;
@@ -936,6 +1024,7 @@ void RouteMap::Reset() {
 
   m_NewTime = m_Configuration.StartTime;
   m_bNeedsGrib = m_Configuration.UseGrib && m_Configuration.RouteGUID.IsEmpty();
+  m_bNeedsChartSafetyData = false;
   m_ErrorMsg = wxEmptyString;
   m_FailureReason = wxEmptyString;
 
@@ -947,6 +1036,21 @@ void RouteMap::Reset() {
   m_bLandCrossing = false;
   m_bBoundaryCrossing = false;
 
+  Unlock();
+}
+
+void RouteMap::ChartSafetyDataServiced() {
+  Lock();
+  m_bNeedsChartSafetyData = false;
+  m_Configuration.chart_safety_missing_tile_rejections = 0;
+  m_Configuration.chart_safety_missing_tile_first_lat_tile = 0;
+  m_Configuration.chart_safety_missing_tile_first_lon_tile = 0;
+  m_Configuration.chart_safety_missing_tile_first_min_lat = NAN;
+  m_Configuration.chart_safety_missing_tile_first_min_lon = NAN;
+  m_Configuration.chart_safety_missing_tile_min_lat = NAN;
+  m_Configuration.chart_safety_missing_tile_max_lat = NAN;
+  m_Configuration.chart_safety_missing_tile_min_lon = NAN;
+  m_Configuration.chart_safety_missing_tile_max_lon = NAN;
   Unlock();
 }
 

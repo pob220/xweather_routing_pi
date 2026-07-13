@@ -728,6 +728,10 @@ struct RouteMapConfiguration {
   double chart_safety_missing_tile_max_lat;
   double chart_safety_missing_tile_min_lon;
   double chart_safety_missing_tile_max_lon;
+  // Search-derived reach of the first/last scout frontier edge.  Margin-only
+  // endpoint relaxation is confined to these zones; zero means disabled.
+  double chart_safety_start_endpoint_reach_nm;
+  double chart_safety_end_endpoint_reach_nm;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,
@@ -879,6 +883,15 @@ public:
     Unlock();
     return needsgrib;
   }
+  /** Return true while propagation is paused for main-thread chart data. */
+  bool NeedsChartSafetyData() {
+    Lock();
+    bool needed = m_bNeedsChartSafetyData;
+    Unlock();
+    return needed;
+  }
+  /** Resume propagation after the main thread has serviced tile requests. */
+  void ChartSafetyDataServiced();
   void RequestedGrib() {
     Lock();
     m_bNeedsGrib = false;
@@ -1121,6 +1134,7 @@ protected:
    */
   IsoChronList origin;
   bool m_bNeedsGrib;
+  bool m_bNeedsChartSafetyData;
   /**
    * Shared reference to GRIB data.
    */

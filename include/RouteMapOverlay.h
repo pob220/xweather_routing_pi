@@ -34,6 +34,13 @@ class piDC;
 class RouteMapOverlay;
 class SettingsDialog;
 
+struct RouteMapFrontierSegment {
+  double lat1;
+  double lon1;
+  double lat2;
+  double lon2;
+};
+
 /**
  * Thread class for route map overlay calculations.
  * Handles the background processing for weather route generation.
@@ -227,6 +234,13 @@ public:
    * Call only after the route worker has stopped.
    */
   std::vector<std::pair<double, double> > GetClosestFrontierGeometry();
+
+  /**
+   * Return every parent edge retained by the reduced/thinned scout
+   * isochrones.  This is a prewarm hint, not a chart-safety decision.
+   * Call only after the route worker has stopped.
+   */
+  std::vector<RouteMapFrontierSegment> GetRetainedFrontierSegments();
 
   /**
    * Gets specific route information based on type.

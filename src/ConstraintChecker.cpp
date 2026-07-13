@@ -310,26 +310,72 @@ bool SegmentTouchesEndpointMarginZone(RouteMapConfiguration* configuration,
   /*
    * A start/end waypoint can legitimately be close to land, for example just
    * outside a harbour or headland.  The chart safety margin should not make it
-   * impossible to leave or arrive at such a waypoint, but only for margin-only
-   * hits.  Actual land/drying/depth/no-chart hazards are still checked by a
-   * zero-margin segment safety call before any relaxation is allowed.
+   * impossible to leave or arrive at such a waypoint, but only for the route
+   * edges inside the endpoint reach actually demonstrated by the
+   * chart-independent scout and only for margin-only hits.  Actual
+   * land/drying/depth/no-chart hazards are still checked by a zero-margin
+   * segment safety call before any relaxation is allowed.  The reach is
+   * search-derived for this route rather than a fixed distance.
    */
-  const double endpoint_zone_nm = wxMax(1.0, safety_margin_nm * 4.0);
+  const double endpoint_coordinate_tolerance_nm = 0.001;
   double bearing = 0.0;
   double dist_nm = 0.0;
 
-  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat1, lon1,
-                   &bearing, &dist_nm);
-  if (dist_nm <= endpoint_zone_nm) return true;
-  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat2, lon2,
-                   &bearing, &dist_nm);
-  if (dist_nm <= endpoint_zone_nm) return true;
+  const double start_reach = wxMax(
+      endpoint_coordinate_tolerance_nm,
+      configuration->chart_safety_start_endpoint_reach_nm);
+  const double end_reach = wxMax(
+      endpoint_coordinate_tolerance_nm,
+      configuration->chart_safety_end_endpoint_reach_nm);
+
+  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat1,
+                   lon1, &bearing, &dist_nm);
+  if (dist_nm <= start_reach) return true;
+  ll_gc_ll_reverse(configuration->StartLat, configuration->StartLon, lat2,
+                   lon2, &bearing, &dist_nm);
+  if (dist_nm <= start_reach) return true;
   ll_gc_ll_reverse(configuration->EndLat, configuration->EndLon, lat1, lon1,
                    &bearing, &dist_nm);
-  if (dist_nm <= endpoint_zone_nm) return true;
+  if (dist_nm <= end_reach) return true;
   ll_gc_ll_reverse(configuration->EndLat, configuration->EndLon, lat2, lon2,
                    &bearing, &dist_nm);
-  return dist_nm <= endpoint_zone_nm;
+  return dist_nm <= end_reach;
+}
+
+void RecordMissingChartSafetyData(RouteMapConfiguration* configuration,
+                                  const PlugInSegmentSafetyResult& result) {
+  if (!configuration || result.unexpected_tile_builds <= 0) return;
+
+  configuration->chart_safety_missing_tile_rejections +=
+      result.unexpected_tile_builds;
+  double tile_min_lat = result.unexpected_tile_min_lat;
+  double tile_min_lon = result.unexpected_tile_min_lon;
+  double tile_max_lat = tile_min_lat + 0.05;
+  double tile_max_lon = tile_min_lon + 0.05;
+  if (!std::isfinite(
+          configuration->chart_safety_missing_tile_first_min_lat)) {
+    configuration->chart_safety_missing_tile_first_lat_tile =
+        result.unexpected_lat_tile;
+    configuration->chart_safety_missing_tile_first_lon_tile =
+        result.unexpected_lon_tile;
+    configuration->chart_safety_missing_tile_first_min_lat =
+        result.unexpected_tile_min_lat;
+    configuration->chart_safety_missing_tile_first_min_lon =
+        result.unexpected_tile_min_lon;
+    configuration->chart_safety_missing_tile_min_lat = tile_min_lat;
+    configuration->chart_safety_missing_tile_max_lat = tile_max_lat;
+    configuration->chart_safety_missing_tile_min_lon = tile_min_lon;
+    configuration->chart_safety_missing_tile_max_lon = tile_max_lon;
+  } else {
+    configuration->chart_safety_missing_tile_min_lat =
+        wxMin(configuration->chart_safety_missing_tile_min_lat, tile_min_lat);
+    configuration->chart_safety_missing_tile_max_lat =
+        wxMax(configuration->chart_safety_missing_tile_max_lat, tile_max_lat);
+    configuration->chart_safety_missing_tile_min_lon =
+        wxMin(configuration->chart_safety_missing_tile_min_lon, tile_min_lon);
+    configuration->chart_safety_missing_tile_max_lon =
+        wxMax(configuration->chart_safety_missing_tile_max_lon, tile_max_lon);
+  }
 }
 
 bool EndpointMarginOnlyHitIsZeroMarginSafe(RouteMapConfiguration* configuration,
@@ -353,6 +399,9 @@ bool EndpointMarginOnlyHitIsZeroMarginSafe(RouteMapConfiguration* configuration,
   if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &zero_margin_options,
                                  &zero_margin_result))
     return false;
+
+  AccumulateSegmentSafetyDiagnostics(zero_margin_result);
+  RecordMissingChartSafetyData(configuration, zero_margin_result);
 
   if (zero_margin_result.status != PI_SEGMENT_SAFETY_SAFE) return false;
 
@@ -414,42 +463,7 @@ bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   }
   AccumulateSegmentSafetyDiagnostics(result);
 
-  if (configuration && result.unexpected_tile_builds > 0) {
-    configuration->chart_safety_missing_tile_rejections +=
-        result.unexpected_tile_builds;
-    double tile_min_lat = result.unexpected_tile_min_lat;
-    double tile_min_lon = result.unexpected_tile_min_lon;
-    double tile_max_lat = tile_min_lat + 0.05;
-    double tile_max_lon = tile_min_lon + 0.05;
-    if (!std::isfinite(
-            configuration->chart_safety_missing_tile_first_min_lat)) {
-      configuration->chart_safety_missing_tile_first_lat_tile =
-          result.unexpected_lat_tile;
-      configuration->chart_safety_missing_tile_first_lon_tile =
-          result.unexpected_lon_tile;
-      configuration->chart_safety_missing_tile_first_min_lat =
-          result.unexpected_tile_min_lat;
-      configuration->chart_safety_missing_tile_first_min_lon =
-          result.unexpected_tile_min_lon;
-      configuration->chart_safety_missing_tile_min_lat = tile_min_lat;
-      configuration->chart_safety_missing_tile_max_lat = tile_max_lat;
-      configuration->chart_safety_missing_tile_min_lon = tile_min_lon;
-      configuration->chart_safety_missing_tile_max_lon = tile_max_lon;
-    } else {
-      configuration->chart_safety_missing_tile_min_lat =
-          wxMin(configuration->chart_safety_missing_tile_min_lat,
-                tile_min_lat);
-      configuration->chart_safety_missing_tile_max_lat =
-          wxMax(configuration->chart_safety_missing_tile_max_lat,
-                tile_max_lat);
-      configuration->chart_safety_missing_tile_min_lon =
-          wxMin(configuration->chart_safety_missing_tile_min_lon,
-                tile_min_lon);
-      configuration->chart_safety_missing_tile_max_lon =
-          wxMax(configuration->chart_safety_missing_tile_max_lon,
-                tile_max_lon);
-    }
-  }
+  RecordMissingChartSafetyData(configuration, result);
 
   if (result.unexpected_tile_builds > 0 &&
       s_unexpectedTileBuildLogs < kMaxUnexpectedTileBuildLogsPerRun) {
@@ -790,7 +804,9 @@ bool ConstraintChecker::CheckCycloneTrackConstraint(
     RouteMapConfiguration& configuration, double lat, double lon, double dlat,
     double dlon) {
   if (configuration.AvoidCycloneTracks &&
-      RouteMap::ClimatologyCycloneTrackCrossings) {
+      RouteMap::ClimatologyCycloneTrackCrossings &&
+      WeatherDataProvider::CanInvokeClimatology(
+          ClimatologyService::CycloneTracks)) {
     int crossings = RouteMap::ClimatologyCycloneTrackCrossings(
         lat, lon, dlat, dlon, configuration.time,
         configuration.CycloneMonths * 30 + configuration.CycloneDays);

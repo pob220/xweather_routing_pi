@@ -39,6 +39,7 @@ set(TEST_SRC
     StabilityCorridor_tests.cpp
     StabilityCorridorLifecycle_tests.cpp
     RoutingScenarioJson_tests.cpp
+    ClimatologyThreadGuard_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
@@ -46,6 +47,7 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/StabilityCorridorCalculator.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/StabilityCorridorLifecycle.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyThreadGuard.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
    

@@ -37,6 +37,7 @@
 #include "RouteMapOverlay.h"
 #include "RouteWaypointExtractor.h"
 #include "WeatherRouting.h"
+#include "WeatherDataProvider.h"
 #include "weather_routing_pi.h"
 
 Json::Value g_ReceivedJSONMsg;
@@ -359,6 +360,8 @@ void weather_routing_pi::SetPluginMessage(wxString& message_id,
     sptr = v["ClimatologyCycloneTrackCrossingsPtr"].asString();
     sscanf(sptr.To8BitData().data(), "%p",
            &RouteMap::ClimatologyCycloneTrackCrossings);
+
+    WeatherDataProvider::ResetClimatologyPreparation();
 
     if (m_pWeather_Routing) {
       if (RouteMap::ClimatologyData == nullptr) {

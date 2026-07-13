@@ -185,6 +185,7 @@ SET(SRCS
             src/EditPolarDialog.cpp
             src/AboutDialog.cpp
             src/ConstraintChecker.cpp
+            src/ClimatologyThreadGuard.cpp
             src/Polar.cpp
             src/Boat.cpp
             src/RouteMap.cpp
@@ -214,6 +215,7 @@ SET(SRCS
 )
 
 SET (HDRS
+            include/ClimatologyThreadGuard.h
             include/weather_routing_pi.h
             include/WeatherRouting.h
             include/SunCalculator.h

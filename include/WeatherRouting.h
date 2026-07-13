@@ -634,6 +634,7 @@ private:
   bool CollectChartSafetyScoutGeometry(
       RouteMapOverlay* routemapoverlay,
       std::vector<std::pair<double, double> >* geometry,
+      std::vector<RouteMapFrontierSegment>* retained_segments,
       bool* reached_destination);
   void PrepareChartSafetyScoutEnvelopes(
       const std::vector<RouteMapOverlay*>& routemapoverlays,

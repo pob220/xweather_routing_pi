@@ -43,6 +43,7 @@
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "WeatherDataProvider.h"
 #include "StabilityRouteAdapter.h"
 #include "headless/HeadlessRouteRunner.h"
 #include "georef.h"
@@ -66,7 +67,6 @@ static const int UI_TIMING_COMPLETED_ROUTES_PER_TICK = 4;
 static const long UI_TIMING_LOG_THRESHOLD_MS = 100;
 static bool s_loggedDetectLandGshhsWarning = false;
 static std::set<wxString> s_chartSafetySharedPrewarmScopes;
-static std::set<wxString> s_chartSafetyMissingPrewarmScopes;
 
 namespace {
 
@@ -259,8 +259,6 @@ private:
 
 }  // namespace
 
-static double LongitudeDegreesForNm(double nm, double lat);
-
 static wxString EnvString(const char* name) {
   const char* value = getenv(name);
   return value ? wxString::FromUTF8(value) : wxString();
@@ -336,70 +334,6 @@ static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
                            enforce_override.IsSameAs("true", false);
 }
 
-static double ReadExperimentalChartSafetyPrewarmMarginNm() {
-  double margin_nm = 10.0;
-  wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
-  pConf->Read(_T("ExperimentalChartSafetyPrewarmMarginNm"), &margin_nm,
-              10.0);
-  if (!std::isfinite(margin_nm)) margin_nm = 10.0;
-  return wxMax(0.0, wxMin(60.0, margin_nm));
-}
-
-static double ChartSafetyConservativeScoutSpeedKnots(
-    const RouteMapConfiguration& configuration) {
-  double polar_max_knots = 0.0;
-  const double max_wind_knots =
-      wxMax(10.0, wxMin(60.0, configuration.MaxTrueWindKnots));
-  for (std::vector<Polar>::const_iterator source =
-           configuration.boat.Polars.begin();
-       source != configuration.boat.Polars.end(); ++source) {
-    Polar polar = *source;
-    for (double wind = 2.0; wind <= max_wind_knots; wind += 2.0) {
-      for (double angle = 0.0; angle <= 180.0; angle += 5.0) {
-        PolarSpeedStatus status = POLAR_SPEED_SUCCESS;
-        double speed = polar.Speed(angle, wind, &status, true, false);
-        if (status == POLAR_SPEED_SUCCESS && std::isfinite(speed))
-          polar_max_knots = wxMax(polar_max_knots, speed);
-      }
-    }
-  }
-  // Account for favourable current and imperfect/empty polar metadata.  This
-  // value predicts a prewarm corridor only; it does not alter route physics.
-  const double current_allowance_knots = configuration.Currents ? 4.0 : 0.0;
-  return wxMax(12.0, polar_max_knots + current_allowance_knots);
-}
-
-static double ChartSafetyRouteShapedCorridorRadiusNm(
-    const RouteMapConfiguration& configuration) {
-  const double tile_height_nm = 0.05 * 60.0;
-  const double mid_lat = 0.5 * (configuration.StartLat + configuration.EndLat);
-  const double tile_width_nm =
-      tile_height_nm * wxMax(0.05, fabs(cos(deg2rad(mid_lat))));
-  const double tile_diagonal_nm =
-      sqrt(tile_height_nm * tile_height_nm + tile_width_nm * tile_width_nm);
-  const double timestep_hours = wxMax(0.0, configuration.DeltaTime) / 3600.0;
-  const double timestep_displacement_nm =
-      ChartSafetyConservativeScoutSpeedKnots(configuration) * timestep_hours;
-  const double modest_detour_allowance_nm =
-      ReadExperimentalChartSafetyPrewarmMarginNm();
-  return wxMax(1.0, configuration.SafetyMarginLand +
-                        timestep_displacement_nm + tile_diagonal_nm +
-                        modest_detour_allowance_nm);
-}
-
-static void ExpandBboxByNm(double& min_lat, double& max_lat, double& min_lon,
-                           double& max_lon, double margin_nm) {
-  if (!std::isfinite(margin_nm) || margin_nm <= 0.0) return;
-  double mid_lat = 0.5 * (min_lat + max_lat);
-  double lat_margin_degrees = margin_nm / 60.0;
-  double lon_margin_degrees = LongitudeDegreesForNm(margin_nm, mid_lat);
-  min_lat = wxMax(-90.0, min_lat - lat_margin_degrees);
-  max_lat = wxMin(90.0, max_lat + lat_margin_degrees);
-  min_lon -= lon_margin_degrees;
-  max_lon += lon_margin_degrees;
-}
-
 static void ApplyHeadlessRouteSafetyOverrides(RouteMapConfiguration& configuration,
                                               const wxString& context) {
   wxString detect_land_override = EnvString("WR_HEADLESS_DETECT_LAND");
@@ -455,12 +389,6 @@ static const char* RouteEndTypeName(RouteMapConfiguration::EndDataType type) {
   }
 }
 
-static double LongitudeDegreesForNm(double nm, double lat) {
-  double coslat = cos(deg2rad(lat));
-  if (fabs(coslat) < 0.05) coslat = coslat < 0.0 ? -0.05 : 0.05;
-  return nm / (60.0 * fabs(coslat));
-}
-
 static int ReadExperimentalChartSafetyMissingTileMaxRetries() {
   long retries = kDefaultMaxChartSafetyMissingTileRetries;
   wxFileConfig* pConf = GetOCPNConfigObject();
@@ -484,15 +412,21 @@ static PlugInSegmentSafetyOptions ChartSafetyRouteMaskOptions(
 
 static wxString ChartSafetySharedPrewarmScopeKey(
     const RouteMapConfiguration& configuration) {
-  double prewarm_margin_nm =
-      ChartSafetyRouteShapedCorridorRadiusNm(configuration);
   PlugInSegmentSafetyOptions options =
       ChartSafetyRouteMaskOptions(configuration);
   wxString key = wxString::Format(
-      "route-shape:%.7f:%.7f:%.7f:%.7f:pm%.4f:sm%.4f:land%d:depth%d:md%.3f",
+      "route-shape:%.7f:%.7f:%.7f:%.7f:sm%.4f:land%d:depth%d:md%.3f:"
+      "dt%.0f:boat=%s",
       configuration.StartLat, configuration.StartLon, configuration.EndLat,
-      configuration.EndLon, prewarm_margin_nm, options.safety_margin_nm,
-      options.check_land, options.check_depth, options.minimum_depth_m);
+      configuration.EndLon, options.safety_margin_nm, options.check_land,
+      options.check_depth, options.minimum_depth_m, configuration.DeltaTime,
+      configuration.boatFileName);
+  if (configuration.DepartureTimeOptimizationCandidate &&
+      !configuration.DepartureTimeOptimizationGroupId.IsEmpty()) {
+    key += ":optimization=" + configuration.DepartureTimeOptimizationGroupId;
+  } else if (configuration.StartTime.IsValid()) {
+    key += ":departure=" + configuration.StartTime.FormatISOCombined();
+  }
   // First-leg optimisation candidates are available together and share one
   // union.  Later-leg start times are discovered sequentially, so retain a
   // scope per candidate: each candidate then contributes its own scout while
@@ -505,107 +439,6 @@ static wxString ChartSafetySharedPrewarmScopeKey(
         configuration.DepartureTimeOptimizationOffsetMinutes);
   }
   return key;
-}
-
-static wxString ChartSafetyMissingPrewarmScopeKey(
-    const RouteMapConfiguration& configuration, double min_lat,
-    double max_lat, double min_lon, double max_lon) {
-  PlugInSegmentSafetyOptions options =
-      ChartSafetyRouteMaskOptions(configuration);
-  return wxString::Format(
-      "missing:%.7f:%.7f:%.7f:%.7f:sm%.4f:land%d:depth%d:md%.3f",
-      min_lat, max_lat, min_lon, max_lon, options.safety_margin_nm,
-      options.check_land, options.check_depth, options.minimum_depth_m);
-}
-
-static void PrewarmExperimentalChartSafetyMissingTileNeighborhood(
-    const RouteMapConfiguration& configuration, const wxString& context) {
-  if (!configuration.DetectLand ||
-      !std::isfinite(configuration.chart_safety_missing_tile_first_min_lat) ||
-      !std::isfinite(configuration.chart_safety_missing_tile_first_min_lon)) {
-    return;
-  }
-
-  bool use_chart_safety = false;
-  bool enforce_chart_safety = false;
-  ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
-  if (!use_chart_safety || !enforce_chart_safety) return;
-
-  /*
-   * When a worker reports concrete missing tiles, build a bounded
-   * neighbourhood around that exact aggregate gap on the main thread.  The
-   * broad route envelope is handled separately at route start; retries should
-   * not repeatedly expand and rebuild unrelated areas.
-  */
-  const double tile_degrees = 0.05;
-  const int base_radius_tiles = 2;
-  const int radius_tiles =
-      wxMin(5, base_radius_tiles +
-                   wxMax(0, configuration.chart_safety_missing_tile_retry_count));
-  double missing_min_lat =
-      std::isfinite(configuration.chart_safety_missing_tile_min_lat)
-          ? configuration.chart_safety_missing_tile_min_lat
-          : configuration.chart_safety_missing_tile_first_min_lat;
-  double missing_max_lat =
-      std::isfinite(configuration.chart_safety_missing_tile_max_lat)
-          ? configuration.chart_safety_missing_tile_max_lat
-          : configuration.chart_safety_missing_tile_first_min_lat + tile_degrees;
-  double missing_min_lon =
-      std::isfinite(configuration.chart_safety_missing_tile_min_lon)
-          ? configuration.chart_safety_missing_tile_min_lon
-          : configuration.chart_safety_missing_tile_first_min_lon;
-  double missing_max_lon =
-      std::isfinite(configuration.chart_safety_missing_tile_max_lon)
-          ? configuration.chart_safety_missing_tile_max_lon
-          : configuration.chart_safety_missing_tile_first_min_lon + tile_degrees;
-
-  double min_lat = missing_min_lat - radius_tiles * tile_degrees;
-  double max_lat = missing_max_lat + radius_tiles * tile_degrees;
-  double min_lon = missing_min_lon - radius_tiles * tile_degrees;
-  double max_lon = missing_max_lon + radius_tiles * tile_degrees;
-  double local_padding_nm = configuration.SafetyMarginLand + 1.0;
-  ExpandBboxByNm(min_lat, max_lat, min_lon, max_lon, local_padding_nm);
-  min_lat = wxMax(-90.0, min_lat);
-  max_lat = wxMin(90.0, max_lat);
-
-  wxString shared_scope = ChartSafetyMissingPrewarmScopeKey(
-      configuration, min_lat, max_lat, min_lon, max_lon);
-  if (s_chartSafetyMissingPrewarmScopes.find(shared_scope) !=
-      s_chartSafetyMissingPrewarmScopes.end()) {
-    wxLogMessage(
-        "WR_GRID_TILE_REQUEST_REUSED context=%s route=\"%s to %s\" "
-        "retry=%d bbox=[lat %.6f..%.6f lon %.6f..%.6f]",
-        context, configuration.Start, configuration.End,
-        configuration.chart_safety_missing_tile_retry_count, min_lat,
-        max_lat, min_lon, max_lon);
-    return;
-  }
-
-  PlugInSegmentSafetyResult result = {};
-  result.struct_size = sizeof(result);
-  PlugInSegmentSafetyOptions options =
-      ChartSafetyRouteMaskOptions(configuration);
-  bool ok = PlugIn_PrewarmSegmentSafetyRouteMask(min_lat, min_lon, max_lat,
-                                                 max_lon, &options, &result);
-  if (ok) s_chartSafetyMissingPrewarmScopes.insert(shared_scope);
-  wxLogMessage(
-      "WR_GRID_TILE_REQUESTED context=%s route=\"%s to %s\" "
-      "retry=%d first_tile=(%d,%d) first_tile_min=(%.6f,%.6f) "
-      "missing_bbox=[lat %.6f..%.6f lon %.6f..%.6f] "
-      "radius_tiles=%d local_padding_nm=%.3f "
-      "bbox=[lat %.6f..%.6f lon %.6f..%.6f] ok=%d built_tiles=%d "
-      "reused_tiles=%d build_ms=%d grid_cache_size=%d message=\"%s\".",
-      context, configuration.Start, configuration.End,
-      configuration.chart_safety_missing_tile_retry_count,
-      configuration.chart_safety_missing_tile_first_lat_tile,
-      configuration.chart_safety_missing_tile_first_lon_tile,
-      configuration.chart_safety_missing_tile_first_min_lat,
-      configuration.chart_safety_missing_tile_first_min_lon,
-      missing_min_lat, missing_max_lat, missing_min_lon, missing_max_lon,
-      radius_tiles, local_padding_nm, min_lat, max_lat, min_lon, max_lon,
-      ok ? 1 : 0,
-      result.grid_cache_misses, result.grid_cache_hits, result.grid_build_ms,
-      result.grid_cache_size, result.message);
 }
 
 static void PrewarmExperimentalChartSafetyForConfiguration(
@@ -646,10 +479,11 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
              -1, -1);
   }
 
-  double prewarm_margin_nm = enforce_chart_safety
-                                 ? ChartSafetyRouteShapedCorridorRadiusNm(
-                                       configuration)
-                                 : configuration.SafetyMarginLand;
+  // This is only a fallback for a scout which could not produce usable
+  // geometry.  Keep it on the exact direct segment; any additional viable
+  // frontier tiles are requested safely by workers through the main-thread
+  // tile service.
+  double prewarm_margin_nm = 0.0;
 
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
@@ -660,7 +494,7 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
   prewarm_ok = PlugIn_PrewarmSegmentSafetyRouteMaskForSegment(
       configuration.StartLat, configuration.StartLon, configuration.EndLat,
       configuration.EndLon, prewarm_margin_nm, &options, &result);
-  if (enforce_chart_safety) prewarm_mode = _("direct-route-corridor");
+  if (enforce_chart_safety) prewarm_mode = _("direct-segment-fallback");
   if (!prewarm_ok) {
     wxLogMessage(
         "WeatherRouting Detect Land: chart safety prewarm failed context=%s "
@@ -6430,6 +6264,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   int waitingBefore = m_WaitingRouteMaps.size();
   int completedProcessed = 0;
   int gribRequests = 0;
+  int chartSafetyRequestsServiced = 0;
+  long chartSafetyRequestMs = 0;
   bool completedBatchLimitHit = false;
   long deleteThreadMs = 0;
   long finalValidationMs = 0;
@@ -6589,6 +6425,29 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     } else
       it++;
 
+    /* Service chart-derived data only on the application thread.  The route
+     * worker retains all completed isochrones and recomputes only its
+     * provisional current layer when these requests complete. */
+    if (routemapoverlay->NeedsChartSafetyData() &&
+        !routemapoverlay->Finished()) {
+      wxStopWatch chartRequestTimer;
+      PlugInSegmentSafetyRequestServiceResult service = {};
+      service.struct_size = sizeof(service);
+      PlugIn_ServicePendingSegmentSafetyRequests(16, 50, &service);
+      chartSafetyRequestMs += chartRequestTimer.Time();
+      chartSafetyRequestsServiced += service.requests_serviced;
+      if (service.pending_after == 0) {
+        routemapoverlay->ChartSafetyDataServiced();
+        wxLogMessage(
+            "WR_GRID_REQUEST_RESUME route=\"%s -> %s\" serviced=%d "
+            "built=%d failed=%d elapsed_ms=%d",
+            routemapoverlay->GetConfiguration().Start,
+            routemapoverlay->GetConfiguration().End,
+            service.requests_serviced, service.masks_built,
+            service.requests_failed, service.elapsed_ms);
+      }
+    }
+
     /* get a new grib for the route map if needed */
     if (routemapoverlay->NeedsGrib() && !routemapoverlay->Finished()) {
       wxStopWatch sectionTimer;
@@ -6652,13 +6511,15 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
 
   long tickMs = tickTimer.Time();
   if (tickMs >= UI_TIMING_LOG_THRESHOLD_MS || completedProcessed > 0 ||
-      gribRequests > 0 || completedBatchLimitHit) {
+      gribRequests > 0 || chartSafetyRequestsServiced > 0 ||
+      completedBatchLimitHit) {
     wxLogMessage(
         "WR_UI_TIMING OnComputationTimer tick_ms=%ld running_before=%d "
         "waiting_before=%d running_after=%lu waiting_after=%lu "
         "completed_processed=%d completed_batch_limit=%d "
         "delete_thread_ms=%ld final_validation_ms=%ld update_route_ms=%ld "
         "report_update_ms=%ld grib_requests=%d grib_request_ms=%ld "
+        "chart_requests=%d chart_request_ms=%ld "
         "advance_ms=%ld start_waiting_ms=%ld refresh_dialogs_ms=%ld "
         "progress_dialog=%d progress_timer=%d deferred_start=%d "
         "multileg=%d multileg_opt=%d",
@@ -6667,7 +6528,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
         static_cast<unsigned long>(m_WaitingRouteMaps.size()),
         completedProcessed, completedBatchLimitHit ? 1 : 0, deleteThreadMs,
         finalValidationMs, updateRouteMs, reportUpdateMs, gribRequests,
-        gribRequestMs, advanceMs, startWaitingMs, refreshDialogsMs,
+        gribRequestMs, chartSafetyRequestsServiced, chartSafetyRequestMs,
+        advanceMs, startWaitingMs, refreshDialogsMs,
         m_RoutingProgressDialog && m_RoutingProgressDialog->IsShown() ? 1 : 0,
         m_tRoutingProgress.IsRunning() ? 1 : 0,
         m_DeferredRoutingStartPending ? 1 : 0, m_ActiveMultiLegSequence ? 1 : 0,
@@ -7849,8 +7711,10 @@ bool WeatherRouting::ValidateRouteForOutput(RouteMapOverlay& routemapoverlay,
 bool WeatherRouting::CollectChartSafetyScoutGeometry(
     RouteMapOverlay* routemapoverlay,
     std::vector<std::pair<double, double> >* geometry,
+    std::vector<RouteMapFrontierSegment>* retained_segments,
     bool* reached_destination) {
   if (geometry) geometry->clear();
+  if (retained_segments) retained_segments->clear();
   if (reached_destination) *reached_destination = false;
   if (!routemapoverlay || !geometry) return false;
 
@@ -7939,6 +7803,8 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
 
   const bool complete =
       routemapoverlay->Finished() && routemapoverlay->ReachedDestination();
+  if (retained_segments)
+    *retained_segments = routemapoverlay->GetRetainedFrontierSegments();
   geometry->push_back(std::make_pair(original.StartLat, original.StartLon));
   if (complete) {
     std::list<PlotData> scout_plot = routemapoverlay->GetPlotData(false);
@@ -7990,16 +7856,102 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
   } else {
     wxLogMessage(
         "WR_SCOUT_ROUTE complete route=\"%s to %s\" scout_time_ms=%ld "
-        "scout_status=destination points=%lu distance_nm=%.3f "
+        "scout_status=destination points=%lu retained_segments=%lu "
+        "distance_nm=%.3f "
         "used_as_hint_only=1.",
         original.Start, original.End, timer.Time(),
-        static_cast<unsigned long>(geometry->size()), progress_nm);
+        static_cast<unsigned long>(geometry->size()),
+        static_cast<unsigned long>(retained_segments
+                                       ? retained_segments->size()
+                                       : 0),
+        progress_nm);
   }
 
   routemapoverlay->SetConfiguration(original);
   routemapoverlay->Reset();
   if (reached_destination) *reached_destination = complete;
   return geometry->size() >= 2;
+}
+
+static bool ChartSafetyScoutSegmentIsEndpointAdjacent(
+    const RouteMapConfiguration& configuration,
+    const RouteMapFrontierSegment& segment) {
+  const double endpoint_coordinate_tolerance_nm = 0.001;
+  const double start_reach = wxMax(
+      endpoint_coordinate_tolerance_nm,
+      configuration.chart_safety_start_endpoint_reach_nm);
+  const double end_reach = wxMax(
+      endpoint_coordinate_tolerance_nm,
+      configuration.chart_safety_end_endpoint_reach_nm);
+  return DistGreatCircle_Plugin(configuration.StartLat,
+                                configuration.StartLon, segment.lat1,
+                                segment.lon1) <=
+             start_reach ||
+         DistGreatCircle_Plugin(configuration.StartLat,
+                                configuration.StartLon, segment.lat2,
+                                segment.lon2) <=
+             start_reach ||
+         DistGreatCircle_Plugin(configuration.EndLat, configuration.EndLon,
+                                segment.lat1, segment.lon1) <=
+             end_reach ||
+         DistGreatCircle_Plugin(configuration.EndLat, configuration.EndLon,
+                                segment.lat2, segment.lon2) <=
+             end_reach;
+}
+
+static void SetChartSafetyScoutEndpointReach(
+    RouteMapConfiguration* configuration,
+    const std::vector<std::pair<double, double> >& selected_points,
+    const std::vector<RouteMapFrontierSegment>& retained_segments,
+    bool complete) {
+  if (!configuration) return;
+  configuration->chart_safety_start_endpoint_reach_nm = 0.0;
+  configuration->chart_safety_end_endpoint_reach_nm = 0.0;
+  if (!complete || selected_points.size() < 2) return;
+
+  const double tolerance_nm = 0.001;
+  for (std::vector<RouteMapFrontierSegment>::const_iterator it =
+           retained_segments.begin();
+       it != retained_segments.end(); ++it) {
+    double start1 = DistGreatCircle_Plugin(
+        configuration->StartLat, configuration->StartLon, it->lat1, it->lon1);
+    double start2 = DistGreatCircle_Plugin(
+        configuration->StartLat, configuration->StartLon, it->lat2, it->lon2);
+    if (start1 <= tolerance_nm || start2 <= tolerance_nm)
+      configuration->chart_safety_start_endpoint_reach_nm = wxMax(
+          configuration->chart_safety_start_endpoint_reach_nm,
+          wxMax(start1, start2));
+
+    double end1 = DistGreatCircle_Plugin(
+        configuration->EndLat, configuration->EndLon, it->lat1, it->lon1);
+    double end2 = DistGreatCircle_Plugin(
+        configuration->EndLat, configuration->EndLon, it->lat2, it->lon2);
+    if (end1 <= tolerance_nm || end2 <= tolerance_nm)
+      configuration->chart_safety_end_endpoint_reach_nm = wxMax(
+          configuration->chart_safety_end_endpoint_reach_nm,
+          wxMax(end1, end2));
+  }
+
+  for (size_t i = 1; i < selected_points.size(); ++i) {
+    double reach = DistGreatCircle_Plugin(
+        configuration->StartLat, configuration->StartLon,
+        selected_points[i].first, selected_points[i].second);
+    if (reach > tolerance_nm) {
+      configuration->chart_safety_start_endpoint_reach_nm = wxMax(
+          configuration->chart_safety_start_endpoint_reach_nm, reach);
+      break;
+    }
+  }
+  for (size_t i = selected_points.size() - 1; i > 0; --i) {
+    double reach = DistGreatCircle_Plugin(
+        configuration->EndLat, configuration->EndLon,
+        selected_points[i - 1].first, selected_points[i - 1].second);
+    if (reach > tolerance_nm) {
+      configuration->chart_safety_end_endpoint_reach_nm = wxMax(
+          configuration->chart_safety_end_endpoint_reach_nm, reach);
+      break;
+    }
+  }
 }
 
 void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
@@ -8015,6 +7967,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
   struct ScoutEnvelope {
     RouteMapConfiguration configuration;
     std::vector<std::pair<double, double> > points;
+    std::vector<RouteMapFrontierSegment> retained_segments;
     bool complete;
   };
   std::map<wxString, std::vector<ScoutEnvelope> > groups;
@@ -8035,15 +7988,32 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     envelope.configuration = configuration;
     envelope.complete = false;
     if (!CollectChartSafetyScoutGeometry(*route, &envelope.points,
+                                         &envelope.retained_segments,
                                          &envelope.complete)) {
       envelope.points.push_back(
           std::make_pair(configuration.StartLat, configuration.StartLon));
       envelope.points.push_back(
           std::make_pair(configuration.EndLat, configuration.EndLon));
+      RouteMapFrontierSegment direct = {
+          configuration.StartLat, configuration.StartLon,
+          configuration.EndLat, configuration.EndLon};
+      envelope.retained_segments.push_back(direct);
       wxLogMessage(
           "WR_SCOUT_ROUTE fallback_direct route=\"%s to %s\" scope=%s",
           configuration.Start, configuration.End, scope);
     }
+    SetChartSafetyScoutEndpointReach(
+        &envelope.configuration, envelope.points,
+        envelope.retained_segments, envelope.complete);
+    (*route)->SetConfiguration(envelope.configuration);
+    (*route)->Reset();
+    wxLogMessage(
+        "WR_SCOUT_ENDPOINT_REACH route=\"%s to %s\" complete=%d "
+        "start_reach_nm=%.3f end_reach_nm=%.3f source=scout-frontier",
+        envelope.configuration.Start, envelope.configuration.End,
+        envelope.complete ? 1 : 0,
+        envelope.configuration.chart_safety_start_endpoint_reach_nm,
+        envelope.configuration.chart_safety_end_endpoint_reach_nm);
     groups[scope].push_back(envelope);
   }
 
@@ -8052,27 +8022,61 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
        group != groups.end(); ++group) {
     if (group->second.empty()) continue;
     RouteMapConfiguration representative = group->second.front().configuration;
-    double corridor_radius_nm =
-        ChartSafetyRouteShapedCorridorRadiusNm(representative);
+    const double footprint_dilation_nm = 0.0;
+    const int footprint_fine_tile_halo = 1;
 
     std::vector<double> latitudes;
     std::vector<double> longitudes;
     std::vector<int> point_counts;
+    std::vector<double> endpoint_latitudes;
+    std::vector<double> endpoint_longitudes;
+    std::vector<int> endpoint_point_counts;
     int complete_scouts = 0;
     int partial_scouts = 0;
+    int retained_segments = 0;
+    int endpoint_segments = 0;
     for (std::vector<ScoutEnvelope>::const_iterator envelope =
              group->second.begin();
          envelope != group->second.end(); ++envelope) {
-      point_counts.push_back((int)envelope->points.size());
       if (envelope->complete)
         ++complete_scouts;
       else
         ++partial_scouts;
-      for (std::vector<std::pair<double, double> >::const_iterator point =
-               envelope->points.begin();
-           point != envelope->points.end(); ++point) {
-        latitudes.push_back(point->first);
-        longitudes.push_back(point->second);
+
+      std::vector<RouteMapFrontierSegment> segments =
+          envelope->retained_segments;
+      // The destination connection is not always stored as an isochrone
+      // parent edge.  Include the selected scout chain as well, while the
+      // retained frontier remains the source of alternative-route coverage.
+      for (size_t point = 1; point < envelope->points.size(); ++point) {
+        RouteMapFrontierSegment selected = {
+            envelope->points[point - 1].first,
+            envelope->points[point - 1].second,
+            envelope->points[point].first,
+            envelope->points[point].second};
+        segments.push_back(selected);
+      }
+
+      for (std::vector<RouteMapFrontierSegment>::const_iterator segment =
+               segments.begin();
+           segment != segments.end(); ++segment) {
+        latitudes.push_back(segment->lat1);
+        longitudes.push_back(segment->lon1);
+        latitudes.push_back(segment->lat2);
+        longitudes.push_back(segment->lon2);
+        point_counts.push_back(2);
+        ++retained_segments;
+
+        bool endpoint_touch = ChartSafetyScoutSegmentIsEndpointAdjacent(
+            envelope->configuration, *segment);
+        if (endpoint_touch) {
+          endpoint_latitudes.push_back(segment->lat1);
+          endpoint_longitudes.push_back(segment->lon1);
+          endpoint_latitudes.push_back(segment->lat2);
+          endpoint_longitudes.push_back(segment->lon2);
+          endpoint_point_counts.push_back(2);
+          ++endpoint_segments;
+        }
       }
     }
 
@@ -8090,88 +8094,57 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     PlugInSegmentSafetyResult result = {};
     result.struct_size = sizeof(result);
     wxStopWatch timer;
-    bool ok = PlugIn_PrewarmSegmentSafetyRouteMaskForPolylines(
+    bool ok = PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo(
         latitudes.data(), longitudes.data(), point_counts.data(),
-        (int)point_counts.size(), corridor_radius_nm, &options, &result);
+        (int)point_counts.size(), footprint_dilation_nm,
+        footprint_fine_tile_halo, &options, &result);
 
-    std::vector<double> unsafe_lats;
-    std::vector<double> unsafe_lons;
-    std::vector<int> unsafe_counts;
-    int unsafe_segments = 0;
-    int checked_segments = 0;
-    PlugInSegmentSafetyOptions validation_options = options;
-    validation_options.allow_gshhs_fallback = 0;
-    // This check only decides where to widen the prewarm hint.  Exact-match
-    // in-session/persistent route masks are sufficient here; forcing fine
-    // authoritative masks would rebuild open-water tiles before the actual
-    // route and duplicate the mandatory final-route validation work.
-    validation_options.force_authoritative_fine_validation = 0;
-    if (ok) {
-      for (std::vector<ScoutEnvelope>::const_iterator envelope =
-               group->second.begin();
-           envelope != group->second.end(); ++envelope) {
-        for (size_t point = 1; point < envelope->points.size(); ++point) {
-          PlugInSegmentSafetyResult segment_result = {};
-          segment_result.struct_size = sizeof(segment_result);
-          const std::pair<double, double>& a = envelope->points[point - 1];
-          const std::pair<double, double>& b = envelope->points[point];
-          bool query_ok = PlugIn_CheckSegmentSafety(
-              a.first, a.second, b.first, b.second, &validation_options,
-              &segment_result);
-          ++checked_segments;
-          if (!query_ok || segment_result.status != PI_SEGMENT_SAFETY_SAFE) {
-            unsafe_lats.push_back(a.first);
-            unsafe_lons.push_back(a.second);
-            unsafe_lats.push_back(b.first);
-            unsafe_lons.push_back(b.second);
-            unsafe_counts.push_back(2);
-            ++unsafe_segments;
-          }
-        }
-      }
-    }
+    PlugInSegmentSafetyOptions endpoint_options = options;
+    endpoint_options.safety_margin_nm = 0.0;
+    endpoint_options.check_depth = 0;
+    endpoint_options.minimum_depth_m = 0.0;
+    PlugInSegmentSafetyResult endpoint_result = {};
+    endpoint_result.struct_size = sizeof(endpoint_result);
+    bool endpoint_ok = endpoint_point_counts.empty() ||
+                       PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo(
+                           endpoint_latitudes.data(),
+                           endpoint_longitudes.data(),
+                           endpoint_point_counts.data(),
+                           (int)endpoint_point_counts.size(),
+                           footprint_dilation_nm, footprint_fine_tile_halo,
+                           &endpoint_options, &endpoint_result);
 
-    bool unsafe_expansion_ok = true;
-    double unsafe_radius_nm = corridor_radius_nm;
-    PlugInSegmentSafetyResult unsafe_result = {};
-    unsafe_result.struct_size = sizeof(unsafe_result);
-    if (!unsafe_counts.empty()) {
-      unsafe_radius_nm += wxMax(10.0, corridor_radius_nm * 0.75);
-      unsafe_expansion_ok = PlugIn_PrewarmSegmentSafetyRouteMaskForPolylines(
-          unsafe_lats.data(), unsafe_lons.data(), unsafe_counts.data(),
-          (int)unsafe_counts.size(), unsafe_radius_nm, &options,
-          &unsafe_result);
-    }
-
-    if (ok && unsafe_expansion_ok)
+    if (ok && endpoint_ok)
       s_chartSafetySharedPrewarmScopes.insert(group->first);
     wxLogMessage(
         "WR_ROUTE_MASK_SCOUT_ENVELOPE context=%s scope=%s candidates=%lu "
-        "complete_scouts=%d partial_scouts=%d polylines=%lu points=%lu "
-        "corridor_radius_nm=%.3f checked_segments=%d unsafe_segments=%d "
-        "unsafe_radius_nm=%.3f normal_ok=%d unsafe_expansion_ok=%d "
+        "complete_scouts=%d partial_scouts=%d retained_segments=%d "
+        "footprint_polylines=%lu footprint_dilation_nm=%.3f "
+        "footprint_fine_tile_halo=%d "
+        "endpoint_segments=%d normal_ok=%d endpoint_ok=%d "
         "requested_tiles=%d base_built=%d base_reused=%d masks_built=%d "
         "masks_reused=%d fine_tiles_avoided=%d build_ms=%d "
-        "unsafe_requested_tiles=%d unsafe_base_built=%d "
-        "unsafe_base_reused=%d unsafe_masks_built=%d "
-        "unsafe_masks_reused=%d unsafe_fine_tiles_avoided=%d "
-        "unsafe_build_ms=%d elapsed_ms=%ld",
+        "endpoint_requested_tiles=%d endpoint_base_built=%d "
+        "endpoint_base_reused=%d endpoint_masks_built=%d "
+        "endpoint_masks_reused=%d endpoint_fine_tiles_avoided=%d "
+        "endpoint_build_ms=%d elapsed_ms=%ld",
         context, group->first,
         static_cast<unsigned long>(group->second.size()), complete_scouts,
-        partial_scouts, static_cast<unsigned long>(point_counts.size()),
-        static_cast<unsigned long>(latitudes.size()), corridor_radius_nm,
-        checked_segments, unsafe_segments, unsafe_radius_nm, ok ? 1 : 0,
-        unsafe_expansion_ok ? 1 : 0, result.prewarm_requested_tiles,
+        partial_scouts, retained_segments,
+        static_cast<unsigned long>(point_counts.size()),
+        footprint_dilation_nm, footprint_fine_tile_halo, endpoint_segments,
+        ok ? 1 : 0,
+        endpoint_ok ? 1 : 0, result.prewarm_requested_tiles,
         result.prewarm_base_tiles_built, result.prewarm_base_tiles_reused,
         result.prewarm_masks_built, result.prewarm_masks_reused,
         result.prewarm_fine_tiles_avoided, result.grid_build_ms,
-        unsafe_result.prewarm_requested_tiles,
-        unsafe_result.prewarm_base_tiles_built,
-        unsafe_result.prewarm_base_tiles_reused,
-        unsafe_result.prewarm_masks_built,
-        unsafe_result.prewarm_masks_reused,
-        unsafe_result.prewarm_fine_tiles_avoided,
-        unsafe_result.grid_build_ms, timer.Time());
+        endpoint_result.prewarm_requested_tiles,
+        endpoint_result.prewarm_base_tiles_built,
+        endpoint_result.prewarm_base_tiles_reused,
+        endpoint_result.prewarm_masks_built,
+        endpoint_result.prewarm_masks_reused,
+        endpoint_result.prewarm_fine_tiles_avoided,
+        endpoint_result.grid_build_ms, timer.Time());
   }
 }
 
@@ -9197,12 +9170,10 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   if (!configuration.RouteGUID.IsEmpty() && configuration.UseGrib)
     SendPluginMessage(wxS("GRIB_VALUES_REQUEST"), _T(""));
 
-  if (configuration.ClimatologyType != RouteMapConfiguration::DISABLED) {
-    /* query climatology to load it from main thread */
-    double dir, speed;
-    if (RouteMap::ClimatologyData)
-      RouteMap::ClimatologyData(0, wxDateTime::Now(), 0, 0, dir, speed);
-  }
+  // Climatology may lazily construct its controls on the first data query.
+  // Preflight every configured service here so route workers never initialize
+  // wxWidgets/GTK state.
+  WeatherDataProvider::PrepareClimatologyForWorkers(configuration);
 
   // already running?
   for (std::list<RouteMapOverlay*>::iterator it = m_RunningRouteMaps.begin();
@@ -9299,8 +9270,18 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
       configuration.chart_safety_missing_tile_min_lon,
       configuration.chart_safety_missing_tile_max_lon);
 
-  PrewarmExperimentalChartSafetyMissingTileNeighborhood(
-      configuration, _("route missing-tile retry"));
+  // Compatibility fallback for a route worker which exited before the normal
+  // pause/resume handshake completed.  Service only the exact requests the
+  // worker published; do not grow an arbitrary rectangle around them.
+  PlugInSegmentSafetyRequestServiceResult service = {};
+  service.struct_size = sizeof(service);
+  PlugIn_ServicePendingSegmentSafetyRequests(64, 250, &service);
+  wxLogMessage(
+      "WR_GRID_TILE_RETRY_EXACT_SERVICE route=\"%s to %s\" retry=%d/%d "
+      "serviced=%d built=%d failed=%d pending_after=%d elapsed_ms=%d",
+      configuration.Start, configuration.End, next_retry, max_retries,
+      service.requests_serviced, service.masks_built, service.requests_failed,
+      service.pending_after, service.elapsed_ms);
 
   configuration.chart_safety_missing_tile_retry_count = next_retry;
   configuration.chart_safety_missing_tile_rejections = 0;
@@ -9354,7 +9335,6 @@ void WeatherRouting::StopAll() {
   m_WaitingRouteMaps.clear();
 
   s_chartSafetySharedPrewarmScopes.clear();
-  s_chartSafetyMissingPrewarmScopes.clear();
   PlugIn_ReleaseSegmentSafetyRouteMaskPins();
 
   UpdateStates();

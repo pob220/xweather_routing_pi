@@ -27,6 +27,7 @@
 #include "GribRecord.h"
 #include "GribRecordSet.h"
 #include "Boat.h"
+#include "ClimatologyThreadGuard.h"
 
 struct RouteMapConfiguration;
 class RoutePoint;
@@ -35,6 +36,23 @@ struct climatology_wind_atlas;
 class WeatherDataProvider {
 public:
   virtual ~WeatherDataProvider() = default;
+
+  /**
+   * Initialize configured climatology services before route workers start.
+   * Some climatology plugin versions lazily create wxWidgets controls on the
+   * first query, which must happen on the main thread.
+   */
+  static bool PrepareClimatologyForWorkers(
+      const RouteMapConfiguration& configuration);
+
+  /** Reset preparation state when climatology callback pointers change. */
+  static void ResetClimatologyPreparation();
+
+  /**
+   * Return whether a climatology callback may be invoked on this thread.
+   * Main-thread calls are always allowed; worker calls require preflight.
+   */
+  static bool CanInvokeClimatology(ClimatologyService service);
 
   static double GetWeatherParameter(
       RouteMapConfiguration& configuration, double lat, double lon,

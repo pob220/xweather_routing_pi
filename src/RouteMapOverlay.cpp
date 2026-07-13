@@ -32,6 +32,7 @@
 #include "Utilities.h"
 #include "Boat.h"
 #include "ConstraintChecker.h"
+#include "WeatherDataProvider.h"
 #include "RouteMapOverlay.h"
 #include "SettingsDialog.h"
 #include "georef.h"
@@ -119,6 +120,8 @@ bool RouteMapOverlay::Start(wxString& error) {
   /* test for cyclone data if needed */
   if (configuration.AvoidCycloneTracks &&
       (!ClimatologyCycloneTrackCrossings ||
+       !WeatherDataProvider::CanInvokeClimatology(
+           ClimatologyService::CycloneTracks) ||
        ClimatologyCycloneTrackCrossings(0, 0, 0, 0, wxDateTime(), 0) == -1)) {
     error =
         _("Configuration specifies cyclone track avoidance and Climatology "
@@ -1492,6 +1495,47 @@ RouteMapOverlay::GetClosestFrontierGeometry() {
       geometry.push_back(std::make_pair((*it)->lat, (*it)->lon));
   }
   return geometry;
+}
+
+namespace {
+
+void CollectRetainedFrontierSegments(
+    IsoRoute* route, std::vector<RouteMapFrontierSegment>* segments) {
+  if (!route || !route->skippoints || !route->skippoints->point || !segments)
+    return;
+
+  Position* position = route->skippoints->point;
+  do {
+    Position* parent = dynamic_cast<Position*>(position->parent);
+    if (parent && std::isfinite(parent->lat) && std::isfinite(parent->lon) &&
+        std::isfinite(position->lat) && std::isfinite(position->lon)) {
+      RouteMapFrontierSegment segment = {parent->lat, parent->lon,
+                                         position->lat, position->lon};
+      segments->push_back(segment);
+    }
+    position = position->next;
+  } while (position && position != route->skippoints->point);
+
+  for (IsoRouteList::iterator child = route->children.begin();
+       child != route->children.end(); ++child)
+    CollectRetainedFrontierSegments(*child, segments);
+}
+
+}  // namespace
+
+std::vector<RouteMapFrontierSegment>
+RouteMapOverlay::GetRetainedFrontierSegments() {
+  std::vector<RouteMapFrontierSegment> segments;
+  Lock();
+  for (IsoChronList::iterator layer = origin.begin(); layer != origin.end();
+       ++layer) {
+    if (!*layer) continue;
+    for (IsoRouteList::iterator route = (*layer)->routes.begin();
+         route != (*layer)->routes.end(); ++route)
+      CollectRetainedFrontierSegments(*route, &segments);
+  }
+  Unlock();
+  return segments;
 }
 
 void RouteMapOverlay::RequestGrib(wxDateTime time) {
