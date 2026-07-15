@@ -6790,6 +6790,10 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
         configuration.FromDegree = AttributeDouble(e, "FromDegree", 0);
         configuration.ToDegree = AttributeDouble(e, "ToDegree", 180);
         configuration.ByDegrees = AttributeDouble(e, "ByDegrees", 5.);
+        configuration.UseMotor = AttributeBool(e, "UseMotor", false);
+        configuration.MotorSpeedThreshold =
+            AttributeDouble(e, "MotorSpeedThreshold", 2.0);
+        configuration.MotorSpeed = AttributeDouble(e, "MotorSpeed", 5.0);
 
         if (configuration.boatFileName == lastboatFileName)
           configuration.boat = lastboat;
@@ -6944,6 +6948,10 @@ void WeatherRouting::SaveXML(wxString filename) {
     c->SetDoubleAttribute("FromDegree", configuration.FromDegree);
     c->SetDoubleAttribute("ToDegree", configuration.ToDegree);
     c->SetDoubleAttribute("ByDegrees", configuration.ByDegrees);
+    c->SetAttribute("UseMotor", configuration.UseMotor);
+    c->SetDoubleAttribute("MotorSpeedThreshold",
+                          configuration.MotorSpeedThreshold);
+    c->SetDoubleAttribute("MotorSpeed", configuration.MotorSpeed);
 
     root->LinkEndChild(c);
   }
@@ -9476,6 +9484,9 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("FromDegree"), configuration.FromDegree);
   pConf->Write(_T("ToDegree"), configuration.ToDegree);
   pConf->Write(_T("ByDegrees"), configuration.ByDegrees);
+  pConf->Write(_T("UseMotor"), configuration.UseMotor);
+  pConf->Write(_T("MotorSpeedThreshold"), configuration.MotorSpeedThreshold);
+  pConf->Write(_T("MotorSpeed"), configuration.MotorSpeed);
   pConf->Flush();
 }
 
@@ -9563,6 +9574,13 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.ToDegree);
   pConf->Read(_T("ByDegrees"), &configuration.ByDegrees,
               configuration.ByDegrees);
+  pConf->Read(_T("UseMotor"), &configuration.UseMotor,
+              configuration.UseMotor);
+  pConf->Read(_T("MotorSpeedThreshold"),
+              &configuration.MotorSpeedThreshold,
+              configuration.MotorSpeedThreshold);
+  pConf->Read(_T("MotorSpeed"), &configuration.MotorSpeed,
+              configuration.MotorSpeed);
 }
 
 RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
@@ -9624,6 +9642,9 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.FromDegree = 0;
   configuration.ToDegree = 180;
   configuration.ByDegrees = 5;
+  configuration.UseMotor = false;
+  configuration.MotorSpeedThreshold = 2.0;
+  configuration.MotorSpeed = 5.0;
 
   ApplyLastUsedConfigurationDefaults(configuration);
 

@@ -1854,11 +1854,12 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   fgSizer1072->Add(sbConstraints1, 1, wxALL | wxEXPAND, 5);
 
   wxFlexGridSizer* fgSizer109;
-  fgSizer109 = new wxFlexGridSizer(3, 0, 0, 0);
+  fgSizer109 = new wxFlexGridSizer(0, 1, 0, 0);
   fgSizer109->AddGrowableCol(0);
   fgSizer109->AddGrowableRow(0);
   fgSizer109->AddGrowableRow(1);
   fgSizer109->AddGrowableRow(2);
+  fgSizer109->AddGrowableRow(3);
   fgSizer109->SetFlexibleDirection(wxBOTH);
   fgSizer109->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
 
@@ -2093,6 +2094,47 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   sbOptions1->Add(fgSizer113, 1, wxEXPAND, 5);
 
   fgSizer109->Add(sbOptions1, 1, wxEXPAND | wxALL, 5);
+
+  wxStaticBoxSizer* sbMotor = new wxStaticBoxSizer(
+      new wxStaticBox(m_pAdvanced, wxID_ANY, _("Motoring")), wxVERTICAL);
+  wxFlexGridSizer* fgSizerMotor = new wxFlexGridSizer(0, 6, 0, 0);
+  fgSizerMotor->SetFlexibleDirection(wxBOTH);
+  fgSizerMotor->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
+
+  m_cbUseMotor = new wxCheckBox(
+      sbMotor->GetStaticBox(), wxID_ANY, _("Motor if boat speed is below"));
+  m_cbUseMotor->SetToolTip(_(
+      "Enable motor when Speed Through Water (STW) falls below the specified "
+      "threshold. This does not change the configured course-angle limits."));
+  sbMotor->Add(m_cbUseMotor, 0, wxALL, 5);
+
+  wxStaticText* motorThresholdLabel = new wxStaticText(
+      sbMotor->GetStaticBox(), wxID_ANY, _("Threshold:"));
+  fgSizerMotor->Add(motorThresholdLabel, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  m_sMotorSpeedThreshold = new wxSpinCtrlDouble(
+      sbMotor->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(80, -1), wxSP_ARROW_KEYS, 0.0, 20.0, 2.0, 0.1);
+  m_sMotorSpeedThreshold->SetToolTip(
+      _("STW threshold in knots below which motor will be used"));
+  fgSizerMotor->Add(m_sMotorSpeedThreshold, 0,
+                    wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  fgSizerMotor->Add(new wxStaticText(sbMotor->GetStaticBox(), wxID_ANY,
+                                     _("knots")),
+                    0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  wxStaticText* motorSpeedLabel =
+      new wxStaticText(sbMotor->GetStaticBox(), wxID_ANY, _("Motor speed:"));
+  fgSizerMotor->Add(motorSpeedLabel, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  m_sMotorSpeed = new wxSpinCtrlDouble(
+      sbMotor->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(80, -1), wxSP_ARROW_KEYS, 0.5, 20.0, 5.0, 0.1);
+  m_sMotorSpeed->SetToolTip(_("Speed in knots when motoring"));
+  fgSizerMotor->Add(m_sMotorSpeed, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  fgSizerMotor->Add(new wxStaticText(sbMotor->GetStaticBox(), wxID_ANY,
+                                     _("knots")),
+                    0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  sbMotor->Add(fgSizerMotor, 1, wxEXPAND, 5);
+  fgSizer109->Add(sbMotor, 1, wxEXPAND | wxALL, 5);
 
   // Efficiency section
   wxStaticBoxSizer* sbEfficiency;
@@ -2855,6 +2897,15 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_MOTION,
       wxMouseEventHandler(ConfigurationDialogBase::EnableSpinDouble), NULL,
       this);
+  m_cbUseMotor->Connect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUseMotor), NULL, this);
+  m_sMotorSpeedThreshold->Connect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sMotorSpeed->Connect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sSafetyMarginLand->Connect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
@@ -3495,6 +3546,15 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_cbUseReverseReachabilityRecovery->Disconnect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_cbUseMotor->Disconnect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUseMotor), NULL, this);
+  m_sMotorSpeedThreshold->Disconnect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sMotorSpeed->Disconnect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sUpwindEfficiency->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);

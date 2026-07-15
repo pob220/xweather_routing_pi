@@ -688,7 +688,13 @@ void RoutingTablePanel::PopulateTable() {
     }
 
     if (!std::isnan(data.stw)) {
-      m_gridWeatherTable->SetCellValue(row, COL_STW, FormatSpeed(data.stw));
+      wxString stw = FormatSpeed(data.stw);
+      if (data.data_mask & Position::MOTOR_USED) stw += _(" (M)");
+      m_gridWeatherTable->SetCellValue(row, COL_STW, stw);
+      if (data.data_mask & Position::MOTOR_USED) {
+        m_gridWeatherTable->SetCellBackgroundColour(
+            row, COL_STW, wxColour(173, 216, 230));
+      }
     }
 
     if (!std::isnan(data.ctw)) {

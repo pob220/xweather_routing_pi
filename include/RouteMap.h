@@ -596,6 +596,15 @@ struct RouteMapConfiguration {
    */
   double ByDegrees;
 
+  /** Use the motor when calculated sailing STW is below the threshold. */
+  bool UseMotor;
+
+  /** Sailing STW in knots below which the motor is used. */
+  double MotorSpeedThreshold;
+
+  /** Constant speed through water in knots while motoring. */
+  double MotorSpeed;
+
   /* computed values */
   /**
    * Collection of angular steps used for vessel propagation calculations.

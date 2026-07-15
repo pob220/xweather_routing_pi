@@ -200,6 +200,14 @@ void ConfigurationDialog::OnEndAtWaypoint(wxCommandEvent& event) {
 
 void ConfigurationDialog::OnAvoidCyclones(wxCommandEvent& event) { Update(); }
 
+void ConfigurationDialog::OnUseMotor(wxCommandEvent& event) {
+  const bool enabled = m_cbUseMotor->IsChecked();
+  m_sMotorSpeedThreshold->Enable(enabled);
+  m_sMotorSpeed->Enable(enabled);
+  OnValueChange(event);
+  Update();
+}
+
 void ConfigurationDialog::OnBoatFilename(wxCommandEvent& event) {
   wxFileDialog openDialog(
       this, _("Select Boat File"), wxFileName(m_tBoat->GetValue()).GetPath(),
@@ -401,6 +409,13 @@ void ConfigurationDialog::SetConfigurations(
   SET_SPIN(ToDegree);
   SET_SPIN_DOUBLE(ByDegrees);
 
+  SET_CHECKBOX(UseMotor);
+  SET_SPIN_DOUBLE(MotorSpeedThreshold);
+  SET_SPIN_DOUBLE(MotorSpeed);
+  const bool motorEnabled = m_cbUseMotor->IsChecked();
+  m_sMotorSpeedThreshold->Enable(motorEnabled);
+  m_sMotorSpeed->Enable(motorEnabled);
+
   SET_CHOICE_VALUE(Integrator,
                    ((*it).Integrator == RouteMapConfiguration::RUNGE_KUTTA
                         ? _T("Runge Kutta")
@@ -525,6 +540,12 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
   m_sFromDegree->SetValue(0);
   m_sToDegree->SetValue(180);
   m_sByDegrees->SetValue(5.0);
+
+  m_cbUseMotor->SetValue(false);
+  m_sMotorSpeedThreshold->SetValue(2.0);
+  m_sMotorSpeed->SetValue(5.0);
+  m_sMotorSpeedThreshold->Enable(false);
+  m_sMotorSpeed->Enable(false);
 
   m_bBlockUpdate = false;
   Update();
@@ -753,6 +774,20 @@ void ConfigurationDialog::Update() {
     GET_SPIN(FromDegree);
     GET_SPIN(ToDegree);
     GET_SPIN(ByDegrees);
+
+    GET_CHECKBOX(UseMotor);
+    if (NO_EDITED_CONTROLS ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  (wxObject*)m_sMotorSpeedThreshold) !=
+            m_edited_controls.end()) {
+      configuration.MotorSpeedThreshold =
+          m_sMotorSpeedThreshold->GetValue();
+    }
+    if (NO_EDITED_CONTROLS ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  (wxObject*)m_sMotorSpeed) != m_edited_controls.end()) {
+      configuration.MotorSpeed = m_sMotorSpeed->GetValue();
+    }
 
     m_WeatherRouting.PreserveMultiLegLegFieldsForDialog(*it, configuration);
     (*it)->SetConfiguration(configuration);

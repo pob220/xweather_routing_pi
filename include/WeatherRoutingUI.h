@@ -464,6 +464,9 @@ protected:
   wxStaticText* m_staticText130;
   wxCheckBox* m_cbInvertedRegions;
   wxCheckBox* m_cbAnchoring;
+  wxCheckBox* m_cbUseMotor;
+  wxSpinCtrlDouble* m_sMotorSpeedThreshold;
+  wxSpinCtrlDouble* m_sMotorSpeed;
   wxStaticText* m_staticText139;
   wxComboBox* m_cIntegrator;
   wxStaticText* m_staticText1292;
@@ -506,6 +509,7 @@ protected:
   virtual void OnUpdateSpin(wxSpinEvent& event) { event.Skip(); }
   virtual void OnClose(wxCommandEvent& event) { event.Skip(); }
   virtual void OnAvoidCyclones(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnUseMotor(wxCommandEvent& event) { event.Skip(); }
   virtual void OnResetAdvanced(wxCommandEvent& event) { event.Skip(); }
 
 public:

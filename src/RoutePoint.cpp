@@ -72,7 +72,7 @@ bool RoutePoint::GetPlotData(RoutePoint* next, double dt,
       WeatherDataProvider::GetAirPressure(configuration, lat, lon);
 
   climatology_wind_atlas atlas;
-  int data_mask = 0;  // not used for plotting yet
+  int data_mask = 0;
   bool old = configuration.grib_is_data_deficient;
   configuration.grib_is_data_deficient = grib_is_data_deficient;
   if (!WeatherDataProvider::ReadWindAndCurrents(
@@ -85,6 +85,10 @@ bool RoutePoint::GetPlotData(RoutePoint* next, double dt,
     configuration.grib_is_data_deficient = old;
     return false;
   }
+
+  // Keep route-calculation flags such as MOTOR_USED alongside the freshly
+  // read weather-source flags for table/report display.
+  data.data_mask = this->data_mask | data_mask;
 
   // Calculate the great circle distance and initial bearing between this route
   // point and the next one.
@@ -134,6 +138,7 @@ bool BoatData::GetBoatSpeedForPolar(RouteMapConfiguration& configuration,
   Polar& polar = configuration.boat.Polars[newpolar];
   PolarSpeedStatus polar_status;
   bool used_grib = false;  // true if grib data was used, false if climatology.
+  bool using_motor = false;
   if ((data_mask & Position::CLIMATOLOGY_WIND) &&
       (configuration.ClimatologyType == RouteMapConfiguration::CUMULATIVE_MAP ||
        configuration.ClimatologyType ==
@@ -186,14 +191,22 @@ bool BoatData::GetBoatSpeedForPolar(RouteMapConfiguration& configuration,
     return false;  // ctw = stw = 0;
   }
 
-  // Apply upwind/downwind efficiency factors based on wind angle.
-  double abs_twa = fabs(twa);
-  if (abs_twa <= 90.0) {
-    // Upwind sailing (0-90 degrees relative to wind)
-    stw *= configuration.UpwindEfficiency;
-  } else {
-    // Downwind sailing (90-180 degrees relative to wind)
-    stw *= configuration.DownwindEfficiency;
+  // This deliberately changes speed only. The configured course-angle range
+  // remains authoritative while motoring, just as it is while sailing.
+  if (configuration.UseMotor && stw < configuration.MotorSpeedThreshold) {
+    stw = configuration.MotorSpeed;
+    using_motor = true;
+    data_mask |= Position::MOTOR_USED;
+  }
+
+  // Sailing efficiency factors do not apply to engine power.
+  if (!using_motor) {
+    double abs_twa = fabs(twa);
+    if (abs_twa <= 90.0) {
+      stw *= configuration.UpwindEfficiency;
+    } else {
+      stw *= configuration.DownwindEfficiency;
+    }
   }
 
   // Determine if it's day or night at the current position and time
@@ -202,8 +215,7 @@ bool BoatData::GetBoatSpeedForPolar(RouteMapConfiguration& configuration,
           weather_data.lat, weather_data.lon, configuration.time);
 
   if (dayLightStatus == DayLightStatus::Night) {
-    // Apply day/night efficiency factor
-    stw *= configuration.NightCumulativeEfficiency;
+    if (!using_motor) stw *= configuration.NightCumulativeEfficiency;
     // Set the NIGHT_TIME flag in data_mask for visual differentiation
     data_mask |= Position::NIGHT_TIME;
   }

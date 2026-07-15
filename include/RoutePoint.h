@@ -350,7 +350,10 @@ public:
      * Indicates that this position occurs during nighttime.
      * Used to apply nighttime efficiency factor and darker display colors.
      */
-    NIGHT_TIME = 64
+    NIGHT_TIME = 64,
+
+    /** Indicates that this segment was travelled using the motor. */
+    MOTOR_USED = 128
   };
   int data_mask;
 };
