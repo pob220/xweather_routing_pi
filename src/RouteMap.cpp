@@ -164,6 +164,7 @@ RouteMapConfiguration::RouteMapConfiguration()
       ReverseNodesFeasible(0),
       ReverseConnectionFound(false),
       ReverseFinalValidationPass(false),
+      UseOptimalAngles(false),
       UseMotor(false),
       MotorSpeedThreshold(2.0),
       MotorSpeed(5.0),
@@ -1094,6 +1095,8 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
   for (int i = 0; i < Idx_COUNT; i++) {
     switch (i) {
       case Idx_HTSIGW:
+      case Idx_WVDIR:
+      case Idx_WVPER:
       case Idx_WIND_GUST:
       case Idx_WIND_VX:
       case Idx_WIND_VY:
@@ -1142,6 +1145,8 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
   for (int i = 0; i < Idx_COUNT; i++) {
     switch (i) {
       case Idx_HTSIGW:
+      case Idx_WVDIR:
+      case Idx_WVPER:
       case Idx_WIND_GUST:
       case Idx_WIND_VX:
       case Idx_WIND_VY:

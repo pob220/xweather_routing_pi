@@ -18,6 +18,8 @@
  ***************************************************************************/
 
 #include <wx/wx.h>
+#include <wx/ffile.h>
+#include <wx/filedlg.h>
 
 #include <list>
 
@@ -26,6 +28,7 @@
 #include "RouteMapOverlay.h"
 #include "WeatherRouting.h"
 #include "RoutingTablePanel.h"
+#include "SunCalculator.h"
 
 BEGIN_EVENT_TABLE(RoutingTablePanel, wxPanel)
 EVT_SIZE(RoutingTablePanel::OnSize)
@@ -298,6 +301,22 @@ static wxColour GetTextColorForBackground(const wxColour& bgColor) {
   return brightness > 128 ? *wxBLACK : *wxWHITE;
 }
 
+static wxString WindSourceLabel(int mask) {
+  if (mask & Position::GRIB_WIND)
+    return (mask & Position::DATA_DEFICIENT_WIND) ? _("GRIB (deficient)")
+                                                  : _("GRIB");
+  if (mask & Position::CLIMATOLOGY_WIND) return _("Climatology");
+  return wxEmptyString;
+}
+
+static wxString CurrentSourceLabel(int mask) {
+  if (mask & Position::GRIB_CURRENT)
+    return (mask & Position::DATA_DEFICIENT_CURRENT) ? _("GRIB (deficient)")
+                                                     : _("GRIB");
+  if (mask & Position::CLIMATOLOGY_CURRENT) return _("Climatology");
+  return wxEmptyString;
+}
+
 // Function to get wind speed color
 static wxColor GetWindSpeedColor(double knots) {
   if (!colorsInitialized) {
@@ -389,6 +408,15 @@ static wxColor GetPressureColor(double hPa) {
   return GetColorFromMap(PressureColorMap, maplen, hPa);
 }
 
+static wxColor GetSunElevationColor(double elevation) {
+  if (elevation > 6.0) return wxColour(255, 248, 210);
+  if (elevation > 0.0) return wxColour(255, 220, 175);
+  if (elevation > -6.0) return wxColour(205, 181, 205);
+  if (elevation > -12.0) return wxColour(130, 115, 170);
+  if (elevation > -18.0) return wxColour(75, 75, 135);
+  return wxColour(30, 40, 90);
+}
+
 // Helper function to format distance values according to user preferences
 static wxString FormatDistance(double nm_distance) {
   double value = toUsrDistance_Plugin(nm_distance);
@@ -464,6 +492,14 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   // Create a sizer for the panel
   m_mainSizer = new wxBoxSizer(wxVERTICAL);
 
+  wxBoxSizer* summarySizer = new wxBoxSizer(wxHORIZONTAL);
+  m_summaryText = new wxStaticText(this, wxID_ANY, wxEmptyString);
+  m_exportCsvButton = new wxButton(this, wxID_ANY, _("Export CSV..."));
+  summarySizer->Add(m_summaryText, 1, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  summarySizer->Add(m_exportCsvButton, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  m_mainSizer->Add(summarySizer, 0, wxEXPAND);
+  m_exportCsvButton->Bind(wxEVT_BUTTON, &RoutingTablePanel::OnExportCsv, this);
+
   // Create the grid with the columns we need
   m_gridWeatherTable =
       new wxGrid(this, wxID_ANY, wxDefaultPosition, wxDefaultSize);
@@ -472,12 +508,14 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   // Set column labels
   m_gridWeatherTable->SetColLabelValue(COL_LEG_NUMBER, _("Leg #"));
   m_gridWeatherTable->SetColLabelValue(COL_ETA, _("ETA"));
+  m_gridWeatherTable->SetColLabelValue(COL_SUN_ELEVATION, _("Sun Elev"));
   m_gridWeatherTable->SetColLabelValue(COL_ENROUTE, _("Total Time"));
   m_gridWeatherTable->SetColLabelValue(COL_LEG_DISTANCE, _("Distance"));
   m_gridWeatherTable->SetColLabelValue(COL_SOG, _("SOG"));
   m_gridWeatherTable->SetColLabelValue(COL_COG, _("COG"));
   m_gridWeatherTable->SetColLabelValue(COL_STW, _("STW"));
   m_gridWeatherTable->SetColLabelValue(COL_CTW, _("CTW"));
+  m_gridWeatherTable->SetColLabelValue(COL_WIND_SOURCE, _("Wind Source"));
   m_gridWeatherTable->SetColLabelValue(COL_AWS, _("AWS"));
   m_gridWeatherTable->SetColLabelValue(COL_TWS, _("TWS"));
   m_gridWeatherTable->SetColLabelValue(COL_WIND_GUST, _("Wind Gust"));
@@ -485,6 +523,10 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   m_gridWeatherTable->SetColLabelValue(COL_TWA, _("TWA"));
   m_gridWeatherTable->SetColLabelValue(COL_AWA, _("AWA"));
   m_gridWeatherTable->SetColLabelValue(COL_WAVE_HEIGHT, _("Wave Height"));
+  m_gridWeatherTable->SetColLabelValue(COL_WAVE_DIRECTION, _("Wave Dir"));
+  m_gridWeatherTable->SetColLabelValue(COL_WAVE_RELATIVE,
+                                       _("Wave Rel CTW"));
+  m_gridWeatherTable->SetColLabelValue(COL_WAVE_PERIOD, _("Wave Period"));
   m_gridWeatherTable->SetColLabelValue(COL_SAIL_PLAN, _("Sail Plan"));
   m_gridWeatherTable->SetColLabelValue(COL_COMFORT, _("Comfort"));
   m_gridWeatherTable->SetColLabelValue(COL_RAIN, _("Rain"));
@@ -495,6 +537,7 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   m_gridWeatherTable->SetColLabelValue(COL_AIR_PRESSURE, _("Pressure"));
   m_gridWeatherTable->SetColLabelValue(COL_CAPE, _("CAPE"));
   m_gridWeatherTable->SetColLabelValue(COL_REFLECTIVITY, _("REFC"));
+  m_gridWeatherTable->SetColLabelValue(COL_CURRENT_SOURCE, _("Curr Source"));
   m_gridWeatherTable->SetColLabelValue(COL_CURRENT_SPEED, _("Curr Speed"));
   m_gridWeatherTable->SetColLabelValue(COL_CURRENT_DIR, _("Curr Dir"));
   m_gridWeatherTable->SetColLabelValue(COL_CURRENT_ANGLE, _("Curr Angle"));
@@ -524,10 +567,73 @@ void RoutingTablePanel::OnClose(wxCommandEvent& event) {
 
 void RoutingTablePanel::OnSize(wxSizeEvent& event) {
   event.Skip();
-  if (m_gridWeatherTable) {
-    // Resize the grid to fill the panel
-    m_gridWeatherTable->SetSize(GetClientSize());
+}
+
+void RoutingTablePanel::UpdateSummary(const std::list<PlotData>& plotData) {
+  if (plotData.empty()) {
+    m_summaryText->SetLabel(_("No route data"));
+    return;
   }
+
+  double distance = 0.0;
+  double motorSeconds = 0.0;
+  double maxWind = 0.0;
+  double maxWave = 0.0;
+  const PlotData* previous = nullptr;
+  for (const PlotData& data : plotData) {
+    if (previous)
+      distance += DistGreatCircle_Plugin(previous->lat, previous->lon,
+                                         data.lat, data.lon);
+    if (data.data_mask & Position::MOTOR_USED) motorSeconds += data.delta;
+    if (std::isfinite(data.twsOverWater)) maxWind = std::max(maxWind, data.twsOverWater);
+    if (std::isfinite(data.WVHT)) maxWave = std::max(maxWave, data.WVHT);
+    previous = &data;
+  }
+
+  const PlotData& first = plotData.front();
+  const PlotData& last = plotData.back();
+  const wxTimeSpan duration = last.time.Subtract(first.time);
+  const long totalMinutes = duration.GetMinutes();
+  const long motorMinutes = static_cast<long>(motorSeconds / 60.0 + 0.5);
+  m_summaryText->SetLabel(wxString::Format(
+      _("Depart %s   Arrive %s   Duration %ldd %02ld:%02ld   Distance %s   "
+        "Motor %ld:%02ld   Max wind %s   Max wave %.1f m"),
+      toUsrDateTimeFormat_Plugin(first.time),
+      toUsrDateTimeFormat_Plugin(last.time), totalMinutes / (24 * 60),
+      (totalMinutes / 60) % 24, totalMinutes % 60, FormatDistance(distance),
+      motorMinutes / 60, motorMinutes % 60, FormatSpeed(maxWind), maxWave));
+  m_summaryText->Wrap(1100);
+}
+
+static wxString CsvField(wxString value) {
+  value.Replace("\"", "\"\"");
+  return "\"" + value + "\"";
+}
+
+void RoutingTablePanel::OnExportCsv(wxCommandEvent& event) {
+  wxFileDialog dialog(this, _("Export weather route table"), wxEmptyString,
+                      _("weather-route.csv"), _("CSV files (*.csv)|*.csv"),
+                      wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+  if (dialog.ShowModal() != wxID_OK) return;
+
+  wxString csv;
+  for (int col = 0; col < m_gridWeatherTable->GetNumberCols(); ++col) {
+    if (col) csv += ',';
+    csv += CsvField(m_gridWeatherTable->GetColLabelValue(col));
+  }
+  csv += "\r\n";
+  for (int row = 0; row < m_gridWeatherTable->GetNumberRows(); ++row) {
+    for (int col = 0; col < m_gridWeatherTable->GetNumberCols(); ++col) {
+      if (col) csv += ',';
+      csv += CsvField(m_gridWeatherTable->GetCellValue(row, col));
+    }
+    csv += "\r\n";
+  }
+
+  wxFFile file(dialog.GetPath(), "wb");
+  if (!file.IsOpened() || !file.Write(csv, wxConvUTF8))
+    wxMessageBox(_("Could not write the CSV file."), _("Weather Routing"),
+                 wxOK | wxICON_ERROR, this);
 }
 
 void RoutingTablePanel::SetColorScheme(PI_ColorScheme cs) {
@@ -603,6 +709,7 @@ void RoutingTablePanel::handleSailPlanCell(
 void RoutingTablePanel::PopulateTable() {
   // Get plot data from the route
   std::list<PlotData> plotData = m_RouteMap->GetPlotData(false);
+  UpdateSummary(plotData);
   // Clear existing grid content and set new size
   if (m_gridWeatherTable->GetNumberRows() > 0)
     m_gridWeatherTable->DeleteRows(0, m_gridWeatherTable->GetNumberRows());
@@ -640,7 +747,17 @@ void RoutingTablePanel::PopulateTable() {
     // Fallback for earlier API versions - format time in UTC
     timeString = data.time.Format(_T("%Y-%m-%d %H:%M UTC"));
 #endif
-    m_gridWeatherTable->SetCellValue(row, COL_ETA, timeString);
+    const double sunElevation =
+        SunCalculator::GetSunElevation(data.lat, data.lon, data.time);
+    if (std::isfinite(sunElevation)) {
+      setCellWithColor(row, COL_ETA, timeString,
+                       GetSunElevationColor(sunElevation));
+      m_gridWeatherTable->SetCellValue(
+          row, COL_SUN_ELEVATION,
+          wxString::Format("%+.1f\u00B0", sunElevation));
+    } else {
+      m_gridWeatherTable->SetCellValue(row, COL_ETA, timeString);
+    }
 
     // Store the first point's time to calculate total time from start
     if (firstPoint) {
@@ -701,6 +818,11 @@ void RoutingTablePanel::PopulateTable() {
       m_gridWeatherTable->SetCellValue(
           row, COL_CTW, wxString::Format("%.0f\u00B0", positive_degrees(data.ctw)));
     }
+
+    m_gridWeatherTable->SetCellValue(row, COL_WIND_SOURCE,
+                                     WindSourceLabel(data.data_mask));
+    m_gridWeatherTable->SetCellValue(row, COL_CURRENT_SOURCE,
+                                     CurrentSourceLabel(data.data_mask));
 
     // Wind data
     if (!std::isnan(data.stw) && !std::isnan(data.twdOverWater) &&
@@ -845,6 +967,20 @@ void RoutingTablePanel::PopulateTable() {
       setCellWithColor(row, COL_WAVE_HEIGHT,
                        wxString::Format("%.1f m", data.WVHT),
                        GetWaveHeightColor(data.WVHT));
+    }
+    if (std::isfinite(data.WVDIR)) {
+      m_gridWeatherTable->SetCellValue(
+          row, COL_WAVE_DIRECTION,
+          wxString::Format("%.0f\u00B0", positive_degrees(data.WVDIR)));
+    }
+    if (std::isfinite(data.WVREL)) {
+      m_gridWeatherTable->SetCellValue(
+          row, COL_WAVE_RELATIVE,
+          wxString::Format("%.0f\u00B0", positive_degrees(data.WVREL)));
+    }
+    if (std::isfinite(data.WVPER) && data.WVPER > 0) {
+      m_gridWeatherTable->SetCellValue(
+          row, COL_WAVE_PERIOD, wxString::Format("%.1f s", data.WVPER));
     }
 
     // Sailing comfort level

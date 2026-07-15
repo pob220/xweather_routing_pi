@@ -67,6 +67,10 @@ public:
    */
   static double GetSwell(RouteMapConfiguration& configuration, double lat,
                          double lon);
+  static double GetWaveDirection(RouteMapConfiguration& configuration,
+                                 double lat, double lon);
+  static double GetWavePeriod(RouteMapConfiguration& configuration, double lat,
+                              double lon);
 
   static double GetGust(RouteMapConfiguration& configuration, double lat,
                         double lon);

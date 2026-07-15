@@ -77,6 +77,7 @@ public:
 
   void AddSource(wxString name);
   void RemoveSource(wxString name);
+  void RenameSource(const wxString& oldName, const wxString& newName);
   void ClearSources();
   /// Fill combobox for start or end selection with all OpenCPN waypoints.
   void AddWaypoints(const bool toStart);
@@ -130,6 +131,7 @@ protected:
   void OnEndAtWaypoint(wxCommandEvent& event);
   void OnAvoidCyclones(wxCommandEvent& event);
   void OnUseMotor(wxCommandEvent& event);
+  void OnUseOptimalAngles(wxCommandEvent& event);
   void OnAddDegreeStep(wxCommandEvent& event);
   void OnRemoveDegreeStep(wxCommandEvent& event);
   void OnClearDegreeSteps(wxCommandEvent& event);

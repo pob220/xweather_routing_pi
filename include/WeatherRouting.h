@@ -448,6 +448,7 @@ private:
   void OnDeleteAllPositions(wxCommandEvent& event);
   void OnClose(wxCloseEvent& event) { Hide(); }
   void OnPositionKeyDown(wxListEvent& event);
+  void OnEditPosition();
   void OnEditConfiguration();
   /**
    * Loads a weather routing configuration from an XML file.
@@ -491,6 +492,7 @@ private:
   void OnSize(wxSizeEvent& event);
   void OnNew(wxCommandEvent& event);
   void OnEditConfigurationClick(wxMouseEvent& event) { OnEditConfiguration(); }
+  void OnEditPositionClick(wxMouseEvent& event) { OnEditPosition(); }
   void OnWeatherRouteSort(wxListEvent& event);
   void OnWeatherRouteSelected();
   void OnWeatherRouteSelected(wxListEvent& event) { OnWeatherRouteSelected(); }

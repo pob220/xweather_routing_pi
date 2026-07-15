@@ -131,6 +131,12 @@ double PlotDialog::GetValue(PlotData& data, Variable variable) {
       return positive_degrees(data.currentDir);
     case SIG_WAVE_HEIGHT:
       return data.WVHT;
+    case WAVE_DIRECTION:
+      return positive_degrees(data.WVDIR);
+    case WAVE_RELATIVE_DIRECTION:
+      return positive_degrees(data.WVREL);
+    case WAVE_PERIOD:
+      return data.WVPER;
     case TACKS:
       return data.tacks;
     case JIBES:
@@ -214,6 +220,11 @@ int PlotDialog::GetType(int var) {
       return CURRENT_DIRECTION;
     case SIG_WAVE_HEIGHT:
       return WAVE_HEIGHT;
+    case WAVE_DIRECTION:
+    case WAVE_RELATIVE_DIRECTION:
+      return COURSE;
+    case WAVE_PERIOD:
+      return ENVIRONMENTAL;
     case TACKS:
     case JIBES:
     case SAIL_PLAN_CHANGES:
@@ -265,8 +276,8 @@ void PlotDialog::GetScale() {
   for (int i = 0; i < 2; i++) {
     for (int j = i + 1; j < 3; j++) {
       // Use the same scale if variables are of the same type
-      if (GetType(cVariable[i]->GetSelection()) ==
-          GetType(cVariable[j]->GetSelection())) {
+      if (GetType(GetVariableEnumFromIndex(cVariable[i]->GetSelection())) ==
+          GetType(GetVariableEnumFromIndex(cVariable[j]->GetSelection()))) {
         m_minvalue[i] = m_minvalue[j] = wxMin(m_minvalue[i], m_minvalue[j]);
         m_maxvalue[i] = m_maxvalue[j] = wxMax(m_maxvalue[i], m_maxvalue[j]);
       }

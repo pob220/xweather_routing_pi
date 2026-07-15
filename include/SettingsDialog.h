@@ -38,6 +38,7 @@ public:
   void OnUpdate();
   void OnUpdateColumns(wxCommandEvent& event);
   void OnHelp(wxCommandEvent& event);
+  wxDateTime::TimeZone GetTimeZone() const;
   static const wxString column_names[];
 };
 

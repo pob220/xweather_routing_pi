@@ -139,13 +139,11 @@ bool WeatherDataProvider::PrepareClimatologyForWorkers(
   return true;
 }
 
-static Json::Value RequestGRIB(const wxDateTime& t, const wxString& what,
+static Json::Value RequestGRIB(const wxDateTime& time, const wxString& what,
                                double lat, double lon) {
   Json::Value error;
   Json::Value v;
   Json::FastWriter writer;
-  // brain dead wx is expecting time in local time
-  wxDateTime time = t.FromUTC();
   if (!time.IsValid()) return error;
 
   v["Day"] = time.GetDay();
@@ -553,6 +551,20 @@ double WeatherDataProvider::GetSwell(RouteMapConfiguration& configuration,
   return GetWeatherParameter(
       configuration, lat, lon, "SWELL", Idx_HTSIGW, NAN,
       [](double height) { return height < 0 ? 0 : height; });
+}
+
+double WeatherDataProvider::GetWaveDirection(
+    RouteMapConfiguration& configuration, double lat, double lon) {
+  return GetWeatherParameter(
+      configuration, lat, lon, "WAVE DIR", Idx_WVDIR, NAN,
+      [](double direction) { return direction < 0 ? NAN : direction; });
+}
+
+double WeatherDataProvider::GetWavePeriod(RouteMapConfiguration& configuration,
+                                          double lat, double lon) {
+  return GetWeatherParameter(
+      configuration, lat, lon, "WAVE PERIOD", Idx_WVPER, NAN,
+      [](double period) { return period < 0 ? NAN : period; });
 }
 
 /**

@@ -220,7 +220,8 @@ public:
                      const wxString& title = _("Weather Routing"),
                      const wxPoint& pos = wxDefaultPosition,
                      const wxSize& size = wxSize(-1, -1),
-                     long style = wxCAPTION | wxCLOSE_BOX |
+                     long style = wxCAPTION | wxCLOSE_BOX | wxMAXIMIZE_BOX |
+                                  wxMINIMIZE_BOX |
                                   wxFRAME_FLOAT_ON_PARENT | wxFRAME_NO_TASKBAR |
                                   wxRESIZE_BORDER | wxSYSTEM_MENU |
                                   wxTAB_TRAVERSAL);
@@ -510,6 +511,7 @@ protected:
   virtual void OnClose(wxCommandEvent& event) { event.Skip(); }
   virtual void OnAvoidCyclones(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUseMotor(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnUseOptimalAngles(wxCommandEvent& event) { event.Skip(); }
   virtual void OnResetAdvanced(wxCommandEvent& event) { event.Skip(); }
 
 public:
@@ -527,6 +529,7 @@ public:
                                              //!< night sailing
   wxSpinCtrl* m_sFromDegree;  //!< Minimum course relative to true wind.
   wxSpinCtrl* m_sToDegree;    //!< Maximum course relative to true wind.
+  wxCheckBox* m_cbUseOptimalAngles;
   /** The increment course angle when calculating a isochrone route. */
   wxSpinCtrlDouble* m_sByDegrees;
 
@@ -534,7 +537,8 @@ public:
       wxWindow* parent, wxWindowID id = wxID_ANY,
       const wxString& title = _("Weather Routing Configuration"),
       const wxPoint& pos = wxDefaultPosition,
-      const wxSize& size = wxSize(-1, -1), long style = wxDEFAULT_DIALOG_STYLE);
+      const wxSize& size = wxSize(-1, -1),
+      long style = wxDEFAULT_DIALOG_STYLE | wxMAXIMIZE_BOX | wxMINIMIZE_BOX);
   ~ConfigurationDialogBase();
 };
 
@@ -621,6 +625,12 @@ protected:
     CURRENT_DIRECTION,
     /** Significant wave height in meters */
     SIG_WAVE_HEIGHT,
+    /** Wave direction in degrees true. */
+    WAVE_DIRECTION,
+    /** Wave direction relative to course through water. */
+    WAVE_RELATIVE_DIRECTION,
+    /** Wave period in seconds. */
+    WAVE_PERIOD,
     /** Number of tacking maneuvers in a sailing route. */
     TACKS,
     /** Number of jibes in a sailing route. */
@@ -685,6 +695,9 @@ protected:
         {CURRENT_VELOCITY, _("Current Velocity")},
         {CURRENT_DIRECTION, _("Current Direction")},
         {SIG_WAVE_HEIGHT, _("Significant Wave Height")},
+        {WAVE_DIRECTION, _("Wave Direction")},
+        {WAVE_RELATIVE_DIRECTION, _("Wave Direction relative to CTW")},
+        {WAVE_PERIOD, _("Wave Period")},
         {TACKS, _("Tacks")},
         {JIBES, _("Jibes")},
         {SAIL_PLAN_CHANGES, _("Sail Plan Changes")},

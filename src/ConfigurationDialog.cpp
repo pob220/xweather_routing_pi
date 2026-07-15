@@ -157,7 +157,7 @@ void ConfigurationDialog::OnGribTime(wxCommandEvent& event) {
 }
 
 void ConfigurationDialog::OnCurrentTime(wxCommandEvent& event) {
-  SetStartDateTime(wxDateTime::Now().ToUTC());
+  SetStartDateTime(wxDateTime::Now());
   Update();
 }
 
@@ -205,6 +205,12 @@ void ConfigurationDialog::OnUseMotor(wxCommandEvent& event) {
   m_sMotorSpeedThreshold->Enable(enabled);
   m_sMotorSpeed->Enable(enabled);
   OnValueChange(event);
+  Update();
+}
+
+void ConfigurationDialog::OnUseOptimalAngles(wxCommandEvent& event) {
+  // Optimal angles refine the user's configured course envelope; they never
+  // widen or overwrite it.
   Update();
 }
 
@@ -307,12 +313,19 @@ void ConfigurationDialog::SetConfigurations(
 
   std::list<RouteMapConfiguration>::iterator it = configurations.begin();
 
-  bool ult = m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue();
-#define STARTTIME (ult ? it->StartTime.FromUTC() : it->StartTime)
-
-  SET_CONTROL_VALUE(STARTTIME.GetDateOnly(), m_dpStartDate, SetValue,
-                    wxDateTime, wxDateTime());
-  SET_CONTROL_VALUE(STARTTIME, m_tpTime, SetValue, wxDateTime, wxDateTime());
+  const bool useLocalTime =
+      m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked();
+  wxDateTime dateValue = it->StartTime.GetDateOnly();
+  wxDateTime timeValue = it->StartTime;
+  // The native picker controls interpret their wxDateTime input as UTC and
+  // convert it for display. Undo that conversion when the UI is showing UTC.
+  if (!useLocalTime) {
+    dateValue = dateValue.ToUTC();
+    timeValue = timeValue.ToUTC();
+  }
+  SET_CONTROL_VALUE(dateValue, m_dpStartDate, SetValue, wxDateTime,
+                    wxDateTime());
+  SET_CONTROL_VALUE(timeValue, m_tpTime, SetValue, wxDateTime, wxDateTime());
 
   SET_CHECKBOX(UseCurrentTime);
   SET_CHECKBOX(DepartureTimeOptimizationEnabled);
@@ -407,6 +420,7 @@ void ConfigurationDialog::SetConfigurations(
 
   SET_SPIN(FromDegree);
   SET_SPIN(ToDegree);
+  SET_CHECKBOX(UseOptimalAngles);
   SET_SPIN_DOUBLE(ByDegrees);
 
   SET_CHECKBOX(UseMotor);
@@ -471,6 +485,14 @@ void ConfigurationDialog::RemoveSource(wxString name) {
   if (i >= 0) m_cStart->Delete(i);
   i = m_cEnd->FindString(name, true);
   if (i >= 0) m_cEnd->Delete(i);
+}
+
+void ConfigurationDialog::RenameSource(const wxString& oldName,
+                                       const wxString& newName) {
+  int i = m_cStart->FindString(oldName, true);
+  if (i >= 0) m_cStart->SetString(i, newName);
+  i = m_cEnd->FindString(oldName, true);
+  if (i >= 0) m_cEnd->SetString(i, newName);
 }
 
 void ConfigurationDialog::ClearSources() {
@@ -539,6 +561,7 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
 
   m_sFromDegree->SetValue(0);
   m_sToDegree->SetValue(180);
+  m_cbUseOptimalAngles->SetValue(false);
   m_sByDegrees->SetValue(5.0);
 
   m_cbUseMotor->SetValue(false);
@@ -553,8 +576,8 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
 
 void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
   if (datetime.IsValid()) {
-    if (m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue())
-      datetime = datetime.FromUTC();
+    if (!m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked())
+      datetime = datetime.ToUTC();
 
     m_dpStartDate->SetValue(datetime);
     m_tpTime->SetValue(datetime);
@@ -660,46 +683,28 @@ void ConfigurationDialog::Update() {
 
     if (NO_EDITED_CONTROLS ||
         std::find(m_edited_controls.begin(), m_edited_controls.end(),
-                  (wxObject*)m_dpStartDate) != m_edited_controls.end()) {
-      if (!m_dpStartDate->GetDateCtrlValue().IsValid()) continue;
-      // We must preserve the time in case only date but not time, is being
-      // changed by the user... configuration.StartTime is UTC, m_dpStartDate
-      // Local or UTC so adjust
-      wxDateTime time = configuration.StartTime;
-      if (m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue())
-        time = time.FromUTC();
-
-      wxDateTime date = m_dpStartDate->GetDateCtrlValue();
-      // ... and add it afterwards
-      date.SetHour(time.GetHour());
-      date.SetMinute(time.GetMinute());
-      date.SetSecond(time.GetSecond());
-
-      if (m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue())
-        date = date.ToUTC();
-
-      configuration.StartTime = date;
-      m_dpStartDate->SetForegroundColour(wxColour(0, 0, 0));
-    }
-
-    if (NO_EDITED_CONTROLS ||
+                  (wxObject*)m_dpStartDate) != m_edited_controls.end() ||
         std::find(m_edited_controls.begin(), m_edited_controls.end(),
                   (wxObject*)m_tpTime) != m_edited_controls.end()) {
-      // must use correct data on UTC conversion to preserve Daylight Savings
-      // Time changes across dates
-      wxDateTime time = configuration.StartTime;
-      if (m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue())
+      if (!m_dpStartDate->GetDateCtrlValue().IsValid()) continue;
+
+      wxDateTime controlDate = m_dpStartDate->GetDateCtrlValue();
+      wxDateTime controlTime = m_tpTime->GetTimeCtrlValue();
+      wxDateTime time(controlDate.GetDay(), controlDate.GetMonth(),
+                      controlDate.GetYear(), controlTime.GetHour(),
+                      controlTime.GetMinute(), controlTime.GetSecond());
+      if (!time.IsValid())
+        time = wxDateTime::Now();
+      else if (!m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked())
         time = time.FromUTC();
 
-      time.SetHour(m_tpTime->GetTimeCtrlValue().GetHour());
-      time.SetMinute(m_tpTime->GetTimeCtrlValue().GetMinute());
-      time.SetSecond(m_tpTime->GetTimeCtrlValue().GetSecond());
-
-      if (m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue())
-        time = time.ToUTC();
-
       configuration.StartTime = time;
-      m_tpTime->SetForegroundColour(wxColour(0, 0, 0));
+      if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                    (wxObject*)m_dpStartDate) != m_edited_controls.end())
+        m_dpStartDate->SetForegroundColour(wxColour(0, 0, 0));
+      if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                    (wxObject*)m_tpTime) != m_edited_controls.end())
+        m_tpTime->SetForegroundColour(wxColour(0, 0, 0));
     }
 
     if (!m_tBoat->GetValue().empty()) {
@@ -773,6 +778,7 @@ void ConfigurationDialog::Update() {
 
     GET_SPIN(FromDegree);
     GET_SPIN(ToDegree);
+    GET_CHECKBOX(UseOptimalAngles);
     GET_SPIN(ByDegrees);
 
     GET_CHECKBOX(UseMotor);

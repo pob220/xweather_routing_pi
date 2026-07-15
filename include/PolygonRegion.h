@@ -55,6 +55,7 @@ struct Contour {
   void Init(const float* p, int c);
   bool CCW();
   void Reverse();
+  float Area() const;
 
   void Simplify(float epsilon = 1e-6);
 
@@ -93,7 +94,9 @@ public:
   void Union(PolygonRegion& region);
   void Subtract(PolygonRegion& region);
 
-  void Simplify(float epsilon = 1e-6);
+  void RemoveTinySubRegions();
+  void Simplify(float epsilon = 1e-6,
+                bool removeTinySubRegions = true);
 
   TESStesselator* Tesselate(bool triangles);
 

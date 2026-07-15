@@ -145,6 +145,9 @@ public:
   double currentSpeed;  //!< Speed of sea current over ground in knots.
   double currentDir;    //!< Sea current direction over ground in degrees.
   double WVHT;          //!< Significant swell height in meters.
+  double WVDIR;         //!< Wave direction in degrees.
+  double WVREL;         //!< Wave direction relative to CTW in degrees.
+  double WVPER;         //!< Wave period in seconds.
   double VW_GUST;       //!< Gust wind speed in knots.
 
   double cloud_cover;        //!< Cloud cover in percent (0-100%).
@@ -587,6 +590,8 @@ struct RouteMapConfiguration {
    * calculation. The default value is 180 degrees.
    */
   double ToDegree;
+  /** Limit sailing candidates to the current polar's best VMG angles. */
+  bool UseOptimalAngles;
   /**
    * The angular resolution at each step of the route calculation, in degrees.
    * Lower values provide finer resolution but increase computation time.

@@ -169,6 +169,9 @@ void RouteMapOverlay::RouteAnalysis(PlugIn_Route* proute) {
   // sog, cog, stw, ctw, VW, W, tws, twd, currentSpeed, currentDir, WVHT;
   // double VW_GUST;
   data.WVHT = 0;
+  data.WVDIR = NAN;
+  data.WVREL = NAN;
+  data.WVPER = NAN;
   data.VW_GUST = 0;
   data.delta = dt;
   bool ok = true;
@@ -1540,7 +1543,6 @@ RouteMapOverlay::GetRetainedFrontierSegments() {
 
 void RouteMapOverlay::RequestGrib(wxDateTime time) {
   Json::Value v;
-  time = time.FromUTC();
   v["Day"] = time.GetDay();
   v["Month"] = time.GetMonth();
   v["Year"] = time.GetYear();
@@ -3028,14 +3030,19 @@ Position* RouteMapOverlay::getClosestRoutePositionFromCursor(
    */
 
   double dist = INFINITY;
+  const RouteMapConfiguration configuration = GetConfiguration();
+  const double normalizedCursorLon =
+      configuration.positive_longitudes ? positive_degrees(cursorLon)
+                                        : cursorLon;
   std::list<PlotData> plot = GetPlotData(false);
   bool found = false;
   posData.time = wxInvalidDateTime;
   for (const auto& it : plot) {
-    // Calculate distance
-    // Almost like a plan (x,y) because of small distance -- is that correct?
-    double tempDist =
-        sqrt(pow(cursorLat - it.lat, 2) + pow(cursorLon - it.lon, 2));
+    // Compare longitudes with wrap-around handling at the international
+    // dateline.  This planar comparison is only used to select a nearby
+    // displayed route point.
+    const double dlon = heading_resolve(normalizedCursorLon - it.lon);
+    const double tempDist = hypot(cursorLat - it.lat, dlon);
     if (tempDist < dist) {
       posData = it;
       dist = tempDist;

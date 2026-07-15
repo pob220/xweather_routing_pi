@@ -38,7 +38,10 @@ WeatherData::WeatherData(RoutePoint* position)
       twsOverWater(0),
       currentDir(0),
       currentSpeed(0),
-      swell(0) {}
+      swell(0) {
+  atlas.storm = 0;
+  atlas.calm = 0;
+}
 
 /* get data from a position for plotting */
 bool RoutePoint::GetPlotData(RoutePoint* next, double dt,
@@ -52,6 +55,8 @@ bool RoutePoint::GetPlotData(RoutePoint* next, double dt,
   data.polar = polar;
 
   data.WVHT = WeatherDataProvider::GetSwell(configuration, lat, lon);
+  data.WVDIR = WeatherDataProvider::GetWaveDirection(configuration, lat, lon);
+  data.WVPER = WeatherDataProvider::GetWavePeriod(configuration, lat, lon);
   data.VW_GUST = WeatherDataProvider::GetGust(configuration, lat, lon);
   data.delta = dt;
 
@@ -101,6 +106,9 @@ bool RoutePoint::GetPlotData(RoutePoint* next, double dt,
   WeatherDataProvider::GroundToWaterFrame(data.cog, data.sog, data.currentDir,
                                           data.currentSpeed, data.ctw,
                                           data.stw);
+  data.WVREL = std::isfinite(data.WVDIR) && std::isfinite(data.ctw)
+                   ? heading_resolve(data.WVDIR - data.ctw)
+                   : NAN;
   configuration.grib_is_data_deficient = old;
   return true;
 }
@@ -554,7 +562,9 @@ double RoutePoint::PropagateToPoint(double dlat, double dlon,
     ctw =
         weather_data.twdOverWater + heading; /* rotated relative to true wind */
 
-    double timeseconds;  // not used
+    // GetBestPolarAndBoatSpeed adjusts this value for manoeuvre penalties, so
+    // it must not enter that calculation with an indeterminate value.
+    double timeseconds = 0.0;
 
     if (!boat_data.GetBestPolarAndBoatSpeed(
             configuration, weather_data, heading, ctw, NAN /*parent_heading*/,

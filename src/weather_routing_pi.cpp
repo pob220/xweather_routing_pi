@@ -262,8 +262,7 @@ void weather_routing_pi::SetPluginMessage(wxString& message_id,
                v["Second"].asInt());
 
       if (m_pWeather_Routing && time.IsValid()) {
-        m_pWeather_Routing->m_ConfigurationDialog.m_GribTimelineTime =
-            time.ToUTC();
+        m_pWeather_Routing->m_ConfigurationDialog.m_GribTimelineTime = time;
         //            m_pWeather_Routing->m_ConfigurationDialog.m_cbUseGrib->Enable();
         RequestRefresh(m_parent_window);
       }

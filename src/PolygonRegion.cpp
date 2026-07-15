@@ -25,7 +25,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
+#include <cmath>
 #include <string.h>
 
 #include <wx/wx.h>
@@ -70,6 +70,17 @@ void Contour::Reverse() {
     points[i] = points[j], points[i + 1] = points[j + 1];
     points[j] = x, points[j + 1] = y;
   }
+}
+
+float Contour::Area() const {
+  if (n < 3) return 0.0f;
+  float twiceArea = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    const int next = (i + 1) % n;
+    twiceArea += points[2 * i] * points[2 * next + 1] -
+                 points[2 * next] * points[2 * i + 1];
+  }
+  return std::fabs(twiceArea) * 0.5f;
 }
 
 void Contour::Simplify(float epsilon) {
@@ -290,7 +301,25 @@ void PolygonRegion::Subtract(PolygonRegion& region) {
   Put(region, TESS_WINDING_POSITIVE, true);
 }
 
-void PolygonRegion::Simplify(float epsilon) {
+void PolygonRegion::RemoveTinySubRegions() {
+  if (contours.size() <= 1) return;
+
+  float totalOuterArea = 0.0f;
+  for (auto& contour : contours)
+    if (contour.CCW()) totalOuterArea += contour.Area();
+  if (totalOuterArea <= 0.0f) return;
+
+  const float threshold = totalOuterArea * 0.005f;
+  for (auto it = contours.begin(); it != contours.end();) {
+    if (it->Area() < threshold)
+      it = contours.erase(it);
+    else
+      ++it;
+  }
+}
+
+void PolygonRegion::Simplify(float epsilon, bool removeTinySubRegions) {
+  if (contours.empty()) return;
   std::list<Contour>::iterator it = contours.begin();
   while (it != contours.end()) {
     it->Simplify(epsilon);
@@ -299,6 +328,7 @@ void PolygonRegion::Simplify(float epsilon) {
     else
       it++;
   }
+  if (removeTinySubRegions) RemoveTinySubRegions();
 }
 
 #if 0

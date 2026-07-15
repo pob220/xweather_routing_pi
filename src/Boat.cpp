@@ -95,7 +95,7 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
       if (!polar.Open(polar.FileName, message)) return message;
 
       polar.m_crossoverpercentage =
-          AttributeDouble(e, "CrossOverPercentage", 0) / 100.0;
+          AttributeDouble(e, "CrossOverPercentage", 0.2) / 100.0;
 
       Polars.push_back(polar);
     }
@@ -149,7 +149,8 @@ wxString Boat::SaveXML(wxString filename) {
       }
     }
 
-    e->SetAttribute("CrossOverPercentage", 100 * polar.m_crossoverpercentage);
+    e->SetDoubleAttribute("CrossOverPercentage",
+                          100.0 * polar.m_crossoverpercentage);
 
     root->LinkEndChild(e);
   }
@@ -172,7 +173,7 @@ static Point FindNextSegmentPoint(std::list<Segment>& segments, Point p,
         best = it->p[0];
         nobest = false;
       }
-  if (nobest) printf("warning, failed to find matching segment");
+  if (nobest) wxLogMessage("warning, failed to find matching segment");
   return best;
 }
 

@@ -730,6 +730,12 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   m_default_configuration_path = weather_routing_pi::StandardPath() +
                                  _T("WeatherRoutingConfiguration.xml");
+  const wxString bundledConfiguration =
+      GetPluginDataDir("weather_routing_pi") + _T("/data/") +
+      _T("WeatherRoutingConfiguration.xml");
+  if (!wxFileName::FileExists(m_default_configuration_path) &&
+      wxFileName::FileExists(bundledConfiguration))
+    wxCopyFile(bundledConfiguration, m_default_configuration_path);
 
   bool forceCopyBoats = false;
   bool forceCopyPolars = false;
@@ -908,8 +914,9 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
         wxEVT_COLLAPSIBLEPANE_CHANGED,
         wxCollapsiblePaneEventHandler(WeatherRouting::OnCollPaneChanged), NULL,
         this);
-  // m_panel->m_lPositions->Connect( wxEVT_LEFT_DCLICK, wxMouseEventHandler(
-  // WeatherRouting::OnEditPositionClick ), NULL, this );
+  m_panel->m_lPositions->Connect(
+      wxEVT_LEFT_DCLICK,
+      wxMouseEventHandler(WeatherRouting::OnEditPositionClick), NULL, this);
   m_panel->m_lPositions->Connect(
       wxEVT_COMMAND_LIST_KEY_DOWN,
       wxListEventHandler(WeatherRouting::OnPositionKeyDown), NULL, this);
@@ -994,8 +1001,9 @@ WeatherRouting::~WeatherRouting() {
         wxEVT_COLLAPSIBLEPANE_CHANGED,
         wxCollapsiblePaneEventHandler(WeatherRouting::OnCollPaneChanged), NULL,
         this);
-  // m_panel->m_lPositions->Disconnect( wxEVT_LEFT_DCLICK, wxMouseEventHandler(
-  // WeatherRouting::OnEditPositionClick ), NULL, this );
+  m_panel->m_lPositions->Disconnect(
+      wxEVT_LEFT_DCLICK,
+      wxMouseEventHandler(WeatherRouting::OnEditPositionClick), NULL, this);
   m_panel->m_lPositions->Disconnect(
       wxEVT_COMMAND_LIST_KEY_DOWN,
       wxListEventHandler(WeatherRouting::OnPositionKeyDown), NULL, this);
@@ -1174,7 +1182,23 @@ void WeatherRouting::CopyDataFiles(wxString from, wxString to) {
 }
 
 void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
+  static int previousLocationFormat = -1;
+  static wxString previousDistanceUnit;
+  static wxString previousSpeedUnit;
+
   if (vp.bValid == false) return;
+
+  const int locationFormat = GetLatLonFormat();
+  const wxString distanceUnit = getUsrDistanceUnit_Plugin();
+  const wxString speedUnit = getUsrSpeedUnit_Plugin();
+  const bool locationFormatChanged = locationFormat != previousLocationFormat;
+  const bool unitsChanged = distanceUnit != previousDistanceUnit ||
+                            speedUnit != previousSpeedUnit;
+  previousLocationFormat = locationFormat;
+  previousDistanceUnit = distanceUnit;
+  previousSpeedUnit = speedUnit;
+
+  if (unitsChanged) UpdateColumns();
 
   // polling is bad
   bool work = false;
@@ -1186,8 +1210,10 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
     double lon = it.lon;
 
     if (!GetSingleWaypoint(it.GUID, &waypoint)) continue;
-    if (lat == waypoint.m_lat && lon == waypoint.m_lon &&
-        waypoint.m_MarkName.IsSameAs(it.Name))
+    const bool waypointChanged =
+        lat != waypoint.m_lat || lon != waypoint.m_lon ||
+        !waypoint.m_MarkName.IsSameAs(it.Name);
+    if (!locationFormatChanged && !waypointChanged)
       continue;
 
     long index = m_panel->m_lPositions->FindItem(0, it.ID);
@@ -1212,12 +1238,14 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
     m_panel->m_lPositions->SetItem(
         index, POSITION_LON, toSDMM_PlugIn(NEflag::LON, lon, Precision::HI));
     m_panel->m_lPositions->SetColumnWidth(POSITION_LON, wxLIST_AUTOSIZE);
-    work = true;
+    work = work || waypointChanged;
   }
   if (work) {
     UpdateConfigurations();
     Reset();
   }
+
+  if (locationFormatChanged || unitsChanged) GetParent()->Refresh();
 
   if (!dc.GetDC()) {
 #ifndef __OCPN__ANDROID__
@@ -3818,6 +3846,14 @@ void WeatherRouting::UpdateColumns() {
         else
           name += _T("UTC");
         name += _T(")");
+      } else if (i == DISTANCE) {
+        name += _T(" (") + getUsrDistanceUnit_Plugin() + _T(")");
+      } else if (i == AVGSPEED || i == MAXSPEED || i == AVGSPEEDGROUND ||
+                 i == MAXSPEEDGROUND || i == AVGWIND || i == MAXWIND ||
+                 i == MAXWINDGUST || i == AVGCURRENT || i == MAXCURRENT) {
+        name += _T(" (") + getUsrSpeedUnit_Plugin() + _T(")");
+      } else if (i == AVGSWELL || i == MAXSWELL) {
+        name += _T(" (m)");
       }
 
       m_panel->m_lWeatherRoutes->InsertColumn(columns[i], name);
@@ -3881,16 +3917,13 @@ void WeatherRouting::UpdateCursorPositionDialog() {
     CursorPositionDialogMessage(dlg, _("Cursor outside computed route map"));
     return;
   }
-  wxDateTime display_time = rmo->GetLastCursorTime();
-
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
-
-  dlg.m_stTime->SetLabel(display_time.Format(_T("%x %H:%M")));
+  dlg.m_stTime->SetLabel(rmo->GetLastCursorTime().Format(
+      _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()));
 
   RouteMapConfiguration configuration = rmo->GetConfiguration();
   auto latStr = toSDMM_PlugIn(NEflag::LAT, p->lat, Precision::HI);
-  auto lonStr = toSDMM_PlugIn(NEflag::LON, p->lon, Precision::HI);
+  auto lonStr =
+      toSDMM_PlugIn(NEflag::LON, heading_resolve(p->lon), Precision::HI);
   dlg.m_stPosition->SetLabel(latStr + " " + lonStr);
 
   if (p->polar == -1)
@@ -3971,21 +4004,17 @@ void WeatherRouting::UpdateRoutePositionDialog() {
   }
 
   // TRIP DURATION
-  wxDateTime startTime = configuration.StartTime;
   wxDateTime cursorTime = data.time;
+  dlg.m_stTime->SetLabel(cursorTime.Format(
+      _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()));
 
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue()) {
-    startTime = startTime.FromUTC();
-    cursorTime = data.time.FromUTC();
-  }
-  dlg.m_stTime->SetLabel(cursorTime.Format(_T("%x %H:%M")));
-
-  wxString duration = calculateTimeDelta(startTime, cursorTime);
+  wxString duration = calculateTimeDelta(configuration.StartTime, cursorTime);
   dlg.m_stDuration->SetLabel(duration);
 
   // POSITION
   auto latStr = toSDMM_PlugIn(NEflag::LAT, data.lat, Precision::HI);
-  auto lonStr = toSDMM_PlugIn(NEflag::LON, data.lon, Precision::HI);
+  auto lonStr =
+      toSDMM_PlugIn(NEflag::LON, heading_resolve(data.lon), Precision::HI);
   dlg.m_stPosition->SetLabel(latStr + _T(" ") + lonStr);
 
   // POLAR
@@ -4163,6 +4192,109 @@ void WeatherRouting::OnListLabelEdit( wxListEvent& event )
 }
 #endif
 
+void WeatherRouting::OnEditPosition() {
+  const long index = m_panel->m_lPositions->GetNextItem(
+      -1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+  if (index < 0) return;
+
+  const long id = m_panel->m_lPositions->GetItemData(index);
+  auto selected = RouteMap::Positions.end();
+  for (auto it = RouteMap::Positions.begin(); it != RouteMap::Positions.end();
+       ++it) {
+    if (it->ID == id) {
+      selected = it;
+      break;
+    }
+  }
+  if (selected == RouteMap::Positions.end()) return;
+  if (!selected->GUID.IsEmpty()) {
+    wxMessageBox(_("This position is linked to an OpenCPN waypoint. Edit the "
+                   "waypoint in OpenCPN; Weather Routing will follow it."),
+                 _("Weather Routing"), wxOK | wxICON_INFORMATION, this);
+    return;
+  }
+
+  NewPositionDialog dlg(this);
+  dlg.m_tName->SetValue(selected->Name);
+  double degrees = 0.0;
+  double minutes = std::modf(selected->lat, &degrees);
+  dlg.m_tLatitudeDegrees->SetValue(wxString::Format("%.0f", degrees));
+  dlg.m_tLatitudeMinutes->SetValue(
+      wxString::Format("%.4f", std::fabs(minutes * 60.0)));
+  minutes = std::modf(selected->lon, &degrees);
+  dlg.m_tLongitudeDegrees->SetValue(wxString::Format("%.0f", degrees));
+  dlg.m_tLongitudeMinutes->SetValue(
+      wxString::Format("%.4f", std::fabs(minutes * 60.0)));
+  if (dlg.ShowModal() != wxID_OK) return;
+
+  double latDegrees = 0.0, latMinutes = 0.0;
+  double lonDegrees = 0.0, lonMinutes = 0.0;
+  if (!dlg.m_tLatitudeDegrees->GetValue().ToDouble(&latDegrees) ||
+      !dlg.m_tLatitudeMinutes->GetValue().ToDouble(&latMinutes) ||
+      !dlg.m_tLongitudeDegrees->GetValue().ToDouble(&lonDegrees) ||
+      !dlg.m_tLongitudeMinutes->GetValue().ToDouble(&lonMinutes)) {
+    wxMessageBox(_("Latitude and longitude must be numeric."),
+                 _("Weather Routing"), wxOK | wxICON_ERROR, this);
+    return;
+  }
+  const bool latNegative =
+      latDegrees < 0 || dlg.m_tLatitudeDegrees->GetValue().StartsWith("-");
+  const bool lonNegative =
+      lonDegrees < 0 || dlg.m_tLongitudeDegrees->GetValue().StartsWith("-");
+  latMinutes = std::fabs(latMinutes) * (latNegative ? -1.0 : 1.0);
+  lonMinutes = std::fabs(lonMinutes) * (lonNegative ? -1.0 : 1.0);
+  const double lat = latDegrees + latMinutes / 60.0;
+  const double lon = lonDegrees + lonMinutes / 60.0;
+  wxString name = dlg.m_tName->GetValue();
+  name.Trim(true).Trim(false);
+  if (name.IsEmpty() || lat < -90.0 || lat > 90.0 || lon < -180.0 ||
+      lon > 180.0 || std::fabs(latMinutes) >= 60.0 ||
+      std::fabs(lonMinutes) >= 60.0) {
+    wxMessageBox(_("Enter a name and valid latitude/longitude."),
+                 _("Weather Routing"), wxOK | wxICON_ERROR, this);
+    return;
+  }
+  for (const auto& position : RouteMap::Positions) {
+    if (position.ID != id && position.GUID.IsEmpty() && position.Name == name) {
+      wxMessageBox(_("Another manual position already has this name."),
+                   _("Weather Routing"), wxOK | wxICON_ERROR, this);
+      return;
+    }
+  }
+
+  const wxString oldName = selected->Name;
+  selected->Name = name;
+  selected->lat = lat;
+  selected->lon = lon;
+  m_panel->m_lPositions->SetItem(index, POSITION_NAME, name);
+  m_panel->m_lPositions->SetItem(
+      index, POSITION_LAT, toSDMM_PlugIn(NEflag::LAT, lat, Precision::HI));
+  m_panel->m_lPositions->SetItem(
+      index, POSITION_LON, toSDMM_PlugIn(NEflag::LON, lon, Precision::HI));
+  if (oldName != name) {
+    for (int row = 0; row < m_panel->m_lWeatherRoutes->GetItemCount(); ++row) {
+      WeatherRoute* route = reinterpret_cast<WeatherRoute*>(wxUIntToPtr(
+          m_panel->m_lWeatherRoutes->GetItemData(row)));
+      RouteMapConfiguration configuration =
+          route->routemapoverlay->GetConfiguration();
+      bool changed = false;
+      if (configuration.Start == oldName && configuration.StartGUID.IsEmpty()) {
+        configuration.Start = name;
+        changed = true;
+      }
+      if (configuration.End == oldName && configuration.EndGUID.IsEmpty()) {
+        configuration.End = name;
+        changed = true;
+      }
+      if (changed) route->routemapoverlay->SetConfiguration(configuration);
+    }
+    m_ConfigurationDialog.RenameSource(oldName, name);
+    m_ConfigurationBatchDialog.RenameSource(oldName, name);
+  }
+  UpdateConfigurations();
+  m_tAutoSaveXML.Start(5000, true);
+}
+
 void WeatherRouting::OnDeletePosition(wxCommandEvent& event) {
   long index = m_panel->m_lPositions->GetNextItem(-1, wxLIST_NEXT_ALL,
                                                   wxLIST_STATE_SELECTED);
@@ -4209,6 +4341,10 @@ void WeatherRouting::OnPositionKeyDown(wxListEvent& event) {
       wxCommandEvent event;
       OnDeletePosition(event);
     } break;
+    case WXK_RETURN:
+    case WXK_NUMPAD_ENTER:
+      OnEditPosition();
+      break;
     default:
       event.Skip();
   }
@@ -5332,10 +5468,10 @@ private:
 
   wxString FormatTime(wxDateTime time) const {
     if (!time.IsValid()) return _("N/A");
-    if (m_WeatherRouting &&
-        m_WeatherRouting->m_SettingsDialog.m_cbUseLocalTime->GetValue())
-      time = time.FromUTC();
-    return time.Format(_T("%x %H:%M"));
+    return m_WeatherRouting
+               ? time.Format(_T("%x %H:%M"),
+                             m_WeatherRouting->m_SettingsDialog.GetTimeZone())
+               : time.Format(_T("%x %H:%M"), wxDateTime::UTC);
   }
 
   void SetCell(long row, int col, const wxString& value) {
@@ -6697,7 +6833,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
             AttributeInt(e, "MultiLegLegCount", 0);
         if (configuration.UseCurrentTime) {
           // The current time will be overridden when the route is computed.
-          configuration.StartTime = wxDateTime::Now().ToUTC();
+          configuration.StartTime = wxDateTime::Now();
         } else {
           wxDateTime date;
           date.ParseISODate(wxString::FromUTF8(e->Attribute("StartDate")));
@@ -6789,6 +6925,8 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
 
         configuration.FromDegree = AttributeDouble(e, "FromDegree", 0);
         configuration.ToDegree = AttributeDouble(e, "ToDegree", 180);
+        configuration.UseOptimalAngles =
+            AttributeBool(e, "UseOptimalAngles", false);
         configuration.ByDegrees = AttributeDouble(e, "ByDegrees", 5.);
         configuration.UseMotor = AttributeBool(e, "UseMotor", false);
         configuration.MotorSpeedThreshold =
@@ -6845,9 +6983,9 @@ void WeatherRouting::SaveXML(wxString filename) {
 
     c->SetAttribute("Name", (*it).Name.mb_str());
     c->SetAttribute("Latitude",
-                    wxString::Format(_T("%.5f"), (*it).lat).mb_str());
+                    wxString::Format(_T("%.6f"), (*it).lat).mb_str());
     c->SetAttribute("Longitude",
-                    wxString::Format(_T("%.5f"), (*it).lon).mb_str());
+                    wxString::Format(_T("%.6f"), (*it).lon).mb_str());
     if (!(*it).GUID.IsEmpty()) c->SetAttribute("GUID", (*it).GUID.mb_str());
 
     root->LinkEndChild(c);
@@ -6947,6 +7085,7 @@ void WeatherRouting::SaveXML(wxString filename) {
 
     c->SetDoubleAttribute("FromDegree", configuration.FromDegree);
     c->SetDoubleAttribute("ToDegree", configuration.ToDegree);
+    c->SetAttribute("UseOptimalAngles", configuration.UseOptimalAngles);
     c->SetDoubleAttribute("ByDegrees", configuration.ByDegrees);
     c->SetAttribute("UseMotor", configuration.UseMotor);
     c->SetDoubleAttribute("MotorSpeedThreshold",
@@ -7094,10 +7233,12 @@ static bool IsDisplayMetricAvailable(RouteMapOverlay* routemapoverlay) {
 
 static wxString FormatRouteMetric(RouteMapOverlay* routemapoverlay,
                                   RouteMapOverlay::RouteInfoType metric,
-                                  const wxString& format, bool available) {
+                                  const wxString& format, bool available,
+                                  bool convertSpeed = false) {
   if (!available) return _("N/A");
   double value = routemapoverlay->RouteInfo(metric);
   if (!std::isfinite(value)) return _("N/A");
+  if (convertSpeed) value = toUsrSpeed_Plugin(value);
   return wxString::Format(format, value);
 }
 
@@ -7111,7 +7252,9 @@ static wxString FormatRouteDistance(RouteMapOverlay* routemapoverlay,
                              configuration.EndLat, configuration.EndLon);
   if (!std::isfinite(routedDistance) || !std::isfinite(directDistance))
     return _("N/A");
-  return wxString::Format(_T("%.0f/%.0f"), routedDistance, directDistance);
+  return wxString::Format(_T("%.1f/%.1f"),
+                          toUsrDistance_Plugin(routedDistance),
+                          toUsrDistance_Plugin(directDistance));
 }
 
 static wxString BuildRouteFailureState(RouteMapOverlay* routemapoverlay) {
@@ -7215,17 +7358,15 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
             : _("From Position");
     UseCurrentTime = configuration.UseCurrentTime ? _("true") : _("false");
     wxDateTime starttime = configuration.StartTime;
-    if (wr->m_SettingsDialog.m_cbUseLocalTime->GetValue())
-      starttime = starttime.FromUTC();
-    StartTime = starttime.Format(_T("%x %H:%M"));
+    StartTime = starttime.Format(_T("%x %H:%M"),
+                                 wr->m_SettingsDialog.GetTimeZone());
 
     End = configuration.End;
 
     wxDateTime endtime = routemapoverlay->EndTime();
     if (endtime.IsValid()) {
-      if (wr->m_SettingsDialog.m_cbUseLocalTime->GetValue())
-        endtime = endtime.FromUTC();
-      EndTime = endtime.Format(_T("%x %H:%M"));
+      EndTime = endtime.Format(_T("%x %H:%M"),
+                               wr->m_SettingsDialog.GetTimeZone());
     } else
       EndTime = _T("N/A");
 
@@ -7238,28 +7379,28 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
     Distance = FormatRouteDistance(routemapoverlay, configuration,
                                    metricsAvailable);
     AvgSpeed = FormatRouteMetric(routemapoverlay, RouteMapOverlay::AVGSPEED,
-                                 _T("%.1f"), metricsAvailable);
+                                 _T("%.1f"), metricsAvailable, true);
     MaxSpeed = FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXSPEED,
-                                 _T("%.1f"), metricsAvailable);
+                                 _T("%.1f"), metricsAvailable, true);
     AvgSpeedGround =
         FormatRouteMetric(routemapoverlay, RouteMapOverlay::AVGSPEEDGROUND,
-                          _T("%.1f"), metricsAvailable);
+                          _T("%.1f"), metricsAvailable, true);
     MaxSpeedGround =
         FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXSPEEDGROUND,
-                          _T("%.1f"), metricsAvailable);
+                          _T("%.1f"), metricsAvailable, true);
     AvgWind = FormatRouteMetric(routemapoverlay, RouteMapOverlay::AVGWIND,
-                                _T("%.1f"), metricsAvailable);
+                                _T("%.1f"), metricsAvailable, true);
     MaxWind = FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXWIND,
-                                _T("%.1f"), metricsAvailable);
+                                _T("%.1f"), metricsAvailable, true);
     MaxWindGust =
         FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXWINDGUST,
-                          _T("%.1f"), metricsAvailable);
+                          _T("%.1f"), metricsAvailable, true);
     AvgCurrent =
         FormatRouteMetric(routemapoverlay, RouteMapOverlay::AVGCURRENT,
-                          _T("%.1f"), metricsAvailable);
+                          _T("%.1f"), metricsAvailable, true);
     MaxCurrent =
         FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXCURRENT,
-                          _T("%.1f"), metricsAvailable);
+                          _T("%.1f"), metricsAvailable, true);
     AvgSwell = FormatRouteMetric(routemapoverlay, RouteMapOverlay::AVGSWELL,
                                  _T("%.1f"), metricsAvailable);
     MaxSwell = FormatRouteMetric(routemapoverlay, RouteMapOverlay::MAXSWELL,
@@ -8533,22 +8674,22 @@ void WeatherRouting::SaveCombinedRoute(
 
   const RouteMapConfiguration first = routes.front()->GetConfiguration();
   const RouteMapConfiguration last = routes.back()->GetConfiguration();
-  wxDateTime display_time = routes.front()->StartTime();
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
-
   PlugIn_Route_Ex* route = new PlugIn_Route_Ex();
-  route->m_NameString =
-      _("Weather Route") + " (" + display_time.Format(_T("%x %H:%M")) + ")";
+  route->m_NameString = _("Weather Route") + " (" +
+                        routes.front()->StartTime().Format(
+                            _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                        ")";
   route->m_StartString = first.Start;
   route->m_EndString = last.End;
   route->m_isVisible = true;
+  route->m_GUID = GetNewGUID();
   for (size_t i = 0; i < points.size(); ++i) {
     PlugIn_Waypoint_Ex* point = new PlugIn_Waypoint_Ex(
         points[i].lat, heading_resolve(points[i].lon), _T("circle"),
         i + 1 == points.size() ? _("Weather Route Destination")
                                : _("Weather Route Point"));
-    point->m_CreateTime = points[i].time;
+    // OpenCPN route/track insertion currently expects this extra conversion.
+    point->m_CreateTime = points[i].time.ToUTC();
     route->pWaypointList->Append(point);
   }
   AddPlugInRouteEx(route);
@@ -8595,11 +8736,9 @@ void WeatherRouting::ExportCombinedRoute(
   const RouteMapConfiguration last = routes.back()->GetConfiguration();
   SimpleRoute route;
   route.m_GUID = GetNewGUID();
-  wxDateTime display_time = routes.front()->StartTime();
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
   route.m_RouteNameString =
-      "WXRoute_" + display_time.Format(_T("%m-%d-%y_%H-%M")) + "_" +
+      "WXRoute_" + routes.front()->StartTime().Format(
+                       _T("%m-%d-%y_%H-%M"), m_SettingsDialog.GetTimeZone()) + "_" +
       first.Start + "_" + last.End;
   route.m_RouteStartString = first.Start;
   route.m_RouteEndString = last.End;
@@ -8667,24 +8806,23 @@ void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {
   }
 
   PlugIn_Track* newPath = new PlugIn_Track;
-  wxDateTime display_time = routemapoverlay.StartTime();
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
-
-  newPath->m_NameString =
-      _("Weather Route ") + " (" + display_time.Format(_T("%x %H:%M")) + ")";
+  newPath->m_NameString = _("Weather Route ") + " (" +
+                          routemapoverlay.StartTime().Format(
+                              _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                          ")";
 
   // XXX double check time is really end time, not start time off by one.
   RouteMapConfiguration c = routemapoverlay.GetConfiguration();
   newPath->m_StartString = c.Start;
   newPath->m_EndString = c.End;
+  newPath->m_GUID = GetNewGUID();
 
   for (auto const& it : plotdata) {
     PlugIn_Waypoint* newPoint =
         new PlugIn_Waypoint(it.lat, heading_resolve(it.lon), _T("circle"),
                             _("Weather Route Point"));
 
-    newPoint->m_CreateTime = it.time;
+    newPoint->m_CreateTime = it.time.ToUTC();
     newPath->pWaypointList->Append(newPoint);
   }
 
@@ -8693,7 +8831,7 @@ void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {
   if (p) {
     PlugIn_Waypoint* newPoint = new PlugIn_Waypoint(
         p->lat, p->lon, _T("circle"), _("Weather Route Destination"));
-    newPoint->m_CreateTime = routemapoverlay.EndTime();
+    newPoint->m_CreateTime = routemapoverlay.EndTime().ToUTC();
     newPath->pWaypointList->Append(newPoint);
   }
 
@@ -8741,17 +8879,16 @@ void WeatherRouting::SaveAsRoute(RouteMapOverlay& routemapoverlay) {
   }
 
   PlugIn_Route_Ex* newRoute = new PlugIn_Route_Ex();
-  wxDateTime display_time = routemapoverlay.StartTime();
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
-
-  newRoute->m_NameString =
-      _("Weather Route ") + " (" + display_time.Format(_T("%x %H:%M")) + ")";
+  newRoute->m_NameString = _("Weather Route ") + " (" +
+                           routemapoverlay.StartTime().Format(
+                               _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                           ")";
 
   RouteMapConfiguration c = routemapoverlay.GetConfiguration();
   newRoute->m_StartString = c.Start;
   newRoute->m_EndString = c.End;
   newRoute->m_isVisible = true;
+  newRoute->m_GUID = GetNewGUID();
 
   for (std::vector<PlotData>::const_iterator it = plotdata.begin();
        it != plotdata.end(); ++it) {
@@ -8762,7 +8899,7 @@ void WeatherRouting::SaveAsRoute(RouteMapOverlay& routemapoverlay) {
                                    ? _("Weather Route Destination")
                                    : _("Weather Route Point"));
     // newPoint->m_PlannedSpeed = it.sog;
-    newPoint->m_CreateTime = it->time;
+    newPoint->m_CreateTime = it->time.ToUTC();
     newRoute->pWaypointList->Append(newPoint);
   }
 
@@ -8822,12 +8959,9 @@ void WeatherRouting::ExportRoute(RouteMapOverlay& routemapoverlay) {
   SimpleRoute new_route;
   new_route.m_GUID = GetNewGUID();
 
-  wxDateTime display_time = routemapoverlay.StartTime();
-  if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-    display_time = display_time.FromUTC();
-
   new_route.m_RouteNameString =
-      "WXRoute_" + display_time.Format(_T("%m-%d-%y_%H-%M"));
+      "WXRoute_" + routemapoverlay.StartTime().Format(
+                       _T("%m-%d-%y_%H-%M"), m_SettingsDialog.GetTimeZone());
   new_route.m_RouteNameString += "_" + c.Start + "_" + c.End;
 
   new_route.m_RouteStartString = c.Start;
@@ -8993,7 +9127,7 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   }
   if (configuration.UseCurrentTime) {
     // Use the current time
-    configuration.StartTime = wxDateTime::Now().ToUTC();
+    configuration.StartTime = wxDateTime::Now();
     configUpdated = true;
   }
   if (configUpdated) {
@@ -9483,6 +9617,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("Anchoring"), configuration.Anchoring);
   pConf->Write(_T("FromDegree"), configuration.FromDegree);
   pConf->Write(_T("ToDegree"), configuration.ToDegree);
+  pConf->Write(_T("UseOptimalAngles"), configuration.UseOptimalAngles);
   pConf->Write(_T("ByDegrees"), configuration.ByDegrees);
   pConf->Write(_T("UseMotor"), configuration.UseMotor);
   pConf->Write(_T("MotorSpeedThreshold"), configuration.MotorSpeedThreshold);
@@ -9572,6 +9707,8 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.FromDegree);
   pConf->Read(_T("ToDegree"), &configuration.ToDegree,
               configuration.ToDegree);
+  pConf->Read(_T("UseOptimalAngles"), &configuration.UseOptimalAngles,
+              configuration.UseOptimalAngles);
   pConf->Read(_T("ByDegrees"), &configuration.ByDegrees,
               configuration.ByDegrees);
   pConf->Read(_T("UseMotor"), &configuration.UseMotor,
@@ -9641,6 +9778,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
 
   configuration.FromDegree = 0;
   configuration.ToDegree = 180;
+  configuration.UseOptimalAngles = false;
   configuration.ByDegrees = 5;
   configuration.UseMotor = false;
   configuration.MotorSpeedThreshold = 2.0;

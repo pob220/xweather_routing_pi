@@ -58,6 +58,10 @@ public:
   static void CalculateSun(double latit, double longit, int dayOfYear,
                            wxDateTime& sunrise, wxDateTime& sunset);
 
+  /** Return solar elevation in degrees for a UTC instant and position. */
+  static double GetSunElevation(double lat, double lon,
+                                const wxDateTime& time);
+
   /**
    * Determines whether it's day or night at a specific location and time
    *

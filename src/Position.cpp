@@ -77,20 +77,27 @@ Position::Position(double latitude, double longitude, Position* p,
       parent_heading(pheading),
       parent_bearing(pbearing),
       parent(p),
+      prev(nullptr),
+      next(nullptr),
       propagated(false),
+      drawn(false),
       copied(false),
       propagation_error(PROPAGATION_NO_ERROR) {
-  lat -= fmod(lat, EPSILON);
-  lon -= fmod(lon, EPSILON);
+  lat = EPSILON * std::round(lat / EPSILON);
+  lon = EPSILON * std::round(lon / EPSILON);
 }
 
 Position::Position(Position* p)
     : RoutePoint(p->lat, p->lon, p->polar, p->tacks, p->jibes,
-                 p->sail_plan_changes, p->grib_is_data_deficient, p->data_mask),
+                 p->sail_plan_changes, p->data_mask,
+                 p->grib_is_data_deficient),
       parent_heading(p->parent_heading),
       parent_bearing(p->parent_bearing),
       parent(p->parent),
+      prev(nullptr),
+      next(nullptr),
       propagated(p->propagated),
+      drawn(false),
       copied(true),
       propagation_error(p->propagation_error) {}
 
@@ -258,6 +265,66 @@ bool Position::Propagate(IsoRouteList& routelist,
     add_degree_step(*it);
   }
 
+  bool optimal_angles_applied = false;
+  double starboard_upwind = NAN;
+  double starboard_downwind = NAN;
+  double port_downwind = NAN;
+  double port_upwind = NAN;
+  if (configuration.UseOptimalAngles &&
+      !configuration.boat.Polars.empty()) {
+    int polar_idx = polar;
+    if (polar_idx < 0 || polar_idx >= (int)configuration.boat.Polars.size()) {
+      PolarSpeedStatus status = POLAR_SPEED_SUCCESS;
+      polar_idx = configuration.boat.FindBestPolarForCondition(
+          polar, weather_data.twsOverWater, 90.0, weather_data.swell,
+          configuration.OptimizeTacking, &status);
+      if (status != POLAR_SPEED_SUCCESS) polar_idx = -1;
+    }
+
+    if (polar_idx >= 0 && polar_idx < (int)configuration.boat.Polars.size()) {
+      SailingVMG optimal = configuration.boat.Polars[polar_idx].GetVMGTrueWind(
+          weather_data.twsOverWater);
+      starboard_upwind = optimal.values[SailingVMG::STARBOARD_UPWIND];
+      starboard_downwind = optimal.values[SailingVMG::STARBOARD_DOWNWIND];
+      port_downwind = optimal.values[SailingVMG::PORT_DOWNWIND];
+      port_upwind = optimal.values[SailingVMG::PORT_UPWIND];
+
+      // Polar VMG values use 0..360 degrees, while propagation uses
+      // -180..180 degrees for the port tack.
+      const double port_downwind_resolved = port_downwind - 360.0;
+      const double port_upwind_resolved = port_upwind - 360.0;
+      const bool valid = std::isfinite(starboard_upwind) &&
+                         std::isfinite(starboard_downwind) &&
+                         std::isfinite(port_downwind) &&
+                         std::isfinite(port_upwind) &&
+                         0.0 <= starboard_upwind &&
+                         starboard_upwind <= starboard_downwind &&
+                         starboard_downwind <= 180.0 &&
+                         180.0 <= port_downwind &&
+                         port_downwind <= port_upwind && port_upwind < 360.0 &&
+                         configuration.FromDegree <= starboard_upwind &&
+                         starboard_downwind <= configuration.ToDegree;
+      if (valid) {
+        const std::vector<double> configured_steps = degree_steps;
+        degree_steps.clear();
+        seen_angles.clear();
+        add_degree_step(starboard_upwind);
+        add_degree_step(starboard_downwind);
+        add_degree_step(port_downwind_resolved);
+        add_degree_step(port_upwind_resolved);
+        for (const double angle : configured_steps) {
+          if ((angle >= starboard_upwind && angle <= starboard_downwind) ||
+              (angle >= port_downwind_resolved &&
+               angle <= port_upwind_resolved))
+            add_degree_step(angle);
+        }
+        port_downwind = port_downwind_resolved;
+        port_upwind = port_upwind_resolved;
+        optimal_angles_applied = true;
+      }
+    }
+  }
+
   /*
    * Chart-backed land checks can reject the fastest landward shortcuts, but
    * the old coarse wind-angle step can still leave too few seaward detour
@@ -275,6 +342,18 @@ bool Position::Propagate(IsoRouteList& routelist,
       add_refined_degree_step(step);
       if (step > 0 && step < 180) add_refined_degree_step(360 - step);
     }
+  }
+
+  if (optimal_angles_applied) {
+    refined_degree_steps.erase(
+        std::remove_if(refined_degree_steps.begin(), refined_degree_steps.end(),
+                       [=](double angle) {
+                         return !((angle >= starboard_upwind &&
+                                   angle <= starboard_downwind) ||
+                                  (angle >= port_downwind &&
+                                   angle <= port_upwind));
+                       }),
+        refined_degree_steps.end());
   }
 
   std::sort(degree_steps.begin(), degree_steps.end());

@@ -222,6 +222,10 @@ void SettingsDialog::OnUpdateColumns(wxCommandEvent& event) {
   if (weather_routing) weather_routing->UpdateColumns();
 }
 
+wxDateTime::TimeZone SettingsDialog::GetTimeZone() const {
+  return m_cbUseLocalTime->IsChecked() ? wxDateTime::Local : wxDateTime::UTC;
+}
+
 void SettingsDialog::OnHelp(wxCommandEvent& event) {
 #ifdef __OCPN__ANDROID__
   wxSize sz = ::wxGetDisplaySize();

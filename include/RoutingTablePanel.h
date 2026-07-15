@@ -21,6 +21,7 @@
 #define _WEATHER_TABLE_DIALOG_H_
 
 #include <wx/aui/aui.h>
+#include <list>
 #include <map>
 
 #include "WeatherRoutingUI.h"
@@ -78,6 +79,8 @@ protected:
 private:
   void OnClose(wxCommandEvent& event);
   void OnSize(wxSizeEvent& event);
+  void OnExportCsv(wxCommandEvent& event);
+  void UpdateSummary(const std::list<PlotData>& plotData);
 
   /**
    * Helper function to format and display sail plan information
@@ -97,12 +100,14 @@ private:
   enum WeatherDataColumn {
     COL_LEG_NUMBER,  //!< Leg number
     COL_ETA,  //!< Estimated Time of Arrival - actual date/time of this point
+    COL_SUN_ELEVATION,  //!< Solar elevation at this point and time
     COL_ENROUTE,        //!< Duration from start (cumulative time)
     COL_LEG_DISTANCE,   //!< Distance from start (cumulative distance)
     COL_SOG,            //!< Speed Over Ground
     COL_COG,            //!< Course Over Ground
     COL_STW,            //!< Speed Through Water
     COL_CTW,            //!< Course Through Water
+    COL_WIND_SOURCE,    //!< Wind forecast source
     COL_AWS,            //!< Apparent Wind Speed
     COL_TWS,            //!< True Wind Speed
     COL_WIND_GUST,      //!< Wind Gust
@@ -112,6 +117,9 @@ private:
     COL_SAIL_PLAN,      //!< Sail Plan
     COL_COMFORT,        //!< Sailing Comfort Level
     COL_WAVE_HEIGHT,    //!< Wave Height
+    COL_WAVE_DIRECTION, //!< Wave direction
+    COL_WAVE_RELATIVE,  //!< Wave direction relative to CTW
+    COL_WAVE_PERIOD,    //!< Wave period
     COL_RAIN,           //!< Rain
     COL_CLOUD,          //!< Cloud Cover
     COL_AIR_TEMP,       //!< Air Temperature
@@ -120,6 +128,7 @@ private:
     COL_AIR_PRESSURE,   //!< Air Pressure
     COL_CAPE,           //!< CAPE
     COL_REFLECTIVITY,   //!< Reflectivity
+    COL_CURRENT_SOURCE, //!< Current forecast source
     COL_CURRENT_SPEED,  //!< Sea Current Speed
     COL_CURRENT_DIR,    //!< Sea Current Direction
     /**
@@ -140,6 +149,8 @@ private:
 
   wxGrid* m_gridWeatherTable;
   wxSizer* m_mainSizer;
+  wxStaticText* m_summaryText;
+  wxButton* m_exportCsvButton;
 
   // Members for time-based highlighting
   int m_highlightedRow;           // Current highlighted row index
