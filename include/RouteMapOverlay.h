@@ -23,6 +23,7 @@
 #include <atomic>
 #include <cmath>
 #include <vector>
+#include <string>
 
 #include "RouteMap.h"
 #include "LineBufferOverlay.h"
@@ -33,12 +34,27 @@ class PlugIn_Route;
 class piDC;
 class RouteMapOverlay;
 class SettingsDialog;
+namespace supercpn::weather_routing {
+struct RoutingResult;
+struct RoutingProgressUpdate;
+}  // namespace supercpn::weather_routing
 
 struct RouteMapFrontierSegment {
   double lat1;
   double lon1;
   double lat2;
   double lon2;
+};
+
+struct ModernIsochroneLayer {
+  struct Trace {
+    std::pair<double, double> endpoint;
+    std::vector<std::pair<double, double>> route;
+  };
+  wxDateTime time;
+  bool reverse{};
+  std::vector<std::vector<std::pair<double, double>>> contours;
+  std::vector<Trace> traces;
 };
 
 /**
@@ -233,7 +249,7 @@ public:
    * prewarm hints when a scout made progress but did not reach its target.
    * Call only after the route worker has stopped.
    */
-  std::vector<std::pair<double, double> > GetClosestFrontierGeometry();
+  std::vector<std::pair<double, double>> GetClosestFrontierGeometry();
 
   /**
    * Return every parent edge retained by the reduced/thinned scout
@@ -302,7 +318,8 @@ public:
    * constraints. This catches display/apply paths which use plot data rather
    * than walking only the raw destination parent chain.
    */
-  bool ValidatePlottedDestinationRouteLand(RouteMapConfiguration& configuration);
+  bool ValidatePlottedDestinationRouteLand(
+      RouteMapConfiguration& configuration);
 
   /**
    * Gets the end time of the route.
@@ -331,8 +348,7 @@ public:
    * @return True if the thread is running.
    */
   bool Running() {
-    return m_Thread &&
-           (m_Thread->IsAlive() || m_bUpdatingDestination.load());
+    return m_Thread && (m_Thread->IsAlive() || m_bUpdatingDestination.load());
   }
 
   /**
@@ -341,6 +357,12 @@ public:
    * @return True if the thread started successfully.
    */
   bool Start(wxString& error);
+  void InstallModernNativeResult(
+      const supercpn::weather_routing::RoutingResult& result);
+  void SetModernNativeProgress(
+      const supercpn::weather_routing::RoutingProgressUpdate& progress);
+  bool GetModernNativeProgress(wxString& stage, wxString& detail);
+  bool UsesModernNativeResult() const { return m_UsesModernNativeResult; }
 
   /**
    * Deletes the calculation thread.
@@ -464,6 +486,16 @@ private:
   /** Pointer to the calculation thread. */
   RouteMapOverlayThread* m_Thread;
 
+  bool m_UsesModernNativeResult{false};
+  std::vector<Position*> m_ModernRoutePositions;
+  std::vector<Position*> m_ModernCursorRoutePositions;
+  std::vector<ModernIsochroneLayer> m_ModernIsochrones;
+  std::size_t m_ModernCursorLayer{std::numeric_limits<std::size_t>::max()};
+  std::size_t m_ModernCursorTrace{std::numeric_limits<std::size_t>::max()};
+  wxString m_ModernProgressStage;
+  wxString m_ModernProgressDetail;
+  bool m_ModernProgressUpdated{false};
+
   std::atomic<bool> m_bUpdatingDestination;
 
   struct ReverseSegmentFeasibility {
@@ -477,9 +509,11 @@ private:
         : feasible(false), dt(NAN), heading(NAN), data_mask(0) {}
   };
 
-  ReverseSegmentFeasibility CanSailSegment(
-      Position* start, double end_lat, double end_lon, IsoChron* start_isochron,
-      const wxDateTime& target_time, RouteMapConfiguration configuration);
+  ReverseSegmentFeasibility CanSailSegment(Position* start, double end_lat,
+                                           double end_lon,
+                                           IsoChron* start_isochron,
+                                           const wxDateTime& target_time,
+                                           RouteMapConfiguration configuration);
   bool TryReverseReachabilityRecovery(RouteMapConfiguration& configuration,
                                       int isochrons_considered);
 
@@ -510,9 +544,7 @@ private:
         : m_overlay(overlay) {
       m_overlay.m_bUpdatingDestination.store(true);
     }
-    ~DestinationUpdateGuard() {
-      m_overlay.m_bUpdatingDestination.store(false);
-    }
+    ~DestinationUpdateGuard() { m_overlay.m_bUpdatingDestination.store(false); }
     RouteMapOverlay& m_overlay;
   };
 

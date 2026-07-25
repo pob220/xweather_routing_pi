@@ -36,6 +36,8 @@
 #include "RouteMapOverlay.h"
 #include "SettingsDialog.h"
 #include "georef.h"
+#include "ModernNativeRoute.h"
+#include "supercpn/weather_routing/Engine.h"
 
 void WR_GetCanvasPixLL(PlugIn_ViewPort* vp, wxPoint* pp, double lat,
                        double lon) {
@@ -62,6 +64,22 @@ void* RouteMapOverlayThread::Entry() {
 
     m_RouteMapOverlay.RouteAnalysis(proute);
   } else {
+    const bool cumulativeClimatology =
+        cf.ClimatologyType == RouteMapConfiguration::CUMULATIVE_MAP ||
+        cf.ClimatologyType == RouteMapConfiguration::CUMULATIVE_MINUS_CALMS;
+    if (ModernNativeRouteEnabled(cf)) {
+      wxString modernError;
+      RunModernNativeRoute(m_RouteMapOverlay, modernError);
+      if (!modernError.IsEmpty())
+        wxLogMessage("WR_MODERN_NATIVE_RESULT route=\"%s -> %s\" error=\"%s\"",
+                     cf.Start, cf.End, modernError);
+      return nullptr;
+    }
+    if (cumulativeClimatology)
+      wxLogMessage(
+          "WR_MODERN_NATIVE_FALLBACK route=\"%s -> %s\" reason=\"cumulative "
+          "climatology distribution requires legacy probabilistic semantics\"",
+          cf.Start, cf.End);
     while (!TestDestroy() && !m_RouteMapOverlay.Finished()) {
       {
         RouteMapOverlay::DestinationUpdateGuard destination_update_guard(
@@ -102,9 +120,16 @@ RouteMapOverlay::RouteMapOverlay()
       current_cache_origin_size(0) {}
 
 RouteMapOverlay::~RouteMapOverlay() {
-  delete destination_position;
-
-  if (m_Thread) Stop();
+  if (m_Thread) {
+    Stop();
+    DeleteThread();
+  }
+  if (m_UsesModernNativeResult) {
+    for (Position* position : m_ModernRoutePositions) delete position;
+    for (Position* position : m_ModernCursorRoutePositions) delete position;
+  } else {
+    delete destination_position;
+  }
 }
 
 bool RouteMapOverlay::Start(wxString& error) {
@@ -142,6 +167,12 @@ bool RouteMapOverlay::Start(wxString& error) {
     error = _("Configuration does not allow grib or climatology wind data");
     return false;
   }
+
+  Lock();
+  m_ModernProgressStage.clear();
+  m_ModernProgressDetail.clear();
+  m_ModernProgressUpdated = false;
+  Unlock();
 
   m_Thread = new RouteMapOverlayThread(*this);
   m_Thread->Run();
@@ -219,6 +250,198 @@ void RouteMapOverlay::RouteAnalysis(PlugIn_Route* proute) {
   }
   SetFinished(ok);
   UpdateStatus(configuration);
+  Unlock();
+}
+
+void RouteMapOverlay::SetModernNativeProgress(
+    const supercpn::weather_routing::RoutingProgressUpdate& progress) {
+  using supercpn::weather_routing::RoutingProgressStage;
+  wxString stage;
+  switch (progress.stage) {
+    case RoutingProgressStage::Preflight:
+      stage = _("Preparing modern native route");
+      break;
+    case RoutingProgressStage::CurrentCoverage:
+      stage = _("Preparing current coverage");
+      break;
+    case RoutingProgressStage::ForwardIsochrone:
+      stage = _("Forward isochrone");
+      break;
+    case RoutingProgressStage::ReverseRecovery:
+      stage = _("Reverse-isocrone recovery");
+      break;
+    case RoutingProgressStage::GraphFallback:
+      stage = _("Time-dependent graph fallback");
+      break;
+    case RoutingProgressStage::Validation:
+      stage = _("Independent dense route validation");
+      break;
+    case RoutingProgressStage::Complete:
+      stage = _("Route complete");
+      break;
+  }
+  const wxString detail = wxString::Format(
+      _("Attempt %u/%u — %llu states generated, %llu retained, %llu chart "
+        "checks"),
+      progress.attempt, progress.totalAttempts,
+      static_cast<unsigned long long>(progress.generatedStates),
+      static_cast<unsigned long long>(progress.retainedStates),
+      static_cast<unsigned long long>(progress.landChecks));
+  Lock();
+  m_ModernProgressStage = stage;
+  m_ModernProgressDetail = detail;
+  m_ModernProgressUpdated = true;
+  Unlock();
+}
+
+bool RouteMapOverlay::GetModernNativeProgress(wxString& stage,
+                                              wxString& detail) {
+  Lock();
+  stage = m_ModernProgressStage;
+  detail = m_ModernProgressDetail;
+  const bool available = !stage.IsEmpty() && m_ModernProgressUpdated;
+  m_ModernProgressUpdated = false;
+  Unlock();
+  return available;
+}
+
+void RouteMapOverlay::InstallModernNativeResult(
+    const supercpn::weather_routing::RoutingResult& result) {
+  namespace wr = supercpn::weather_routing;
+  const bool complete =
+      result.status == wr::RoutingStatus::Complete ||
+      result.status == wr::RoutingStatus::CompleteUsingReverseRecovery ||
+      result.status == wr::RoutingStatus::CompleteUsingGraphFallback;
+  SetFailureReason(complete ? wxString() : wxString::FromUTF8(result.message));
+
+  RouteMapConfiguration configuration = GetConfiguration();
+  configuration.ReverseRecoveryUsed =
+      result.solverPath == wr::SolverPath::ReverseRecovery;
+  configuration.ReverseConnectionFound = configuration.ReverseRecoveryUsed;
+  configuration.ReverseFinalValidationPass = result.validation.passed;
+  configuration.ReverseLayersBuilt =
+      static_cast<long>(result.diagnostics.reverseLayers);
+  configuration.ReverseNodesGenerated =
+      static_cast<long>(result.diagnostics.reverseNodes);
+  configuration.ReverseRecoveryStatus =
+      configuration.ReverseRecoveryUsed ? _("complete") : wxString();
+  SetConfigurationPreserveResult(configuration);
+
+  Lock();
+  if (m_UsesModernNativeResult) {
+    for (Position* position : m_ModernRoutePositions) delete position;
+    for (Position* position : m_ModernCursorRoutePositions) delete position;
+  } else {
+    delete destination_position;
+  }
+  m_ModernRoutePositions.clear();
+  m_ModernCursorRoutePositions.clear();
+  m_ModernCursorLayer = std::numeric_limits<std::size_t>::max();
+  m_ModernCursorTrace = std::numeric_limits<std::size_t>::max();
+  m_ModernIsochrones.clear();
+  destination_position = nullptr;
+  last_destination_position = nullptr;
+  last_cursor_position = nullptr;
+  last_destination_plotdata.clear();
+  last_cursor_plotdata.clear();
+  m_UsesModernNativeResult = true;
+
+  m_ModernIsochrones.reserve(result.visualization.isochrones.size());
+  for (const wr::IsochroneLayer& source : result.visualization.isochrones) {
+    ModernIsochroneLayer layer;
+    layer.time =
+        wxDateTime(static_cast<time_t>(source.time.time_since_epoch().count()));
+    layer.reverse = source.reverse;
+    layer.contours.reserve(source.contours.size());
+    for (const wr::IsochroneContour& sourceContour : source.contours) {
+      std::vector<std::pair<double, double>> contour;
+      contour.reserve(sourceContour.points.size());
+      for (const wr::GeoPoint& point : sourceContour.points)
+        contour.emplace_back(point.latitude, point.longitude);
+      if (contour.size() >= 2) layer.contours.push_back(std::move(contour));
+    }
+    layer.traces.reserve(source.traces.size());
+    for (const wr::IsochroneTrace& sourceTrace : source.traces) {
+      ModernIsochroneLayer::Trace trace;
+      trace.endpoint = {sourceTrace.endpoint.latitude,
+                        sourceTrace.endpoint.longitude};
+      trace.route.reserve(sourceTrace.route.size());
+      for (const wr::GeoPoint& point : sourceTrace.route)
+        trace.route.emplace_back(point.latitude, point.longitude);
+      if (!trace.route.empty()) layer.traces.push_back(std::move(trace));
+    }
+    m_ModernIsochrones.push_back(std::move(layer));
+  }
+
+  if (complete && !result.legs.empty()) {
+    Position* parent = new Position(configuration.StartLat,
+                                    configuration.StartLon, nullptr, NAN, NAN);
+    m_ModernRoutePositions.push_back(parent);
+    int tacks = 0;
+    int jibes = 0;
+    int sailChanges = 0;
+    int previousSailPlan = -1;
+    for (const wr::RouteLeg& leg : result.legs) {
+      PlotData data{};
+      data.lat = leg.start.latitude;
+      data.lon = leg.start.longitude;
+      data.time = wxDateTime(
+          static_cast<time_t>(leg.startTime.time_since_epoch().count()));
+      data.delta = static_cast<double>((leg.endTime - leg.startTime).count());
+      data.stw = leg.speedThroughWaterKnots;
+      data.sog = leg.speedOverGroundKnots;
+      data.ctw = leg.courseThroughWaterDegrees;
+      data.cog = leg.courseOverGroundDegrees;
+      data.twsOverWater = wr::vectorMagnitudeKnots(leg.wind);
+      data.twdOverWater =
+          wr::normalizeHeading(wr::vectorDirectionToDegrees(leg.wind) + 180.0);
+      data.twsOverGround = data.twsOverWater;
+      data.twdOverGround = data.twdOverWater;
+      data.currentSpeed = wr::vectorMagnitudeKnots(leg.current);
+      data.currentDir = wr::vectorDirectionToDegrees(leg.current);
+      data.WVHT = leg.waves.available
+                      ? leg.waves.significantHeightMetres
+                      : std::numeric_limits<double>::quiet_NaN();
+      data.WVDIR = leg.waves.directionFromDegrees;
+      data.WVPER = leg.waves.periodSeconds;
+      data.WVREL = std::isfinite(data.WVDIR)
+                       ? heading_resolve(data.WVDIR - data.ctw)
+                       : std::numeric_limits<double>::quiet_NaN();
+      data.VW_GUST = 0.0;
+      if (leg.tackTransition) ++tacks;
+      if (leg.gybeTransition) ++jibes;
+      if (previousSailPlan >= 0 && leg.sailPlan >= 0 &&
+          previousSailPlan != leg.sailPlan)
+        ++sailChanges;
+      previousSailPlan = leg.sailPlan;
+      data.tacks = tacks;
+      data.jibes = jibes;
+      data.sail_plan_changes = sailChanges;
+      data.polar = leg.sailPlan;
+      data.data_mask = Position::GRIB_WIND;
+      if (data.currentSpeed > 0.0) data.data_mask |= Position::GRIB_CURRENT;
+      if (leg.propulsionMode != wr::PropulsionMode::Sail)
+        data.data_mask |= Position::MOTOR_USED;
+      last_destination_plotdata.push_back(data);
+
+      Position* next = new Position(
+          leg.end.latitude, leg.end.longitude, parent, leg.trueWindAngleDegrees,
+          leg.courseOverGroundDegrees, leg.sailPlan, tacks, jibes, sailChanges,
+          data.data_mask, false);
+      m_ModernRoutePositions.push_back(next);
+      parent = next;
+    }
+    destination_position = parent;
+    last_destination_position = parent;
+    m_EndTime = wxDateTime(static_cast<time_t>(
+        result.legs.back().endTime.time_since_epoch().count()));
+  } else {
+    m_EndTime = wxDateTime();
+  }
+  m_bUpdated = true;
+  m_UpdateOverlay = true;
+  clear_destination_plotdata = false;
+  SetFinished(complete);
   Unlock();
 }
 
@@ -601,46 +824,89 @@ void RouteMapOverlay::Render(wxDateTime time, SettingsDialog& settingsdialog,
       int IsoChronThickness = settingsdialog.m_sIsoChronThickness->GetValue();
       if (IsoChronThickness) {
         Lock();
-        int c = 0;
-        // Find the isochron closest to the GRIB time
-        IsoChron* closestIsochron = nullptr;
-        wxTimeSpan closestDiff =
-            wxTimeSpan::Days(999);  // A large initial value
-        if (time.IsValid()) {
+        if (m_UsesModernNativeResult) {
+          int c = 0;
+          std::size_t closest = std::numeric_limits<std::size_t>::max();
+          wxTimeSpan closestDiff = wxTimeSpan::Days(999);
+          if (time.IsValid()) {
+            for (std::size_t i = 0; i < m_ModernIsochrones.size(); ++i) {
+              wxTimeSpan diff = m_ModernIsochrones[i].time - time;
+              if (diff.GetValue() < 0) diff = -diff;
+              if (diff < closestDiff) {
+                closestDiff = diff;
+                closest = i;
+              }
+            }
+          }
+          for (std::size_t i = 0; i < m_ModernIsochrones.size(); ++i) {
+            const ModernIsochroneLayer& layer = m_ModernIsochrones[i];
+            wxColor color = layer.reverse
+                                ? wxColor(208, 72, 192, 224)
+                                : wxColor(routecolors[c][0], routecolors[c][1],
+                                          routecolors[c][2], 224);
+            SetColor(dc, color, true);
+            SetWidth(dc,
+                     i == closest ? IsoChronThickness * 3 : IsoChronThickness,
+                     true);
+            for (const auto& contour : layer.contours) {
+              for (std::size_t p = 1; p < contour.size(); ++p) {
+                wxPoint from, to;
+                WR_GetCanvasPixLL(&nvp, &from, contour[p - 1].first,
+                                  contour[p - 1].second);
+                WR_GetCanvasPixLL(&nvp, &to, contour[p].first,
+                                  contour[p].second);
+                if (std::abs(to.x - from.x) < nvp.pix_width / 2)
+                  dc.DrawLine(from.x, from.y, to.x, to.y);
+              }
+            }
+            if (++c ==
+                static_cast<int>(sizeof routecolors / sizeof *routecolors))
+              c = 0;
+          }
+          Unlock();
+        } else {
+          int c = 0;
+          // Find the isochron closest to the GRIB time
+          IsoChron* closestIsochron = nullptr;
+          wxTimeSpan closestDiff =
+              wxTimeSpan::Days(999);  // A large initial value
+          if (time.IsValid()) {
+            for (IsoChronList::iterator i = origin.begin(); i != origin.end();
+                 ++i) {
+              wxTimeSpan diff = (*i)->time - time;
+              if (diff.GetValue() < 0) {
+                diff = -diff;
+              }
+              if (diff < closestDiff) {
+                closestDiff = diff;
+                closestIsochron = *i;
+              }
+            }
+          }
           for (IsoChronList::iterator i = origin.begin(); i != origin.end();
                ++i) {
-            wxTimeSpan diff = (*i)->time - time;
-            if (diff.GetValue() < 0) {
-              diff = -diff;
+            Unlock();
+            wxColor grib_color(routecolors[c][0], routecolors[c][1],
+                               routecolors[c][2], 224);
+            wxColor climatology_color(255 - routecolors[c][0],
+                                      routecolors[c][2], routecolors[c][1],
+                                      224);
+            // If this is the closest isochron to the selected GRIB time, use a
+            // thicker line
+            if (time.IsValid() && *i == closestIsochron) {
+              SetWidth(dc, IsoChronThickness * 3);
+            } else {
+              SetWidth(dc, IsoChronThickness);
             }
-            if (diff < closestDiff) {
-              closestDiff = diff;
-              closestIsochron = *i;
-            }
-          }
-        }
-        for (IsoChronList::iterator i = origin.begin(); i != origin.end();
-             ++i) {
-          Unlock();
-          wxColor grib_color(routecolors[c][0], routecolors[c][1],
-                             routecolors[c][2], 224);
-          wxColor climatology_color(255 - routecolors[c][0], routecolors[c][2],
-                                    routecolors[c][1], 224);
-          // If this is the closest isochron to the selected GRIB time, use a
-          // thicker line
-          if (time.IsValid() && *i == closestIsochron) {
-            SetWidth(dc, IsoChronThickness * 3);
-          } else {
-            SetWidth(dc, IsoChronThickness);
-          }
-          for (IsoRouteList::iterator j = (*i)->routes.begin();
-               j != (*i)->routes.end(); ++j)
-            RenderIsoRoute(*j, time, grib_color, climatology_color, dc, nvp);
+            for (IsoRouteList::iterator j = (*i)->routes.begin();
+                 j != (*i)->routes.end(); ++j)
+              RenderIsoRoute(*j, time, grib_color, climatology_color, dc, nvp);
 
-          if (++c == (sizeof routecolors) / (sizeof *routecolors)) c = 0;
-          Lock();
+            if (++c == (sizeof routecolors) / (sizeof *routecolors)) c = 0;
+            Lock();
+          }
+          Unlock();
         }
-        Unlock();
       }
 
       RenderReverseReachabilityDiagnostics(dc, nvp);
@@ -915,6 +1181,18 @@ void RouteMapOverlay::RenderBoatOnCourse(bool cursor_route, wxDateTime time,
   if (!pos) return;
 
   std::list<PlotData> plot = GetPlotData(cursor_route);
+  // Legacy plot data deliberately omits the reached endpoint because the
+  // Position chain supplies it while drawing.  The modern engine also uses
+  // that representation; add a local endpoint sample so time interpolation
+  // can still place the boat on the final leg.
+  if (m_UsesModernNativeResult && !plot.empty()) {
+    PlotData endpoint = plot.back();
+    endpoint.lat = pos->lat;
+    endpoint.lon = pos->lon;
+    endpoint.time = cursor_route ? m_cursor_time : m_EndTime;
+    endpoint.delta = 0.0;
+    plot.push_back(endpoint);
+  }
 
   for (auto it = plot.begin(); it != plot.end();) {
     wxDateTime ittime = it->time;
@@ -1465,6 +1743,19 @@ void RouteMapOverlay::GetLLBounds(double& latmin, double& latmax,
   latmin = INFINITY, lonmin = INFINITY;
   latmax = -INFINITY, lonmax = -INFINITY;
 
+  if (m_UsesModernNativeResult) {
+    for (const ModernIsochroneLayer& layer : m_ModernIsochrones)
+      for (const auto& contour : layer.contours)
+        for (const auto& point : contour) {
+          latmin = wxMin(latmin, point.first);
+          latmax = wxMax(latmax, point.first);
+          lonmin = wxMin(lonmin, point.second);
+          lonmax = wxMax(lonmax, point.second);
+        }
+    return;
+  }
+  if (origin.empty()) return;
+
   IsoChron* last = origin.back();
   for (IsoRouteList::iterator it = last->routes.begin();
        it != last->routes.end(); ++it) {
@@ -1479,10 +1770,24 @@ void RouteMapOverlay::GetLLBounds(double& latmin, double& latmax,
   }
 }
 
-std::vector<std::pair<double, double> >
+std::vector<std::pair<double, double>>
 RouteMapOverlay::GetClosestFrontierGeometry() {
-  std::vector<std::pair<double, double> > geometry;
+  std::vector<std::pair<double, double>> geometry;
   RouteMapConfiguration configuration = GetConfiguration();
+  if (m_UsesModernNativeResult) {
+    double closestDistance = INFINITY;
+    for (const ModernIsochroneLayer& layer : m_ModernIsochrones)
+      for (const ModernIsochroneLayer::Trace& trace : layer.traces) {
+        const double distance =
+            DistGreatCircle_Plugin(trace.endpoint.first, trace.endpoint.second,
+                                   configuration.EndLat, configuration.EndLon);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          geometry = trace.route;
+        }
+      }
+    return geometry;
+  }
   Position* closest =
       ClosestPosition(configuration.EndLat, configuration.EndLon);
   if (!closest) return geometry;
@@ -1530,6 +1835,16 @@ std::vector<RouteMapFrontierSegment>
 RouteMapOverlay::GetRetainedFrontierSegments() {
   std::vector<RouteMapFrontierSegment> segments;
   Lock();
+  if (m_UsesModernNativeResult) {
+    for (const ModernIsochroneLayer& layer : m_ModernIsochrones)
+      for (const ModernIsochroneLayer::Trace& trace : layer.traces)
+        for (std::size_t i = 1; i < trace.route.size(); ++i)
+          segments.push_back({trace.route[i - 1].first,
+                              trace.route[i - 1].second, trace.route[i].first,
+                              trace.route[i].second});
+    Unlock();
+    return segments;
+  }
   for (IsoChronList::iterator layer = origin.begin(); layer != origin.end();
        ++layer) {
     if (!*layer) continue;
@@ -1778,6 +2093,24 @@ int RouteMapOverlay::Cyclones(int* months) {
   int cyclones = 0;
 
   Lock();
+  if (m_UsesModernNativeResult) {
+    std::list<PlotData>::const_iterator data =
+        last_destination_plotdata.begin();
+    for (std::size_t index = 1; index < m_ModernRoutePositions.size() &&
+                                data != last_destination_plotdata.end();
+         ++index, ++data) {
+      Position* start = m_ModernRoutePositions[index - 1];
+      Position* end = m_ModernRoutePositions[index];
+      const wxDateTime ptime = data->time;
+      if (RouteMap::ClimatologyCycloneTrackCrossings(
+              start->lat, start->lon, end->lat, end->lon, ptime, days)) {
+        if (months && ptime.IsValid()) months[ptime.GetMonth()]++;
+        cyclones++;
+      }
+    }
+    Unlock();
+    return cyclones;
+  }
   wxDateTime ptime = m_EndTime;
   IsoChronList::iterator it = origin.end();
 
@@ -1797,6 +2130,17 @@ int RouteMapOverlay::Cyclones(int* months) {
 }
 
 void RouteMapOverlay::Clear() {
+  if (m_UsesModernNativeResult) {
+    for (Position* position : m_ModernRoutePositions) delete position;
+    for (Position* position : m_ModernCursorRoutePositions) delete position;
+    m_ModernRoutePositions.clear();
+    m_ModernCursorRoutePositions.clear();
+    m_ModernIsochrones.clear();
+    m_ModernCursorLayer = std::numeric_limits<std::size_t>::max();
+    m_ModernCursorTrace = std::numeric_limits<std::size_t>::max();
+    destination_position = nullptr;
+    m_UsesModernNativeResult = false;
+  }
   RouteMap::Clear();
   last_cursor_position = nullptr;
   last_destination_position = nullptr;
@@ -1804,16 +2148,84 @@ void RouteMapOverlay::Clear() {
   // clear_cursor_plotdata = false;
   last_cursor_plotdata.clear();
   last_destination_plotdata.clear();
+  m_ModernProgressStage.clear();
+  m_ModernProgressDetail.clear();
+  m_ModernProgressUpdated = false;
   m_UpdateOverlay = true;
 }
 
 void RouteMapOverlay::UpdateCursorPosition() {
   // only called in main thread, no race
   Position* last_last_cursor_position = last_cursor_position;
-  last_cursor_position =
-      ClosestPosition(last_cursor_lat, last_cursor_lon, &m_cursor_time);
+  if (m_UsesModernNativeResult) {
+    last_cursor_position = nullptr;
+    std::size_t closestLayer = std::numeric_limits<std::size_t>::max();
+    std::size_t closestTrace = std::numeric_limits<std::size_t>::max();
+    double closestDistance = INFINITY;
+    for (std::size_t layer = 0; layer < m_ModernIsochrones.size(); ++layer) {
+      for (std::size_t trace = 0;
+           trace < m_ModernIsochrones[layer].traces.size(); ++trace) {
+        const auto& endpoint = m_ModernIsochrones[layer].traces[trace].endpoint;
+        const double dlon = heading_resolve(last_cursor_lon - endpoint.second);
+        const double distance = hypot(last_cursor_lat - endpoint.first, dlon);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestLayer = layer;
+          closestTrace = trace;
+        }
+      }
+    }
+    if (closestLayer != std::numeric_limits<std::size_t>::max() &&
+        (closestLayer != m_ModernCursorLayer ||
+         closestTrace != m_ModernCursorTrace)) {
+      for (Position* position : m_ModernCursorRoutePositions) delete position;
+      m_ModernCursorRoutePositions.clear();
+      last_cursor_plotdata.clear();
+      const ModernIsochroneLayer& layer = m_ModernIsochrones[closestLayer];
+      const auto& route = layer.traces[closestTrace].route;
+      Position* parent = nullptr;
+      const double seconds = route.size() > 1 && layer.time.IsValid()
+                                 ? (layer.time - GetConfiguration().StartTime)
+                                           .GetSeconds()
+                                           .ToDouble() /
+                                       static_cast<double>(route.size() - 1)
+                                 : 0.0;
+      for (std::size_t index = 0; index < route.size(); ++index) {
+        Position* position =
+            new Position(route[index].first, route[index].second, parent);
+        m_ModernCursorRoutePositions.push_back(position);
+        if (index + 1 < route.size()) {
+          PlotData data{};
+          data.lat = route[index].first;
+          data.lon = route[index].second;
+          data.time = GetConfiguration().StartTime +
+                      wxTimeSpan::Seconds(wxRound(index * seconds));
+          data.delta = seconds;
+          ll_gc_ll_reverse(route[index].first, route[index].second,
+                           route[index + 1].first, route[index + 1].second,
+                           &data.cog, &data.sog);
+          data.sog = seconds > 0.0 ? data.sog * 3600.0 / seconds : 0.0;
+          data.stw = data.sog;
+          data.ctw = data.cog;
+          data.polar = -1;
+          last_cursor_plotdata.push_back(data);
+        }
+        parent = position;
+      }
+      last_cursor_position = parent;
+      m_cursor_time = layer.time;
+      m_ModernCursorLayer = closestLayer;
+      m_ModernCursorTrace = closestTrace;
+    } else if (!m_ModernCursorRoutePositions.empty()) {
+      last_cursor_position = m_ModernCursorRoutePositions.back();
+      m_cursor_time = m_ModernIsochrones[closestLayer].time;
+    }
+  } else {
+    last_cursor_position =
+        ClosestPosition(last_cursor_lat, last_cursor_lon, &m_cursor_time);
+  }
   if (last_last_cursor_position != last_cursor_position)
-    last_cursor_plotdata.clear();
+    if (!m_UsesModernNativeResult) last_cursor_plotdata.clear();
 }
 
 bool RouteMapOverlay::SetCursorLatLon(double lat, double lon) {
@@ -1836,8 +2248,8 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
   if (!configuration.DetectLand) return true;
   wxStopWatch timer;
 
-  Position* child = destination_position ? destination_position
-                                         : last_destination_position;
+  Position* child =
+      destination_position ? destination_position : last_destination_position;
   if (!child) return true;
 
   int checked_segments = 0;
@@ -1845,8 +2257,8 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
        parent && child && checked_segments < 100000;
        child = parent, parent = dynamic_cast<Position*>(parent->parent)) {
     double bearing = 0.0;
-    ll_gc_ll_reverse(parent->lat, parent->lon, child->lat, child->lon,
-                     &bearing, NULL);
+    ll_gc_ll_reverse(parent->lat, parent->lon, child->lat, child->lon, &bearing,
+                     NULL);
     wxString failure_reason;
     if (!ConstraintChecker::CheckFinalRouteLandConstraint(
             configuration, parent->lat, parent->lon, child->lat, child->lon,
@@ -1865,9 +2277,8 @@ bool RouteMapOverlay::ValidateDestinationRouteLand(
           "final_validation_forced_fine_masks=1 "
           "segment_index=%d start=(%.8f,%.8f) end=(%.8f,%.8f) "
           "reason=\"%s\"",
-          configuration.Start, configuration.End,
-          checked_segments + 1, parent->lat, parent->lon, child->lat, child->lon,
-          failure_reason);
+          configuration.Start, configuration.End, checked_segments + 1,
+          parent->lat, parent->lon, child->lat, child->lon, failure_reason);
       wxLogMessage(
           "WR_UI_TIMING ValidateDestinationRouteLand total_ms=%ld "
           "route=\"%s -> %s\" segments=%d ui_thread=%d pass=0",
@@ -2008,8 +2419,7 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
       "WR_UI_TIMING ValidatePlottedDestinationRouteLand total_ms=%ld "
       "route=\"%s -> %s\" segments=%d plot_points=%lu ui_thread=%d pass=1",
       timer.Time(), configuration.Start, configuration.End, checked_segments,
-      static_cast<unsigned long>(plotdata.size()),
-      wxThread::IsMain() ? 1 : 0);
+      static_cast<unsigned long>(plotdata.size()), wxThread::IsMain() ? 1 : 0);
   return true;
 }
 
@@ -2066,8 +2476,7 @@ void CollectIsoRoutePositions(IsoRoute* route, std::vector<Position*>& out) {
     CollectIsoRoutePositions(*it, out);
 }
 
-void CollectIsoChronPositions(IsoChron* isochron,
-                              std::vector<Position*>& out) {
+void CollectIsoChronPositions(IsoChron* isochron, std::vector<Position*>& out) {
   if (!isochron) return;
   for (IsoRouteList::iterator it = isochron->routes.begin();
        it != isochron->routes.end(); ++it)
@@ -2164,9 +2573,8 @@ RouteMapOverlay::ReverseSegmentFeasibility RouteMapOverlay::CanSailSegment(
   int data_mask = start->data_mask;
   double dt = probe.PropagateToPoint(end_lat, end_lon, configuration, heading,
                                      data_mask, true);
-  bool endpoint_bridge =
-      DistGreatCircle(end_lat, end_lon, configuration.EndLat,
-                      configuration.EndLon) < 0.01;
+  bool endpoint_bridge = DistGreatCircle(end_lat, end_lon, configuration.EndLat,
+                                         configuration.EndLon) < 0.01;
   if ((std::isnan(dt) || dt > available_seconds) &&
       configuration.land_crossing && endpoint_bridge &&
       configuration.SafetyMarginLand > 0.0) {
@@ -2180,9 +2588,9 @@ RouteMapOverlay::ReverseSegmentFeasibility RouteMapOverlay::CanSailSegment(
                            start->grib_is_data_deficient);
     double relaxed_heading = NAN;
     int relaxed_data_mask = start->data_mask;
-    double relaxed_dt =
-        relaxed_probe.PropagateToPoint(end_lat, end_lon, relaxed_configuration,
-                                       relaxed_heading, relaxed_data_mask, true);
+    double relaxed_dt = relaxed_probe.PropagateToPoint(
+        end_lat, end_lon, relaxed_configuration, relaxed_heading,
+        relaxed_data_mask, true);
     if (!std::isnan(relaxed_dt) && relaxed_dt <= available_seconds) {
       dt = relaxed_dt;
       heading = relaxed_heading;
@@ -2294,8 +2702,8 @@ retry_reverse_destination_time:
   destination.lon = configuration.EndLon;
   destination.time = destination_time;
   nodes.push_back(destination);
-  debug_points.push_back(ReverseReachabilityDebugPoint(
-      destination.lat, destination.lon, 0, true));
+  debug_points.push_back(
+      ReverseReachabilityDebugPoint(destination.lat, destination.lon, 0, true));
 
   std::vector<int> later_layer;
   later_layer.push_back(0);
@@ -2306,7 +2714,8 @@ retry_reverse_destination_time:
   IsoChronList::reverse_iterator rit = origin.rbegin();
   if (rit != origin.rend() &&
       (!destination_time.IsValid() || !(destination_time > (*rit)->time)))
-    ++rit;  // skip containing/final isochrone unless ETA window extends beyond it
+    ++rit;  // skip containing/final isochrone unless ETA window extends beyond
+            // it
   for (int layer = 1; rit != origin.rend() && layer <= max_layers;
        ++rit, ++layer) {
     IsoChron* isochron = *rit;
@@ -2338,9 +2747,9 @@ retry_reverse_destination_time:
       if (static_cast<int>(this_layer.size()) >= max_nodes_per_layer) break;
       for (int successor : later_layer) {
         configuration.ReverseNodesGenerated++;
-        ReverseSegmentFeasibility feasibility = CanSailSegment(
-            position, nodes[successor].lat, nodes[successor].lon, isochron,
-            nodes[successor].time, configuration);
+        ReverseSegmentFeasibility feasibility =
+            CanSailSegment(position, nodes[successor].lat, nodes[successor].lon,
+                           isochron, nodes[successor].time, configuration);
         if (!feasibility.feasible) {
           if (feasibility.failure_reason == _("chart safety"))
             ++safety_rejections;
@@ -2361,8 +2770,8 @@ retry_reverse_destination_time:
         int node_index = static_cast<int>(nodes.size()) - 1;
         this_layer.push_back(node_index);
         connection_candidates.push_back(node_index);
-        debug_points.push_back(ReverseReachabilityDebugPoint(
-            node.lat, node.lon, layer, false));
+        debug_points.push_back(
+            ReverseReachabilityDebugPoint(node.lat, node.lon, layer, false));
         configuration.ReverseNodesFeasible++;
         break;
       }
@@ -2560,9 +2969,10 @@ retry_reverse_destination_time:
     Unlock();
   }
   configuration.ReverseRecoveryStatus = _("failed");
-  configuration.ReverseFailureReason = last_validation_failure.IsEmpty()
-                                           ? _("No chart-safe reverse bridge found")
-                                           : last_validation_failure;
+  configuration.ReverseFailureReason =
+      last_validation_failure.IsEmpty()
+          ? _("No chart-safe reverse bridge found")
+          : last_validation_failure;
   configuration.ReverseFinalValidationPass = false;
   delete destination_position;
   destination_position = nullptr;
@@ -2675,8 +3085,8 @@ bool RouteMapOverlay::AnalyzeReverseReachabilityForFrontierCollapse(
   destination.lon = configuration.EndLon;
   destination.time = destination_time;
   nodes.push_back(destination);
-  debug_points.push_back(ReverseReachabilityDebugPoint(
-      destination.lat, destination.lon, 0, true));
+  debug_points.push_back(
+      ReverseReachabilityDebugPoint(destination.lat, destination.lon, 0, true));
 
   std::vector<int> later_layer;
   later_layer.push_back(0);
@@ -2718,9 +3128,9 @@ bool RouteMapOverlay::AnalyzeReverseReachabilityForFrontierCollapse(
       if (static_cast<int>(this_layer.size()) >= max_nodes_per_layer) break;
       for (int successor : later_layer) {
         configuration.ReverseNodesGenerated++;
-        ReverseSegmentFeasibility feasibility = CanSailSegment(
-            position, nodes[successor].lat, nodes[successor].lon, isochron,
-            nodes[successor].time, configuration);
+        ReverseSegmentFeasibility feasibility =
+            CanSailSegment(position, nodes[successor].lat, nodes[successor].lon,
+                           isochron, nodes[successor].time, configuration);
         if (!feasibility.feasible) {
           if (feasibility.failure_reason == _("chart safety"))
             ++safety_rejections;
@@ -2740,8 +3150,8 @@ bool RouteMapOverlay::AnalyzeReverseReachabilityForFrontierCollapse(
         nodes.push_back(node);
         int node_index = static_cast<int>(nodes.size()) - 1;
         this_layer.push_back(node_index);
-        debug_points.push_back(ReverseReachabilityDebugPoint(
-            node.lat, node.lon, layer, false));
+        debug_points.push_back(
+            ReverseReachabilityDebugPoint(node.lat, node.lon, layer, false));
         configuration.ReverseNodesFeasible++;
         break;
       }
@@ -2820,7 +3230,8 @@ bool RouteMapOverlay::AnalyzeReverseReachabilityForFrontierCollapse(
 void RouteMapOverlay::UpdateDestination() {
   RouteMapConfiguration configuration = GetConfiguration();
   const bool defer_chart_validation_to_main =
-      configuration.DetectLand && ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
+      configuration.DetectLand &&
+      ConstraintChecker::IsExperimentalChartSafetyEnforced() &&
       !wxThread::IsMain();
   Position* last_last_destination_position = last_destination_position;
   bool done = ReachedDestination();
@@ -2914,11 +3325,9 @@ void RouteMapOverlay::UpdateDestination() {
             validation_configuration.EndLat, validation_configuration.EndLon,
             it->endp, it->heading, NAN, it->endp->polar,
             it->endp->tacks + it->tacked, it->endp->jibes + it->jibed,
-            it->endp->sail_plan_changes + it->sail_plan_changed,
-            it->data_mask);
+            it->endp->sail_plan_changes + it->sail_plan_changed, it->data_mask);
 
-        m_EndTime =
-            it->isochron_time + wxTimeSpan::Milliseconds(1000 * it->dt);
+        m_EndTime = it->isochron_time + wxTimeSpan::Milliseconds(1000 * it->dt);
         last_destination_position = destination_position;
         clear_destination_plotdata = true;
         SetFinished(true);
@@ -2967,10 +3376,10 @@ void RouteMapOverlay::UpdateDestination() {
           last_destination_position =
               ClosestPosition(configuration.EndLat, configuration.EndLon);
           configuration.land_crossing = alternatives_rejected_by_chart > 0;
-          wxString reason =
-              alternatives_rejected_by_chart > 0
-                  ? _("No chart-safe final route found within current search limits")
-                  : _("Final route did not reach destination");
+          wxString reason = alternatives_rejected_by_chart > 0
+                                ? _("No chart-safe final route found within "
+                                    "current search limits")
+                                : _("Final route did not reach destination");
           if (configuration.UseReverseReachabilityRecovery &&
               !configuration.ReverseFailureReason.IsEmpty()) {
             reason = configuration.ReverseFailureReason;
@@ -3031,9 +3440,9 @@ Position* RouteMapOverlay::getClosestRoutePositionFromCursor(
 
   double dist = INFINITY;
   const RouteMapConfiguration configuration = GetConfiguration();
-  const double normalizedCursorLon =
-      configuration.positive_longitudes ? positive_degrees(cursorLon)
-                                        : cursorLon;
+  const double normalizedCursorLon = configuration.positive_longitudes
+                                         ? positive_degrees(cursorLon)
+                                         : cursorLon;
   std::list<PlotData> plot = GetPlotData(false);
   bool found = false;
   posData.time = wxInvalidDateTime;

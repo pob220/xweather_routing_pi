@@ -114,7 +114,8 @@ set(XML_DESCRIPTION ${LONG_DESCRIPTION})
 
 option(PLUGIN_USE_SVG "Use SVG graphics" ON)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Use local version of GLU library requires libs/glu directory
 # set(USE_LOCAL_GLU FALSE)
@@ -212,6 +213,14 @@ SET(SRCS
             src/headless/HeadlessRouteRunner.cpp
             src/headless/RoutingScenarioJson.cpp
             src/engine/StabilityCorridorCalculator.cpp
+            src/engine/native/Geometry.cpp
+            src/engine/native/Providers.cpp
+            src/engine/native/Polar.cpp
+            src/engine/native/EnvironmentResolver.cpp
+            src/engine/native/Engine.cpp
+            src/engine/native/Validator.cpp
+            src/engine/native/Ensemble.cpp
+            src/engine/native/OpenCpnAdapter.cpp
 )
 
 SET (HDRS
@@ -257,6 +266,11 @@ SET (HDRS
             include/weather_routing_engine/RoutingResult.h
             include/weather_routing_engine/RoutingScenario.h
             include/weather_routing_engine/StabilityCorridor.h
+            include/supercpn/weather_routing/Types.h
+            include/supercpn/weather_routing/Providers.h
+            include/supercpn/weather_routing/Engine.h
+            src/engine/native/RoutingInternal.h
+            include/ModernNativeRoute.h
             src/headless/HeadlessRouteRunner.h
             src/headless/RoutingScenarioJson.h
 )

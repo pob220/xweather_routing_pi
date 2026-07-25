@@ -25,6 +25,13 @@
 #include <wx/weakref.h>
 
 #include <list>
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <map>
+#include <memory>
+#include <mutex>
 
 #include "ODAPI.h"
 #include "GribRecordSet.h"
@@ -254,7 +261,8 @@ struct RouteMapConfiguration {
   /** The name of the destination position, which is resolved to EndLat/EndLon.
    */
   wxString End;
-  /** The type of destination point, either Weather Routing position or waypoint. */
+  /** The type of destination point, either Weather Routing position or
+   * waypoint. */
   EndDataType EndType;
   wxString EndGUID;
 
@@ -507,7 +515,8 @@ struct RouteMapConfiguration {
   bool DetectLand;
   /**
    * Runtime-only fallback: use chart-backed land checks during propagation.
-   * Normal hybrid mode leaves this false and chart-validates final alternatives.
+   * Normal hybrid mode leaves this false and chart-validates final
+   * alternatives.
    */
   bool UseChartSafetyForPropagation;
   /** Runtime-only guard so a route retries chart propagation at most once. */
@@ -906,6 +915,8 @@ public:
   }
   /** Resume propagation after the main thread has serviced tile requests. */
   void ChartSafetyDataServiced();
+  /** Pause a worker until queued chart-semantic tile requests are serviced. */
+  bool AwaitChartSafetyData(long timeoutMilliseconds = 30000);
   void RequestedGrib() {
     Lock();
     m_bNeedsGrib = false;
@@ -913,6 +924,14 @@ public:
   }
   void SetNewGrib(GribRecordSet* grib);
   void SetNewGrib(WR_GribRecordSet* grib);
+  /**
+   * Acquire a copied GRIB timeline frame.  Worker threads request missing
+   * frames through the normal main-thread plugin-message path and wait on a
+   * bounded condition variable; retained frames are held in a small LRU.
+   */
+  bool AcquireGribTimelineFrame(const wxDateTime& time,
+                                Shared_GribRecordSet& frame,
+                                long timeoutMilliseconds = 30000);
   /**
    * Thread-safe accessor to get the time when new weather data is needed.
    *
@@ -1013,11 +1032,17 @@ public:
     Lock();
     m_bFinished = true;
     Unlock();
+    m_CancellationFlag->store(true, std::memory_order_relaxed);
+    m_GribTimelineCondition.notify_all();
   }
   void ResetFinished() {
     Lock();
     m_bFinished = false;
     Unlock();
+    m_CancellationFlag->store(false, std::memory_order_relaxed);
+  }
+  std::shared_ptr<std::atomic_bool> CancellationFlag() const {
+    return m_CancellationFlag;
   }
   /**
    * Loads the boat configuration from XML file.
@@ -1199,6 +1224,15 @@ private:
   wxString m_FailureReason;
 
   wxDateTime m_NewTime;
+
+  void PublishTimelineFrame(const Shared_GribRecordSet& frame);
+  mutable std::mutex m_GribTimelineMutex;
+  std::condition_variable m_GribTimelineCondition;
+  std::map<std::int64_t, Shared_GribRecordSet> m_GribTimelineFrames;
+  std::deque<std::int64_t> m_GribTimelineLru;
+  std::int64_t m_PendingGribTimelineKey{-1};
+  bool m_PendingGribTimelineFailed{false};
+  std::shared_ptr<std::atomic_bool> m_CancellationFlag;
 };
 
 #endif

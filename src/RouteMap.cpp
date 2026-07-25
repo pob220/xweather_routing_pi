@@ -93,17 +93,22 @@ weather_routing_pi* RouteMapConfiguration::s_plugin_instance = nullptr;
 
 namespace {
 
-bool ResolveWaypoint(wxString& name, wxString& guid, double& lat,
-                     double& lon) {
+bool ResolveWaypoint(wxString& name, wxString& guid, double& lat, double& lon) {
+  // OpenCPN can instantiate plugins before its waypoint manager exists.  The
+  // public enumeration API safely returns an empty list in that interval,
+  // whereas GetSingleWaypoint historically dereferences the manager.  Always
+  // enumerate first and call the single-waypoint API only for a GUID which the
+  // host has just advertised.
+  const wxArrayString waypoint_guids = GetWaypointGUIDArray();
   PlugIn_Waypoint waypoint;
-  if (!guid.IsEmpty() && GetSingleWaypoint(guid, &waypoint)) {
+  if (!guid.IsEmpty() && waypoint_guids.Index(guid) != wxNOT_FOUND &&
+      GetSingleWaypoint(guid, &waypoint)) {
     name = waypoint.m_MarkName;
     lat = waypoint.m_lat;
     lon = waypoint.m_lon;
     return true;
   }
 
-  wxArrayString waypoint_guids = GetWaypointGUIDArray();
   for (const auto& waypoint_guid : waypoint_guids) {
     if (!GetSingleWaypoint(waypoint_guid, &waypoint)) continue;
     if (waypoint.m_MarkName != name) continue;
@@ -241,12 +246,10 @@ bool RouteMapConfiguration::Update() {
     }
   }
 
-  if (!havestart &&
-      StartType == RouteMapConfiguration::START_FROM_WAYPOINT) {
+  if (!havestart && StartType == RouteMapConfiguration::START_FROM_WAYPOINT) {
     havestart = ResolveWaypoint(Start, StartGUID, StartLat, StartLon);
   }
-  if (!havestart &&
-      StartType == RouteMapConfiguration::START_FROM_POSITION) {
+  if (!havestart && StartType == RouteMapConfiguration::START_FROM_POSITION) {
     havestart = ResolvePosition(Start, StartLat, StartLon);
   }
   if (EndType == RouteMapConfiguration::END_AT_WAYPOINT)
@@ -305,9 +308,78 @@ std::list<RouteMapPosition> RouteMap::Positions;
 RouteMap::RouteMap()
     : m_bNeedsGrib(false),
       m_bNeedsChartSafetyData(false),
-      m_NewGrib(NULL) {}
+      m_NewGrib(NULL),
+      m_CancellationFlag(std::make_shared<std::atomic_bool>(false)) {}
 
 RouteMap::~RouteMap() { Clear(); }
+
+namespace {
+std::int64_t GribTimelineKey(const wxDateTime& time) {
+  return time.IsValid() ? static_cast<std::int64_t>(time.GetTicks()) : -1;
+}
+}  // namespace
+
+bool RouteMap::AcquireGribTimelineFrame(const wxDateTime& time,
+                                        Shared_GribRecordSet& frame,
+                                        long timeoutMilliseconds) {
+  const std::int64_t key = GribTimelineKey(time);
+  if (key < 0) return false;
+  {
+    std::lock_guard<std::mutex> lock(m_GribTimelineMutex);
+    const auto found = m_GribTimelineFrames.find(key);
+    if (found != m_GribTimelineFrames.end()) {
+      frame = found->second;
+      return frame.GetGribRecordSet() != nullptr;
+    }
+    m_PendingGribTimelineKey = key;
+    m_PendingGribTimelineFailed = false;
+  }
+  Lock();
+  m_NewTime = time;
+  m_bNeedsGrib = true;
+  Unlock();
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeoutMilliseconds);
+  std::unique_lock<std::mutex> lock(m_GribTimelineMutex);
+  while (!m_PendingGribTimelineFailed) {
+    if (m_CancellationFlag->load(std::memory_order_relaxed)) return false;
+    const auto found = m_GribTimelineFrames.find(key);
+    if (found != m_GribTimelineFrames.end()) {
+      frame = found->second;
+      return frame.GetGribRecordSet() != nullptr;
+    }
+    const auto poll = std::min(deadline, std::chrono::steady_clock::now() +
+                                             std::chrono::milliseconds(100));
+    if (m_GribTimelineCondition.wait_until(lock, poll) ==
+            std::cv_status::timeout &&
+        std::chrono::steady_clock::now() >= deadline)
+      break;
+  }
+  return false;
+}
+
+void RouteMap::PublishTimelineFrame(const Shared_GribRecordSet& frame) {
+  std::lock_guard<std::mutex> lock(m_GribTimelineMutex);
+  if (m_PendingGribTimelineKey < 0) return;
+  if (!frame.GetGribRecordSet()) {
+    m_PendingGribTimelineFailed = true;
+    m_GribTimelineCondition.notify_all();
+    return;
+  }
+  constexpr std::size_t kMaximumRetainedTimelineFrames = 8;
+  const auto key = m_PendingGribTimelineKey;
+  m_GribTimelineFrames[key] = frame;
+  m_GribTimelineLru.erase(
+      std::remove(m_GribTimelineLru.begin(), m_GribTimelineLru.end(), key),
+      m_GribTimelineLru.end());
+  m_GribTimelineLru.push_back(key);
+  while (m_GribTimelineLru.size() > kMaximumRetainedTimelineFrames) {
+    m_GribTimelineFrames.erase(m_GribTimelineLru.front());
+    m_GribTimelineLru.pop_front();
+  }
+  m_GribTimelineCondition.notify_all();
+}
 
 static long CountIsoRouteListPositions(const IsoRouteList& routes) {
   long count = 0;
@@ -667,8 +739,7 @@ bool RouteMap::Propagate() {
           "positions_after_reduce=%ld",
           m_Configuration.Start, m_Configuration.End, propagateMs,
           reduceInputMs, mergeMs, reduceOutputMs, frontierThinMs,
-          frontierThinRemoved,
-          configuration.frontier_routes_before_merge,
+          frontierThinRemoved, configuration.frontier_routes_before_merge,
           configuration.frontier_positions_before_merge,
           configuration.frontier_routes_after_merge,
           configuration.frontier_positions_after_merge,
@@ -690,8 +761,8 @@ bool RouteMap::Propagate() {
     m_bFinished = true;
     long dominant_count = 0;
     PropagationError dominant_error = PROPAGATION_NO_ERROR;
-    for (int i = PROPAGATION_WIND_DATA_FAILED;
-         i <= PROPAGATION_ANGLE_ERROR; ++i) {
+    for (int i = PROPAGATION_WIND_DATA_FAILED; i <= PROPAGATION_ANGLE_ERROR;
+         ++i) {
       if (configuration.rejection_counts[i] > dominant_count) {
         dominant_count = configuration.rejection_counts[i];
         dominant_error = (PropagationError)i;
@@ -706,10 +777,12 @@ bool RouteMap::Propagate() {
         configuration.rejection_counts[PROPAGATION_EXCEEDED_APPARENT_WIND] +
         configuration.rejection_counts[PROPAGATION_EXCEEDED_WIND_VS_CURRENT];
     long polar_rejections =
-        configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
+        configuration
+            .rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
         configuration.rejection_counts[PROPAGATION_POLAR_CONSTRAINTS];
     long angle_rejections =
-        configuration.rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS] +
+        configuration
+            .rejection_counts[PROPAGATION_ANGLE_OUTSIDE_SEARCH_LIMITS] +
         configuration.rejection_counts[PROPAGATION_ANGLE_ERROR];
     long boundary_rejections =
         configuration.rejection_counts[PROPAGATION_BOUNDARY_INTERSECTION];
@@ -747,8 +820,7 @@ bool RouteMap::Propagate() {
             "before pruning)"),
           configuration.sparse_legal_frontiers_dropped,
           configuration.accepted_candidate_count);
-    } else if (land_rejections > 0 &&
-               land_rejections >= weather_rejections &&
+    } else if (land_rejections > 0 && land_rejections >= weather_rejections &&
                land_rejections >= polar_rejections &&
                land_rejections >= angle_rejections &&
                land_rejections >= boundary_rejections) {
@@ -764,8 +836,7 @@ bool RouteMap::Propagate() {
           _("No reachable route points: weather/current constraints prevent "
             "progress (%ld weather/current rejections)"),
           weather_rejections);
-    } else if (polar_rejections > 0 &&
-               polar_rejections >= angle_rejections) {
+    } else if (polar_rejections > 0 && polar_rejections >= angle_rejections) {
       m_FailureReason = wxString::Format(
           _("No reachable route points: polar/sail configuration prevents "
             "progress (%ld polar rejections)"),
@@ -832,7 +903,8 @@ bool RouteMap::Propagate() {
         "reason=\"%s\"",
         configuration.chart_land_refinement_angles,
         configuration.chart_land_refinement_accepted,
-        configuration.rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
+        configuration
+                .rejection_counts[PROPAGATION_BOAT_SPEED_COMPUTATION_FAILED] +
             configuration.rejection_counts[PROPAGATION_POLAR_CONSTRAINTS],
         configuration.rejection_counts[PROPAGATION_LAND_INTERSECTION] +
             configuration.rejection_counts[PROPAGATION_LAND_SAFETY_MARGIN],
@@ -849,8 +921,7 @@ bool RouteMap::Propagate() {
         configuration.chart_safety_missing_tile_min_lat,
         configuration.chart_safety_missing_tile_max_lat,
         configuration.chart_safety_missing_tile_min_lon,
-        configuration.chart_safety_missing_tile_max_lon,
-        m_FailureReason);
+        configuration.chart_safety_missing_tile_max_lon, m_FailureReason);
     wxLogMessage("%s", summaryLog);
   }
 
@@ -1020,6 +1091,7 @@ Position* RouteMap::ClosestPosition(double lat, double lon, wxDateTime* t,
 }
 
 void RouteMap::Reset() {
+  m_CancellationFlag->store(false, std::memory_order_relaxed);
   Lock();
   Clear();
 
@@ -1058,14 +1130,30 @@ void RouteMap::ChartSafetyDataServiced() {
   Unlock();
 }
 
+bool RouteMap::AwaitChartSafetyData(long timeoutMilliseconds) {
+  Lock();
+  m_bNeedsChartSafetyData = true;
+  Unlock();
+  const wxLongLong started = wxGetUTCTimeMillis();
+  while (NeedsChartSafetyData()) {
+    if (Finished()) return false;
+    if ((wxGetUTCTimeMillis() - started).ToLong() >= timeoutMilliseconds)
+      return false;
+    wxMilliSleep(10);
+  }
+  return true;
+}
+
 typedef wxWeakRef<Shared_GribRecordSet> Shared_GribRecordSetRef;
 std::map<time_t, Shared_GribRecordSetRef> grib_key;
 wxMutex s_key_mutex;
 
 void RouteMap::SetNewGrib(GribRecordSet* grib) {
   if (!grib || !grib->m_GribRecordPtrArray[Idx_WIND_VX] ||
-      !grib->m_GribRecordPtrArray[Idx_WIND_VY])
+      !grib->m_GribRecordPtrArray[Idx_WIND_VY]) {
+    PublishTimelineFrame(Shared_GribRecordSet());
     return;
+  }
 
   // XXX should be grib->m_ID in a newer OpenCPN version
   unsigned int bogus_ID;  // grib->m_ID
@@ -1085,6 +1173,7 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       // compute fake generation grib->m_ID
       if (m_NewGrib->m_ID == bogus_ID) {
+        PublishTimelineFrame(m_SharedNewGrib);
         return;
       }
     }
@@ -1120,12 +1209,15 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
     }
   }
   m_SharedNewGrib.SetGribRecordSet(m_NewGrib);
+  PublishTimelineFrame(m_SharedNewGrib);
 }
 
 void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
   if (!grib || !grib->m_GribRecordPtrArray[Idx_WIND_VX] ||
-      !grib->m_GribRecordPtrArray[Idx_WIND_VY])
+      !grib->m_GribRecordPtrArray[Idx_WIND_VY]) {
+    PublishTimelineFrame(Shared_GribRecordSet());
     return;
+  }
 
   {
     std::map<time_t, Shared_GribRecordSetRef>::iterator it;
@@ -1135,6 +1227,7 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
       m_SharedNewGrib = *it->second;
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       if (m_NewGrib->m_ID == grib->m_ID) {
+        PublishTimelineFrame(m_SharedNewGrib);
         return;
       }
     }
@@ -1162,6 +1255,7 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
     }
   }
   m_SharedNewGrib.SetGribRecordSet(m_NewGrib);
+  PublishTimelineFrame(m_SharedNewGrib);
 }
 
 void RouteMap::GetStatistics(int& isochrons, int& routes, int& invroutes,

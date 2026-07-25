@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(weather_routing_pi_tests)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(WEATHER_ROUTING_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 message(STATUS "Building weather routing plugin tests")
 
@@ -41,6 +42,7 @@ set(TEST_SRC
     RoutingScenarioJson_tests.cpp
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp
+    ModernNativeEngine_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
@@ -50,6 +52,13 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyThreadGuard.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/SunCalculator.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Geometry.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Providers.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Polar.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/EnvironmentResolver.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Engine.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Validator.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Ensemble.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
    

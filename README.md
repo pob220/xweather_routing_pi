@@ -57,9 +57,17 @@ Test project weather_routing_pi/build
 All tests are intended to pass.  If any tests fail, please report an issue, providing enough context 
 for a developer to reproduce and fix the problem.
 
+Modern native routing engine
+============================
+
+Normal deterministic routes use the modern native C++20 engine with adaptive
+forward isochrones, reverse recovery, time-dependent graph fallback and dense
+independent validation. Architecture, safety integration, rollback and
+benchmarking are documented in
+[`docs/modern_native_engine.md`](docs/modern_native_engine.md).
+
 License
 =======
 The plugin code is licensed under the terms of the GPL v3+ 
 
 Part of the icons made by Smashicons (https://www.flaticon.com/authors/smashicons) from Flaticon (https://www.flaticon.com/) and is licensed under CC BY 3.0 (http://creativecommons.org/licenses/by/3.0)
-
