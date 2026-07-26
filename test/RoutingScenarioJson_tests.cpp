@@ -29,6 +29,36 @@ TEST(RoutingScenarioJson, LoadsStabilityCorridorOptions) {
   EXPECT_TRUE(scenario.stabilityCorridor.writeGeoJson);
 }
 
+TEST(RoutingScenarioJson, LoadsSelfContainedGuiRegressionSettings) {
+  weather_routing_engine::RoutingScenario scenario;
+  wxString error;
+  const wxString path = wxString(WEATHER_ROUTING_SOURCE_DIR) +
+                        "/testdata/scenarios/"
+                        "holyhead_dunlaoghaire_gui_regression.json";
+  ASSERT_TRUE(
+      weather_routing_headless::LoadRoutingScenarioJson(path, scenario, error))
+      << error;
+  EXPECT_TRUE(scenario.environment.hasUseGrib);
+  EXPECT_TRUE(scenario.environment.useGrib);
+  EXPECT_TRUE(scenario.environment.useCurrents);
+  EXPECT_TRUE(scenario.route.hasBoatFile);
+  EXPECT_EQ(
+      "~/.opencpn/plugins/weather_routing/boats/"
+      "Nicholson_35_conservative.xml",
+      scenario.route.boatFile);
+  EXPECT_EQ(3600, scenario.route.timeStepSeconds);
+  EXPECT_DOUBLE_EQ(40.0, scenario.route.headingFromDegrees);
+  EXPECT_DOUBLE_EQ(160.0, scenario.route.headingToDegrees);
+  EXPECT_DOUBLE_EQ(5.0, scenario.route.headingStepDegrees);
+  EXPECT_TRUE(scenario.route.optimizeTacking);
+  EXPECT_DOUBLE_EQ(1.0, scenario.route.upwindEfficiency);
+  EXPECT_DOUBLE_EQ(1.0, scenario.route.downwindEfficiency);
+  EXPECT_DOUBLE_EQ(1.0, scenario.route.nightEfficiency);
+  EXPECT_TRUE(scenario.route.useMotor);
+  EXPECT_DOUBLE_EQ(4.5, scenario.route.motorSpeedThresholdKnots);
+  EXPECT_DOUBLE_EQ(5.5, scenario.route.motorSpeedKnots);
+}
+
 TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   weather_routing_engine::RoutingResult result;
   result.scenario = "Stability JSON test";

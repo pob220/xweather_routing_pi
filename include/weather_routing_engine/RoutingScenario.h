@@ -34,10 +34,76 @@ struct RoutingScenarioDepartureOptimization {
 };
 
 struct RoutingScenarioEnvironment {
+  bool useGrib;
+  bool hasUseGrib;
   bool useCurrents;
   bool hasUseCurrents;
 
-  RoutingScenarioEnvironment() : useCurrents(false), hasUseCurrents(false) {}
+  RoutingScenarioEnvironment()
+      : useGrib(false),
+        hasUseGrib(false),
+        useCurrents(false),
+        hasUseCurrents(false) {}
+};
+
+struct RoutingScenarioRouteSettings {
+  wxString boatFile;
+  bool hasBoatFile;
+  int timeStepSeconds;
+  bool hasTimeStepSeconds;
+  double headingFromDegrees;
+  bool hasHeadingFromDegrees;
+  double headingToDegrees;
+  bool hasHeadingToDegrees;
+  double headingStepDegrees;
+  bool hasHeadingStepDegrees;
+  double maxTrueWindKnots;
+  bool hasMaxTrueWindKnots;
+  double maxApparentWindKnots;
+  bool hasMaxApparentWindKnots;
+  bool optimizeTacking;
+  bool hasOptimizeTacking;
+  double upwindEfficiency;
+  bool hasUpwindEfficiency;
+  double downwindEfficiency;
+  bool hasDownwindEfficiency;
+  double nightEfficiency;
+  bool hasNightEfficiency;
+  bool useMotor;
+  bool hasUseMotor;
+  double motorSpeedThresholdKnots;
+  bool hasMotorSpeedThresholdKnots;
+  double motorSpeedKnots;
+  bool hasMotorSpeedKnots;
+
+  RoutingScenarioRouteSettings()
+      : hasBoatFile(false),
+        timeStepSeconds(0),
+        hasTimeStepSeconds(false),
+        headingFromDegrees(0.0),
+        hasHeadingFromDegrees(false),
+        headingToDegrees(0.0),
+        hasHeadingToDegrees(false),
+        headingStepDegrees(0.0),
+        hasHeadingStepDegrees(false),
+        maxTrueWindKnots(0.0),
+        hasMaxTrueWindKnots(false),
+        maxApparentWindKnots(0.0),
+        hasMaxApparentWindKnots(false),
+        optimizeTacking(false),
+        hasOptimizeTacking(false),
+        upwindEfficiency(0.0),
+        hasUpwindEfficiency(false),
+        downwindEfficiency(0.0),
+        hasDownwindEfficiency(false),
+        nightEfficiency(0.0),
+        hasNightEfficiency(false),
+        useMotor(false),
+        hasUseMotor(false),
+        motorSpeedThresholdKnots(0.0),
+        hasMotorSpeedThresholdKnots(false),
+        motorSpeedKnots(0.0),
+        hasMotorSpeedKnots(false) {}
 };
 
 struct RoutingScenarioSafety {
@@ -113,6 +179,7 @@ struct RoutingScenario {
   wxDateTime startTime;
   RoutingScenarioDepartureOptimization departureOptimization;
   RoutingScenarioEnvironment environment;
+  RoutingScenarioRouteSettings route;
   RoutingScenarioSafety safety;
   RoutingScenarioReverseReachability reverseReachability;
   RoutingScenarioStabilityCorridor stabilityCorridor;

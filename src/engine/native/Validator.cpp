@@ -40,17 +40,22 @@ void addUsage(EnvironmentalSourceUsage& usage,
 }
 }  // namespace
 
-RouteValidationResult RouteValidator::validate(
-    const RoutingRequest& request, const RoutingEnvironment& environment,
-    const VesselPerformanceModel& performance, std::span<const RouteLeg> legs,
-    RoutingDiagnostics* diagnostics) const {
+RouteValidationResult validateRoute(const RoutingRequest& request,
+                                    const RoutingEnvironment& environment,
+                                    const VesselPerformanceModel& performance,
+                                    std::span<const RouteLeg> legs,
+                                    RoutingDiagnostics* diagnostics,
+                                    bool requireDestination) {
   RouteValidationResult result;
   if (legs.empty()) return fail(std::move(result), "route contains no legs");
+  if (environment.landAndBoundaries)
+    environment.landAndBoundaries->prepareValidationRoute(
+        legs, request.constraints.landSafetyMarginNm);
   if (!closePoint(legs.front().start, request.start))
     return fail(std::move(result),
                 "route does not start at the requested position");
-  if (distanceNm(legs.back().end, request.destination) >
-      request.options.destinationToleranceNm + 1e-9)
+  if (requireDestination && distanceNm(legs.back().end, request.destination) >
+                                request.options.destinationToleranceNm + 1e-9)
     return fail(std::move(result),
                 "route ends outside the configured destination tolerance");
   if (legs.front().startTime != request.departure)
@@ -155,6 +160,7 @@ RouteValidationResult RouteValidator::validate(
         previousEnvironment = resolved.snapshot;
       }
       previousModeDuration = Duration{};
+      ++result.acceptedPrefixLegs;
       continue;
     }
     if (leg.propulsionMode != PropulsionMode::Sail) totalMotor += duration;
@@ -164,9 +170,35 @@ RouteValidationResult RouteValidator::validate(
       return fail(std::move(result), "route exceeds maximum motor time");
     if (environment.landAndBoundaries) {
       if (diagnostics) ++diagnostics->landChecks;
-      if (environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
-              leg.start, leg.end, leg.startTime,
-              request.constraints.landSafetyMarginNm))
+      const bool destinationIngressLeg =
+          requireDestination && request.constraints.landSafetyMarginNm > 0.0 &&
+          legIndex + 1 == legs.size();
+      const double destinationIngressRadiusNm =
+          std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
+      const double chordSafetyMarginNm =
+          departureEgress ? 0.0 : request.constraints.landSafetyMarginNm;
+      bool chordForbidden =
+          environment.landAndBoundaries
+              ->validationSegmentFromKnownSafeForbiddenAt(
+                  leg.start, leg.end, leg.startTime, chordSafetyMarginNm);
+      if (chordForbidden && destinationIngressLeg && !departureEgress) {
+        const double chordDistance = distanceNm(leg.start, leg.end);
+        const double bearing = initialBearingDegrees(leg.start, leg.end);
+        const GeoPoint ingressStart =
+            chordDistance <= destinationIngressRadiusNm
+                ? leg.start
+                : destinationPoint(leg.start, bearing,
+                                   chordDistance - destinationIngressRadiusNm);
+        chordForbidden = (chordDistance > destinationIngressRadiusNm &&
+                          environment.landAndBoundaries
+                              ->validationSegmentFromKnownSafeForbiddenAt(
+                                  leg.start, ingressStart, leg.startTime,
+                                  chordSafetyMarginNm)) ||
+                         environment.landAndBoundaries
+                             ->validationSegmentFromKnownSafeForbiddenAt(
+                                 ingressStart, leg.end, leg.startTime, 0.0);
+      }
+      if (chordForbidden)
         return fail(
             std::move(result),
             "delivered route geometry intersects land or an exclusion zone");
@@ -208,6 +240,9 @@ RouteValidationResult RouteValidator::validate(
     GeoPoint replayPoint = leg.start;
     Duration elapsed{};
     double replayFuel{};
+    bool destinationIngress = false;
+    double priorDestinationDistance =
+        distanceNm(replayPoint, request.destination);
     for (unsigned sampleIndex = 0; sampleIndex < samples; ++sampleIndex) {
       const Duration slice =
           sampleIndex + 1 == samples
@@ -345,8 +380,9 @@ RouteValidationResult RouteValidator::validate(
       if (environment.landAndBoundaries) {
         if (diagnostics) ++diagnostics->landChecks;
         if (departureEgress) {
-          if (environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
-                  replayPoint, next, leg.startTime + elapsed, 0.0))
+          if (environment.landAndBoundaries
+                  ->validationSegmentFromKnownSafeForbiddenAt(
+                      replayPoint, next, leg.startTime + elapsed, 0.0))
             return fail(std::move(result),
                         "forward replay intersects land or an exclusion zone");
           const double nextClearance =
@@ -358,12 +394,42 @@ RouteValidationResult RouteValidator::validate(
           departureClearanceNm = nextClearance;
           departureEgress =
               nextClearance + 1e-6 < request.constraints.landSafetyMarginNm;
-        } else if (environment.landAndBoundaries
-                       ->segmentFromKnownSafeForbiddenAt(
-                           replayPoint, next, leg.startTime + elapsed,
-                           request.constraints.landSafetyMarginNm)) {
-          return fail(std::move(result),
-                      "forward replay intersects land or an exclusion zone");
+        } else {
+          bool forbidden =
+              environment.landAndBoundaries
+                  ->validationSegmentFromKnownSafeForbiddenAt(
+                      replayPoint, next, leg.startTime + elapsed,
+                      destinationIngress
+                          ? 0.0
+                          : request.constraints.landSafetyMarginNm);
+          const bool finalIngressLeg =
+              requireDestination &&
+              request.constraints.landSafetyMarginNm > 0.0 &&
+              legIndex + 1 == legs.size();
+          const double destinationIngressRadiusNm =
+              std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
+          const double nextDestinationDistance =
+              distanceNm(next, request.destination);
+          if (forbidden && finalIngressLeg &&
+              nextDestinationDistance <= destinationIngressRadiusNm + 1e-6 &&
+              !destinationIngress &&
+              nextDestinationDistance + 1e-6 < priorDestinationDistance &&
+              !environment.landAndBoundaries
+                   ->validationSegmentFromKnownSafeForbiddenAt(
+                       replayPoint, next, leg.startTime + elapsed, 0.0)) {
+            destinationIngress = true;
+            forbidden = false;
+          }
+          if (forbidden)
+            return fail(std::move(result),
+                        "forward replay intersects land or an exclusion zone");
+          if (destinationIngress &&
+              nextDestinationDistance > priorDestinationDistance + 1e-6)
+            return fail(
+                std::move(result),
+                "coastal destination ingress moves away from the destination "
+                "inside the safety buffer");
+          priorDestinationDistance = nextDestinationDistance;
         }
       }
       replayPoint = next;
@@ -371,8 +437,14 @@ RouteValidationResult RouteValidator::validate(
                     std::chrono::duration<double>(slice).count() / 3600.0;
       elapsed += slice;
     }
-    const double endpointToleranceNm =
-        std::max(0.05, std::min(0.15, legDistance * 0.01));
+    // Exploratory legs are integrated in 15-minute slices while authoritative
+    // replay uses at least five-minute slices (and one-minute destination
+    // connections).  A very short percentage-based tolerance can therefore
+    // reject an otherwise fully feasible and chart-safe leg for the expected
+    // numerical difference between those integrations, then trigger millions
+    // of unnecessary recovery states.  Keep this tightly bounded at 0.15 NM
+    // and explicitly chart-check the small reconciliation below.
+    constexpr double endpointToleranceNm = 0.15;
     const double endpointErrorNm = distanceNm(replayPoint, leg.end);
     if (endpointErrorNm > endpointToleranceNm) {
       std::ostringstream message;
@@ -382,6 +454,19 @@ RouteValidationResult RouteValidator::validate(
               << " NM)";
       return fail(std::move(result), message.str());
     }
+    if (endpointErrorNm > 0.002 && environment.landAndBoundaries) {
+      const double reconciliationMarginNm =
+          departureEgress || destinationIngress
+              ? 0.0
+              : request.constraints.landSafetyMarginNm;
+      if (environment.landAndBoundaries
+              ->validationSegmentFromKnownSafeForbiddenAt(
+                  replayPoint, leg.end, leg.endTime, reconciliationMarginNm))
+        return fail(
+            std::move(result),
+            "forward replay endpoint reconciliation intersects land or an "
+            "exclusion zone");
+    }
     if (leg.estimatedFuelLitres + 1e-6 < replayFuel)
       return fail(std::move(result),
                   "route leg understates independently replayed fuel use");
@@ -389,9 +474,26 @@ RouteValidationResult RouteValidator::validate(
     if (request.vessel.propulsion.maximumFuelLitres &&
         totalFuel > *request.vessel.propulsion.maximumFuelLitres + 1e-6)
       return fail(std::move(result), "route exceeds fuel limit");
+    ++result.acceptedPrefixLegs;
   }
   result.passed = true;
   return result;
+}
+
+RouteValidationResult RouteValidator::validate(
+    const RoutingRequest& request, const RoutingEnvironment& environment,
+    const VesselPerformanceModel& performance, std::span<const RouteLeg> legs,
+    RoutingDiagnostics* diagnostics) const {
+  return validateRoute(request, environment, performance, legs, diagnostics,
+                       true);
+}
+
+RouteValidationResult RouteValidator::validatePrefix(
+    const RoutingRequest& request, const RoutingEnvironment& environment,
+    const VesselPerformanceModel& performance, std::span<const RouteLeg> legs,
+    RoutingDiagnostics* diagnostics) const {
+  return validateRoute(request, environment, performance, legs, diagnostics,
+                       false);
 }
 
 }  // namespace supercpn::weather_routing

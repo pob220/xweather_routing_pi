@@ -509,6 +509,7 @@ struct RouteMetrics {
 struct RouteValidationResult {
   bool passed{};
   std::string failureReason;
+  std::size_t acceptedPrefixLegs{};
   std::uint64_t samples{};
   EnvironmentalSourceUsage environment;
   std::vector<EnvironmentalSourceTransition> sourceTransitions;

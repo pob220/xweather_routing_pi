@@ -9,6 +9,7 @@
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <unordered_map>
 
 #include "RoutingInternal.h"
 
@@ -47,6 +48,8 @@ struct SearchArtifacts {
   std::vector<std::size_t> retained;
   std::vector<IsochroneLayer> isochrones;
   std::optional<std::size_t> solution;
+  std::vector<std::size_t> alternativeSolutions;
+  std::vector<std::size_t> preferredRecoverySeeds;
   RoutingStatus failure{RoutingStatus::NoFeasibleRoute};
   std::string reason;
   bool resourceLimited{};
@@ -422,13 +425,45 @@ bool nodeMotionForbidden(const RoutingRequest& request,
   const bool departureEgress =
       distanceNm(node.incomingLeg.start, request.start) <= 1e-6 &&
       node.incomingLeg.startTime == request.departure;
+  const bool destinationIngress =
+      distanceNm(node.position, request.destination) <= 1e-6 &&
+      request.constraints.landSafetyMarginNm > 0.0;
+  const double destinationIngressRadiusNm =
+      std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
   const double margin = departureEgress ? 0.0 : searchLandMarginNm(request);
+  bool ingressStarted = false;
+  double priorDestinationDistance =
+      distanceNm(node.incomingLeg.start, request.destination);
   for (const auto& segment : node.incomingMotionSegments) {
     ++diagnostics.landChecks;
-    if (environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
-            segment.start, segment.end, segment.startTime, margin)) {
+    bool forbidden =
+        environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+            segment.start, segment.end, segment.startTime,
+            ingressStarted ? 0.0 : margin);
+    if (forbidden && destinationIngress && !departureEgress &&
+        !ingressStarted) {
+      const double nextDistance = distanceNm(segment.end, request.destination);
+      if (nextDistance <= destinationIngressRadiusNm + 1e-6 &&
+          nextDistance + 1e-6 < priorDestinationDistance &&
+          !environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+              segment.start, segment.end, segment.startTime, 0.0)) {
+        ingressStarted = true;
+        forbidden = false;
+      }
+    }
+    if (forbidden) {
       ++diagnostics.landRejections;
       return true;
+    }
+    if (ingressStarted) {
+      const double nextDistance = distanceNm(segment.end, request.destination);
+      if (nextDistance > priorDestinationDistance + 1e-6) {
+        ++diagnostics.landRejections;
+        return true;
+      }
+      priorDestinationDistance = nextDistance;
+    } else {
+      priorDestinationDistance = distanceNm(segment.end, request.destination);
     }
     if (request.constraints.minimumDepthMetres) {
       const auto depth =
@@ -443,9 +478,30 @@ bool nodeMotionForbidden(const RoutingRequest& request,
   // chord, while chronological replay follows the integrated slices above.
   // Both geometries must therefore be safe before the state is admitted.
   ++diagnostics.landChecks;
-  if (environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+  bool chordForbidden =
+      environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
           node.incomingLeg.start, node.incomingLeg.end,
-          node.incomingLeg.startTime, margin)) {
+          node.incomingLeg.startTime, margin);
+  if (chordForbidden && destinationIngress && !departureEgress) {
+    const double chordDistance =
+        distanceNm(node.incomingLeg.start, node.incomingLeg.end);
+    const double bearing =
+        initialBearingDegrees(node.incomingLeg.start, node.incomingLeg.end);
+    const GeoPoint ingressStart =
+        chordDistance <= destinationIngressRadiusNm
+            ? node.incomingLeg.start
+            : destinationPoint(node.incomingLeg.start, bearing,
+                               chordDistance - destinationIngressRadiusNm);
+    chordForbidden =
+        (chordDistance > destinationIngressRadiusNm &&
+         environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+             node.incomingLeg.start, ingressStart, node.incomingLeg.startTime,
+             margin)) ||
+        environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+            ingressStart, node.incomingLeg.end, node.incomingLeg.startTime,
+            0.0);
+  }
+  if (chordForbidden) {
     ++diagnostics.landRejections;
     return true;
   }
@@ -514,7 +570,12 @@ std::optional<Node> directConnection(
         auto replay = integrateMotion(
             request, environment, performanceModel, from, trialHeading,
             candidate, from.time + penalty, trialMoving,
-            Duration{std::chrono::minutes{5}}, diagnostics, &ignoredFailure);
+            // Destination connections are sparse and are the first complete
+            // routes offered to the independent one-minute validator. Match
+            // that cadence here so a five-minute sample cannot conceal a
+            // short hard wind-angle or weather-limit violation and force an
+            // otherwise avoidable recovery search.
+            Duration{std::chrono::minutes{1}}, diagnostics, &ignoredFailure);
         if (!replay) break;
         const double miss = distanceNm(replay->end, request.destination);
         if (miss <= 0.01) {
@@ -683,6 +744,21 @@ std::vector<Node> propagate(const RoutingRequest& request,
 }
 
 using CellKey = std::tuple<int, int, int, int, int>;
+
+struct CellKeyHash {
+  std::size_t operator()(const CellKey& key) const noexcept {
+    std::size_t value = 0;
+    std::apply(
+        [&](const auto... fields) {
+          ((value ^= std::hash<int>{}(fields) + 0x9e3779b9U + (value << 6U) +
+                     (value >> 2U)),
+           ...);
+        },
+        key);
+    return value;
+  }
+};
+
 CellKey stateCell(const RoutingRequest&, const Node& node, double cellNm,
                   double headingTolerance) {
   const double latScale = 60.0 / std::max(0.1, cellNm);
@@ -702,7 +778,7 @@ std::vector<Node> pruneLayer(const RoutingRequest& request,
                              const RoutingEnvironment& environment,
                              std::vector<Node> candidates, unsigned labelCap,
                              RoutingDiagnostics& diagnostics) {
-  std::map<CellKey, std::vector<Node>> cells;
+  std::unordered_map<CellKey, std::vector<Node>, CellKeyHash> cells;
   for (auto& candidate : candidates)
     cells[stateCell(request, candidate, request.options.spatialCellNm,
                     request.options.dominanceHeadingToleranceDegrees)]
@@ -982,6 +1058,8 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
       return result;
     }
     std::vector<Node> candidates;
+    std::vector<Node> directCandidates;
+    constexpr std::size_t kMaximumDirectCandidates = 8;
     // A chart-authorised departure can legitimately start inside the configured
     // shoreline stand-off (for example at a harbour entrance). Use the finest
     // configured angular resolution and a locally shortened first step so a
@@ -1035,9 +1113,13 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
                 directConnectionWindow(request, from, layerStep * 2),
                 diagnostics)) {
           direct->predecessor = index;
-          result.nodes.push_back(std::move(*direct));
-          result.solution = result.nodes.size() - 1;
-          return result;
+          directCandidates.push_back(std::move(*direct));
+          if (directCandidates.size() >= kMaximumDirectCandidates) break;
+          // A complete connection from this state is always preferable to
+          // propagating another incomplete state from the same predecessor.
+          // Continue inspecting the retained layer so independent replay has
+          // bounded alternatives if the first connection is rejected.
+          continue;
         }
       }
       const double bearing =
@@ -1046,7 +1128,12 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
            headings(layerHeadingStep, bearing, request.options.adaptiveHeadings,
                     request.options.refinedHeadingStepDegrees,
                     request.options.maximumSearchAngleDegrees)) {
-        const Duration integrationSlice{std::chrono::minutes{5}};
+        // Exploratory propagation is independently replayed at a dense
+        // cadence before any route can be returned. Match the adapter's
+        // canonical 15-minute weather buckets here: five-minute integration
+        // multiplied provider traffic by roughly three without adding
+        // forecast detail, while final replay remains unchanged.
+        const Duration integrationSlice{std::chrono::minutes{15}};
         for (auto& next : propagate(request, environment, performance, from,
                                     heading, layerStep, diagnostics,
                                     integrationSlice, &dataFailure)) {
@@ -1076,6 +1163,21 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
         }
       }
     }
+    if (!directCandidates.empty()) {
+      std::stable_sort(
+          directCandidates.begin(), directCandidates.end(),
+          [&](const Node& a, const Node& b) {
+            return std::tuple{stateCost(request, a), a.time, a.predecessor} <
+                   std::tuple{stateCost(request, b), b.time, b.predecessor};
+          });
+      result.alternativeSolutions.reserve(directCandidates.size());
+      for (auto& direct : directCandidates) {
+        result.nodes.push_back(std::move(direct));
+        result.alternativeSolutions.push_back(result.nodes.size() - 1);
+      }
+      result.solution = result.alternativeSolutions.front();
+      return result;
+    }
     auto retainedNodes = pruneLayer(request, environment, std::move(candidates),
                                     labelCap, diagnostics);
     result.retained.clear();
@@ -1104,9 +1206,19 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
         layerClosestNm = std::min(
             layerClosestNm,
             distanceNm(result.nodes[index].position, request.destination));
+      // A difficult coastal route can become topologically stalled well
+      // outside the small final-connection radius. Continuing the same
+      // forward fan at ever finer resolution then repeats millions of
+      // equivalent weather and chart checks before recovery is allowed to
+      // start. Once the frontier is in the final 30% of the passage, eight
+      // consecutive layers without meaningful progress are enough useful
+      // forward context for bounded recovery. This does not reject the
+      // frontier: it hands retained chart-safe states to reverse recovery and
+      // then graph fallback.
       const double approachRadiusNm =
-          std::max(request.options.destinationToleranceNm * 4.0,
-                   std::chrono::duration<double>(step).count() / 3600.0 * 10.0);
+          std::max({request.options.destinationToleranceNm * 4.0,
+                    std::chrono::duration<double>(step).count() / 3600.0 * 10.0,
+                    distanceNm(request.start, request.destination) * 0.30});
       if (layerClosestNm <= approachRadiusNm) {
         const double meaningfulProgressNm =
             std::max(0.5, request.options.destinationToleranceNm * 0.5);
@@ -1116,7 +1228,7 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
         } else {
           ++stalledApproachLayers;
         }
-        if (stalledApproachLayers >= 4) {
+        if (stalledApproachLayers >= 8) {
           result.failure = RoutingStatus::SearchIncomplete;
           result.reason =
               "destination convergence stalled; escalating to recovery";
@@ -1153,6 +1265,20 @@ std::vector<RouteLeg> reconstruct(const SearchArtifacts& search,
     const Node& node = search.nodes[index];
     if (node.predecessor == std::numeric_limits<std::size_t>::max()) break;
     reversed.push_back(node.incomingLeg);
+    index = node.predecessor;
+  }
+  std::reverse(reversed.begin(), reversed.end());
+  return reversed;
+}
+
+std::vector<std::size_t> reconstructNodeIndices(const SearchArtifacts& search,
+                                                std::size_t solution) {
+  std::vector<std::size_t> reversed;
+  for (std::size_t index = solution;
+       index != std::numeric_limits<std::size_t>::max();) {
+    const Node& node = search.nodes[index];
+    if (node.predecessor == std::numeric_limits<std::size_t>::max()) break;
+    reversed.push_back(index);
     index = node.predecessor;
   }
   std::reverse(reversed.begin(), reversed.end());
@@ -1289,6 +1415,19 @@ struct QueueLater {
   }
 };
 
+using GraphLabelKey = std::tuple<CellKey, std::int64_t, int>;
+
+struct GraphLabelKeyHash {
+  std::size_t operator()(const GraphLabelKey& key) const noexcept {
+    std::size_t value = CellKeyHash{}(std::get<0>(key));
+    value ^= std::hash<std::int64_t>{}(std::get<1>(key)) + 0x9e3779b9U +
+             (value << 6U) + (value >> 2U);
+    value ^= std::hash<int>{}(std::get<2>(key)) + 0x9e3779b9U + (value << 6U) +
+             (value >> 2U);
+    return value;
+  }
+};
+
 SearchArtifacts graphSearch(const RoutingRequest& request,
                             const RoutingEnvironment& environment,
                             const VesselPerformanceModel& performance,
@@ -1296,7 +1435,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
                             RoutingDiagnostics& diagnostics) {
   SearchArtifacts result;
   std::priority_queue<QueueEntry, std::vector<QueueEntry>, QueueLater> open;
-  std::map<std::tuple<CellKey, std::int64_t, int>, std::vector<std::size_t>>
+  std::unordered_map<GraphLabelKey, std::vector<std::size_t>, GraphLabelKeyHash>
       labels;
   std::uint64_t serial = 1;
   const Duration step = std::max(
@@ -1307,16 +1446,25 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
   if (seed && seed->nodes.size() > 1) {
     result.nodes = seed->nodes;
     result.isochrones = seed->isochrones;
-    // The closest useful forward prefix is not necessarily in the final
-    // retained layer: a destination-side funnel can make later layers recede
-    // after an earlier state reached its entrance. Consider every retained
-    // historical node, but admit only prefixes which the independent validator
-    // can replay. This prevents graph fallback from inheriting a solver-only
-    // numerical shortcut while preserving a valid earlier approach.
+    // Only independently replayed candidate prefixes may seed graph recovery.
+    // If no candidate leg survived replay, restart the graph at the known-safe
+    // departure.  Certifying thousands of arbitrary retained forward lineages
+    // here would rasterise the failed search fan before recovery even begins.
     std::vector<std::size_t> seedIndices;
-    seedIndices.reserve(result.nodes.size() - 1);
-    for (std::size_t index = 1; index < result.nodes.size(); ++index)
-      seedIndices.push_back(index);
+    if (!seed->preferredRecoverySeeds.empty()) {
+      seedIndices = seed->preferredRecoverySeeds;
+      seedIndices.erase(std::remove_if(seedIndices.begin(), seedIndices.end(),
+                                       [&](std::size_t index) {
+                                         return index == 0 ||
+                                                index >= result.nodes.size();
+                                       }),
+                        seedIndices.end());
+      std::sort(seedIndices.begin(), seedIndices.end());
+      seedIndices.erase(std::unique(seedIndices.begin(), seedIndices.end()),
+                        seedIndices.end());
+    } else {
+      seedIndices.push_back(0);
+    }
     std::stable_sort(
         seedIndices.begin(), seedIndices.end(),
         [&](std::size_t a, std::size_t b) {
@@ -1327,32 +1475,19 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
                      distanceNm(result.nodes[b].position, request.destination),
                      stateCost(request, result.nodes[b]), b};
         });
-    const double closestSeedNm = distanceNm(
-        result.nodes[seedIndices.front()].position, request.destination);
+    constexpr std::size_t kMaximumAcceptedSeeds = 256;
+    if (seedIndices.size() > kMaximumAcceptedSeeds)
+      seedIndices.resize(kMaximumAcceptedSeeds);
+    const std::vector<std::size_t>& acceptedSeedIndices = seedIndices;
+    diagnostics.stageStopReasons.push_back(
+        seed->preferredRecoverySeeds.empty()
+            ? "graph fallback restarted from known-safe departure"
+            : "graph fallback admitted independently validated candidate "
+              "prefixes only");
+    const double closestSeedNm =
+        distanceNm(result.nodes[acceptedSeedIndices.front()].position,
+                   request.destination);
     localDestinationRadiusNm = std::max(20.0, closestSeedNm * 3.0);
-    seedIndices.erase(std::remove_if(seedIndices.begin(), seedIndices.end(),
-                                     [&](std::size_t index) {
-                                       return distanceNm(
-                                                  result.nodes[index].position,
-                                                  request.destination) >
-                                              *localDestinationRadiusNm;
-                                     }),
-                      seedIndices.end());
-    // Forward nodes have already passed chronological dynamics, hard
-    // constraints, every integrated semantic-chart slice and the exported
-    // endpoint chord before admission. Replaying thousands of shared lineages
-    // here is quadratic and does not make the eventual route safer: every
-    // graph candidate is independently replayed in full before acceptance.
-    // Seed from the best bounded prefix set and reserve independent validation
-    // for complete route candidates.
-    std::vector<std::size_t> acceptedSeedIndices = seedIndices;
-    if (acceptedSeedIndices.size() > 256) acceptedSeedIndices.resize(256);
-    if (acceptedSeedIndices.empty()) {
-      result.failure = RoutingStatus::SearchIncomplete;
-      result.reason =
-          "graph fallback found no independently valid forward prefix";
-      return result;
-    }
     TimePoint latestSeedTime{};
     double closestAcceptedSeedNm = std::numeric_limits<double>::infinity();
     for (const std::size_t index : acceptedSeedIndices) {
@@ -1383,7 +1518,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     diagnostics.stageStopReasons.push_back(
         "graph fallback seeded from " +
         std::to_string(acceptedSeedIndices.size()) +
-        " chart-admitted chronological forward prefixes; closest " +
+        " safe chronological prefixes; closest " +
         std::to_string(closestAcceptedSeedNm) + " NM");
   } else {
     Node initial;
@@ -1512,8 +1647,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
             distanceNm(result.nodes[index].position, request.destination) /
             request.options.heuristicMaximumSpeedKnots * 3600.0;
       open.push({cost + heuristic, cost,
-                 distanceNm(result.nodes[index].position,
-                            request.destination),
+                 distanceNm(result.nodes[index].position, request.destination),
                  serial++, index});
     };
     for (double heading :
@@ -1529,7 +1663,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
       }
       auto propagated = propagate(
           request, environment, performance, from, heading, expansionStep,
-          diagnostics, Duration{std::chrono::minutes{5}}, &dataFailure);
+          diagnostics, Duration{std::chrono::minutes{15}}, &dataFailure);
       for (auto& next : propagated) {
         if (diagnostics.generatedStates >=
             request.limits.maximumGeneratedStates) {
@@ -1900,6 +2034,9 @@ RoutingResult RoutingEngine::routeMember(
   SearchArtifacts latest;
   bool found = false;
   std::string lastValidationFailure;
+  std::vector<std::size_t> rejectedCandidateSafePrefixes;
+  bool candidateReplayProducedSafePrefix = false;
+  bool requiresExternalConstraintEscalation = false;
   RouteValidator candidateValidator;
   const auto acceptCandidate = [&](const SearchArtifacts& search,
                                    std::size_t solution, SolverPath path) {
@@ -1909,9 +2046,18 @@ RoutingResult RoutingEngine::routeMember(
     result.diagnostics.validationSamples += validation.samples;
     if (!validation.passed) {
       lastValidationFailure = validation.failureReason;
+      candidateReplayProducedSafePrefix = candidateReplayProducedSafePrefix ||
+                                          validation.acceptedPrefixLegs > 0;
+      const std::vector<std::size_t> lineage =
+          reconstructNodeIndices(search, solution);
+      if (validation.acceptedPrefixLegs > 0 &&
+          validation.acceptedPrefixLegs <= lineage.size())
+        rejectedCandidateSafePrefixes.push_back(
+            lineage[validation.acceptedPrefixLegs - 1]);
       result.diagnostics.stageStopReasons.push_back(
           "candidate rejected by independent forward validation: " +
-          validation.failureReason);
+          validation.failureReason + "; accepted prefix legs " +
+          std::to_string(validation.acceptedPrefixLegs));
       return false;
     }
     result.legs = std::move(legs);
@@ -1969,20 +2115,49 @@ RoutingResult RoutingEngine::routeMember(
     previousAttemptGenerated =
         result.diagnostics.generatedStates - generatedBefore;
     if (latest.solution) {
-      const std::size_t rejectedCandidate = *latest.solution;
-      found = acceptCandidate(latest, *latest.solution,
-                              SolverPath::AdaptiveIsochrone);
+      rejectedCandidateSafePrefixes.clear();
+      const std::vector<std::size_t> candidates =
+          latest.alternativeSolutions.empty()
+              ? std::vector<std::size_t>{*latest.solution}
+              : latest.alternativeSolutions;
+      for (const std::size_t candidate : candidates) {
+        found =
+            acceptCandidate(latest, candidate, SolverPath::AdaptiveIsochrone);
+        if (found) break;
+      }
       if (found) break;
+      const std::size_t firstRejectedCandidate = candidates.front();
       latest.solution.reset();
-      // Forward completion is appended after all admitted frontier nodes.  A
-      // failed independent replay must never become a recovery seed.
-      if (rejectedCandidate + 1 == latest.nodes.size()) latest.nodes.pop_back();
-      latest.failure = RoutingStatus::SearchIncomplete;
-      latest.reason = "forward candidate failed independent validation";
+      latest.alternativeSolutions.clear();
+      // Forward completions are appended after all admitted frontier nodes.
+      // Failed independent replays must never become recovery seeds.
+      if (firstRejectedCandidate < latest.nodes.size())
+        latest.nodes.resize(firstRejectedCandidate);
+      latest.preferredRecoverySeeds = rejectedCandidateSafePrefixes;
+      requiresExternalConstraintEscalation =
+          environment.landAndBoundaries &&
+          environment.landAndBoundaries
+              ->validationFailureRequiresSearchEscalation();
+      latest.failure = requiresExternalConstraintEscalation
+                           ? RoutingStatus::ValidationFailure
+                           : RoutingStatus::SearchIncomplete;
+      latest.reason =
+          requiresExternalConstraintEscalation
+              ? "authoritative candidate replay requires detailed-constraint "
+                "search escalation: " +
+                    lastValidationFailure
+              : "forward candidates failed independent validation";
     }
     result.diagnostics.stageStopReasons.push_back(latest.reason);
     if (latest.failure == RoutingStatus::Cancelled || latest.resourceLimited)
       break;
+    if (requiresExternalConstraintEscalation) break;
+    if (candidateReplayProducedSafePrefix) {
+      result.diagnostics.stageStopReasons.push_back(
+          "forward candidate replay supplied a safe recovery prefix; "
+          "skipping whole-route refinement");
+      break;
+    }
     if (latest.convergenceStalled) break;
   }
 
@@ -1990,8 +2165,13 @@ RoutingResult RoutingEngine::routeMember(
   // even when production recovery subsequently replaces SearchArtifacts with
   // graph labels.  This data is never used for route acceptance.
   const std::vector<IsochroneLayer> forwardIsochrones = latest.isochrones;
+  const bool forwardStalledNearDestination =
+      latest.convergenceStalled &&
+      result.diagnostics.closestApproachNm <=
+          std::max(2.0, request.options.destinationToleranceNm * 2.0);
 
-  if (!found && latest.failure != RoutingStatus::Cancelled &&
+  if (!found && !requiresExternalConstraintEscalation &&
+      latest.failure != RoutingStatus::Cancelled &&
       request.options.useReverseRecovery && latest.nodes.size() > 1 &&
       request.options.retryStages >= 6 &&
       !request.options.forceReverseFailureForTesting) {
@@ -2016,8 +2196,47 @@ RoutingResult RoutingEngine::routeMember(
     }
   }
 
-  if (!found && latest.failure != RoutingStatus::Cancelled &&
-      request.options.useGraphFallback && request.options.retryStages >= 7) {
+  if (!found && !requiresExternalConstraintEscalation &&
+      latest.failure != RoutingStatus::Cancelled &&
+      !forwardStalledNearDestination && request.options.useGraphFallback &&
+      request.options.retryStages >= 7) {
+    if (latest.preferredRecoverySeeds.empty() && !latest.retained.empty()) {
+      // Graph recovery should not discard useful forward progress, but nor may
+      // it trust an exploratory lineage merely because each coarse search
+      // chord passed propagation checks. Independently replay a small,
+      // deterministic set of the closest frontier prefixes at full validation
+      // cadence. Only prefixes which pass in their entirety may seed the graph.
+      // The cap prevents the old behaviour of rasterising a complete failed
+      // search fan before graph recovery can begin.
+      std::vector<std::size_t> prefixCandidates = latest.retained;
+      std::stable_sort(
+          prefixCandidates.begin(), prefixCandidates.end(),
+          [&](std::size_t a, std::size_t b) {
+            return std::tuple{distanceNm(latest.nodes[a].position,
+                                         request.destination),
+                              stateCost(request, latest.nodes[a]), a} <
+                   std::tuple{distanceNm(latest.nodes[b].position,
+                                         request.destination),
+                              stateCost(request, latest.nodes[b]), b};
+          });
+      constexpr std::size_t kMaximumPrefixReplays = 16;
+      constexpr std::size_t kMaximumAcceptedPrefixes = 8;
+      if (prefixCandidates.size() > kMaximumPrefixReplays)
+        prefixCandidates.resize(kMaximumPrefixReplays);
+      for (const std::size_t index : prefixCandidates) {
+        auto legs = reconstruct(latest, index);
+        const auto validation = candidateValidator.validatePrefix(
+            request, environment, performance, legs, &result.diagnostics);
+        result.diagnostics.validationSamples += validation.samples;
+        if (validation.passed) latest.preferredRecoverySeeds.push_back(index);
+        if (latest.preferredRecoverySeeds.size() >= kMaximumAcceptedPrefixes)
+          break;
+      }
+      result.diagnostics.stageStopReasons.push_back(
+          "bounded graph-prefix replay accepted " +
+          std::to_string(latest.preferredRecoverySeeds.size()) + " of " +
+          std::to_string(prefixCandidates.size()) + " candidates");
+    }
     reportProgress(request, RoutingProgressStage::GraphFallback,
                    result.diagnostics);
     result.diagnostics.stagesAttempted.push_back(SolverPath::GraphFallback);
@@ -2035,6 +2254,10 @@ RoutingResult RoutingEngine::routeMember(
     } else {
       result.diagnostics.stageStopReasons.push_back(latest.reason);
     }
+  } else if (!found && forwardStalledNearDestination) {
+    result.diagnostics.stageStopReasons.push_back(
+        "graph fallback skipped because forward search reached the local "
+        "destination constraint but could not cross it");
   }
 
   result.diagnostics.xtdCoverageExpansions =

@@ -42,15 +42,19 @@ For passages up to 120 NM, each layer retains a sector-balanced maximum of 256
 states while preserving tack, propulsion and directional families. The first
 three coastal layers run at 30 minutes or finer, offshore propagation uses the
 configured cadence, and destination convergence returns to the configured
-minimum step. Motion within every edge is integrated in chronological slices
-no longer than five minutes.
+minimum step. Exploratory motion is integrated on the 15-minute
+forecast/cache cadence; independent acceptance replay remains dense at five
+minutes or finer near chart hazards. Replay permits at most 0.15 NM of
+numerical endpoint difference from the exploratory integration and
+independently chart-checks that reconciliation segment before accepting it.
 
 Recovery is deliberately lineage-safe. A forward or reverse completion which
-fails independent replay is removed before graph seeding. Graph fallback uses
-at most 256 already chart-admitted chronological forward prefixes, rejects
-dominated labels before making semantic chart queries, and never expands a
-destination label whose complete lineage failed replay. A complete graph route
-still receives an independent end-to-end replay before acceptance.
+fails independent replay is removed before graph seeding. Before graph
+fallback, at most 16 of the best frontier prefixes are independently replayed
+and no more than eight passing prefixes are admitted as seeds. The graph
+rejects dominated labels before making semantic chart queries and never
+expands a destination label whose complete lineage failed replay. A complete
+graph route still receives an independent end-to-end replay before acceptance.
 
 ## OpenCPN integration and safety
 
@@ -78,8 +82,9 @@ The existing progress dialog reports forward propagation, reverse recovery,
 time-dependent graph fallback and independent validation. Stop requests share
 an atomic cancellation token with the engine and wake any pending GRIB request.
 
-Weather samples are cached at 15-minute and approximately 0.001-degree keys.
-Only eight copied GRIB timeline frames are retained. Exact route-to-cursor
+Weather samples are cached at 15-minute and 0.01-degree keys, which remain
+finer than the 0.025-degree Irish Sea acceptance GRIB. Forty-eight copied GRIB
+timeline frames retain a rolling 12-hour working set. Exact route-to-cursor
 lineages are capped at 48 evenly distributed traces per layer to bound memory
 on long passages while keeping finer resolution than practical cursor
 selection.
@@ -108,17 +113,20 @@ The benchmark covers deterministic routing, independent replay and route
 construction without conflating live GRIB messaging or chart-cache warm-up.
 On the development machine used for this change, the synthetic Irish Sea
 scenario takes about 2.2 seconds per solve in an optimised build. Treat that
-number as a local
-baseline rather than a hardware-independent performance claim.
+number as a local baseline rather than a hardware-independent performance
+claim.
 
 For end-to-end GRIB and semantic chart testing, use the existing scenarios and
 instructions in [headless_scenarios.md](headless_scenarios.md).
-The chart-backed Holyhead--Dun Laoghaire acceptance run used the generated
-iGRIB forecast, S57/CM93 semantic service and Vulkan renderer. It completed by
-reverse recovery in 52 seconds, produced a 66.75 NM route with 23 legs, and
-passed dense independent chronological replay plus the final plotted-route
-semantic chart validation. This is a reproducible development-machine
-acceptance result, not a promised runtime on other hardware or forecasts.
+The chart-backed Holyhead--Dun Laoghaire acceptance run used the 26 July 2026
+iGRIB forecast, the Nicholson 35 conservative polar and the S57/CM93 semantic
+service. At a 27 July 10:00 UTC departure it completed with forward isochrones
+in 29.15 seconds of engine time, producing a 59.48 NM route with 21 legs. The
+hard Holyhead--Mouth of Lough Foyle case at the same departure completed by
+reverse recovery in 149.0 seconds, producing a 163.32 NM route with 27 legs.
+Both passed dense independent chronological replay and final plotted-route
+semantic chart validation. These are reproducible development-machine
+acceptance results, not promised runtimes on other hardware or forecasts.
 
 The exact pre-change source is tagged
 `rollback/pre-modern-native-engine-20260725` in the plugin repository.

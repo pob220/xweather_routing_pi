@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -91,6 +92,30 @@ public:
       double safetyMarginNm) const {
     (void)time;
     return segmentFromKnownSafeForbidden(start, end, safetyMarginNm);
+  }
+  // Independent chronological replay may need a stricter provider than the
+  // exploratory search. Hosts with expensive authoritative chart semantics
+  // can search against a conservative fast shoreline and override this hook
+  // to chart-check only complete route candidates. The default preserves
+  // identical search and validation semantics.
+  [[nodiscard]] virtual bool validationSegmentFromKnownSafeForbiddenAt(
+      GeoPoint start, GeoPoint end, TimePoint time,
+      double safetyMarginNm) const {
+    return segmentFromKnownSafeForbiddenAt(start, end, time, safetyMarginNm);
+  }
+  // Hosts whose authoritative safety data is serviced asynchronously may
+  // batch cache preparation for a complete candidate before chronological
+  // replay. This is a scheduling hook only; validation still checks every
+  // segment independently. The default is deliberately a no-op.
+  virtual void prepareValidationRoute(std::span<const RouteLeg>, double) const {
+  }
+  // A host may deliberately search with a cheaper shoreline and validate with
+  // a more detailed chart. If every bounded candidate fails that stricter
+  // replay, the host can request immediate escalation to its authoritative
+  // search mode instead of spending the remaining reverse/graph budget on the
+  // same approximate constraint model.
+  [[nodiscard]] virtual bool validationFailureRequiresSearchEscalation() const {
+    return false;
   }
   // Isochrone contours are an inspection aid, never accepted vessel motion.
   // Hosts may provide a cheaper shoreline-only test here so drawing fronts

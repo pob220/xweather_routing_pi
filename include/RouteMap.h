@@ -755,6 +755,10 @@ struct RouteMapConfiguration {
   // endpoint relaxation is confined to these zones; zero means disabled.
   double chart_safety_start_endpoint_reach_nm;
   double chart_safety_end_endpoint_reach_nm;
+  // Internal hint-only solve used solely to discover a chart prewarm
+  // footprint. It may use preview search limits, but can never be displayed or
+  // accepted as the final route.
+  bool chart_safety_scout_preview;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,

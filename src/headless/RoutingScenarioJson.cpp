@@ -59,10 +59,9 @@ void AddOptionalDouble(Json::Value& parent, const char* key, double value) {
 
 namespace weather_routing_headless {
 
-bool LoadRoutingScenarioJson(
-    const wxString& path,
-    weather_routing_engine::RoutingScenario& scenario,
-    wxString& error) {
+bool LoadRoutingScenarioJson(const wxString& path,
+                             weather_routing_engine::RoutingScenario& scenario,
+                             wxString& error) {
   std::ifstream input(path.mb_str());
   if (!input.good()) {
     error = wxString::Format("cannot open scenario file: %s", path);
@@ -72,9 +71,9 @@ bool LoadRoutingScenarioJson(
   Json::Value root;
   Json::Reader reader;
   if (!reader.parse(input, root, false) || !root.isObject()) {
-    error = wxString::Format("invalid scenario JSON in %s: %s", path,
-                             wxString::FromUTF8(
-                                 reader.getFormattedErrorMessages().c_str()));
+    error = wxString::Format(
+        "invalid scenario JSON in %s: %s", path,
+        wxString::FromUTF8(reader.getFormattedErrorMessages().c_str()));
     return false;
   }
 
@@ -111,8 +110,7 @@ bool LoadRoutingScenarioJson(
   const Json::Value& opt = root["departureOptimization"];
   if (opt.isObject()) {
     JsonBool(opt, "enabled", scenario.departureOptimization.enabled);
-    JsonInt(opt, "beforeMinutes",
-            scenario.departureOptimization.beforeMinutes);
+    JsonInt(opt, "beforeMinutes", scenario.departureOptimization.beforeMinutes);
     JsonInt(opt, "afterMinutes", scenario.departureOptimization.afterMinutes);
     JsonInt(opt, "stepMinutes", scenario.departureOptimization.stepMinutes);
     if (scenario.departureOptimization.stepMinutes <= 0)
@@ -121,10 +119,79 @@ bool LoadRoutingScenarioJson(
 
   const Json::Value& environment = root["environment"];
   if (environment.isObject()) {
+    bool use_grib = false;
+    if (JsonBool(environment, "useGrib", use_grib)) {
+      scenario.environment.useGrib = use_grib;
+      scenario.environment.hasUseGrib = true;
+    }
     bool use_currents = false;
     if (JsonBool(environment, "useCurrents", use_currents)) {
       scenario.environment.useCurrents = use_currents;
       scenario.environment.hasUseCurrents = true;
+    }
+  }
+
+  const Json::Value& route = root["route"];
+  if (route.isObject()) {
+    wxString boat_file = JsonString(route, "boatFile");
+    if (!boat_file.IsEmpty()) {
+      scenario.route.boatFile = boat_file;
+      scenario.route.hasBoatFile = true;
+    }
+    int int_value = 0;
+    double double_value = 0.0;
+    bool bool_value = false;
+    if (JsonInt(route, "timeStepSeconds", int_value)) {
+      scenario.route.timeStepSeconds = int_value;
+      scenario.route.hasTimeStepSeconds = true;
+    }
+    if (JsonDouble(route, "headingFromDegrees", double_value)) {
+      scenario.route.headingFromDegrees = double_value;
+      scenario.route.hasHeadingFromDegrees = true;
+    }
+    if (JsonDouble(route, "headingToDegrees", double_value)) {
+      scenario.route.headingToDegrees = double_value;
+      scenario.route.hasHeadingToDegrees = true;
+    }
+    if (JsonDouble(route, "headingStepDegrees", double_value)) {
+      scenario.route.headingStepDegrees = double_value;
+      scenario.route.hasHeadingStepDegrees = true;
+    }
+    if (JsonDouble(route, "maxTrueWindKnots", double_value)) {
+      scenario.route.maxTrueWindKnots = double_value;
+      scenario.route.hasMaxTrueWindKnots = true;
+    }
+    if (JsonDouble(route, "maxApparentWindKnots", double_value)) {
+      scenario.route.maxApparentWindKnots = double_value;
+      scenario.route.hasMaxApparentWindKnots = true;
+    }
+    if (JsonBool(route, "optimizeTacking", bool_value)) {
+      scenario.route.optimizeTacking = bool_value;
+      scenario.route.hasOptimizeTacking = true;
+    }
+    if (JsonDouble(route, "upwindEfficiency", double_value)) {
+      scenario.route.upwindEfficiency = double_value;
+      scenario.route.hasUpwindEfficiency = true;
+    }
+    if (JsonDouble(route, "downwindEfficiency", double_value)) {
+      scenario.route.downwindEfficiency = double_value;
+      scenario.route.hasDownwindEfficiency = true;
+    }
+    if (JsonDouble(route, "nightEfficiency", double_value)) {
+      scenario.route.nightEfficiency = double_value;
+      scenario.route.hasNightEfficiency = true;
+    }
+    if (JsonBool(route, "useMotor", bool_value)) {
+      scenario.route.useMotor = bool_value;
+      scenario.route.hasUseMotor = true;
+    }
+    if (JsonDouble(route, "motorSpeedThresholdKnots", double_value)) {
+      scenario.route.motorSpeedThresholdKnots = double_value;
+      scenario.route.hasMotorSpeedThresholdKnots = true;
+    }
+    if (JsonDouble(route, "motorSpeedKnots", double_value)) {
+      scenario.route.motorSpeedKnots = double_value;
+      scenario.route.hasMotorSpeedKnots = true;
     }
   }
 
@@ -196,10 +263,9 @@ bool LoadRoutingScenarioJson(
   return true;
 }
 
-bool SaveRoutingResultJson(
-    const wxString& path,
-    const weather_routing_engine::RoutingResult& result,
-    wxString& error) {
+bool SaveRoutingResultJson(const wxString& path,
+                           const weather_routing_engine::RoutingResult& result,
+                           wxString& error) {
   Json::Value root;
   root["schemaVersion"] = result.schemaVersion;
   root["scenario"] = result.scenario.ToUTF8().data();
@@ -225,8 +291,7 @@ bool SaveRoutingResultJson(
     if (!candidate.reverseRecoveryStatus.IsEmpty())
       value["reverseRecoveryStatus"] =
           candidate.reverseRecoveryStatus.ToUTF8().data();
-    AddOptionalLong(value, "reverseLayersBuilt",
-                    candidate.reverseLayersBuilt);
+    AddOptionalLong(value, "reverseLayersBuilt", candidate.reverseLayersBuilt);
     AddOptionalLong(value, "reverseNodesGenerated",
                     candidate.reverseNodesGenerated);
     AddOptionalLong(value, "reverseNodesFeasible",
@@ -238,20 +303,22 @@ bool SaveRoutingResultJson(
     if (!candidate.reverseFailureReason.IsEmpty())
       value["reverseFailureReason"] =
           candidate.reverseFailureReason.ToUTF8().data();
-    value["reverseFinalValidationPass"] =
-        candidate.reverseFinalValidationPass;
+    value["reverseFinalValidationPass"] = candidate.reverseFinalValidationPass;
     candidates.append(value);
   }
   root["candidates"] = candidates;
 
   Json::Value diagnostics(Json::objectValue);
-  AddOptionalLong(diagnostics, "generatedMoves", result.diagnostics.generatedMoves);
-  AddOptionalLong(diagnostics, "acceptedMoves", result.diagnostics.acceptedMoves);
+  AddOptionalLong(diagnostics, "generatedMoves",
+                  result.diagnostics.generatedMoves);
+  AddOptionalLong(diagnostics, "acceptedMoves",
+                  result.diagnostics.acceptedMoves);
   AddOptionalLong(diagnostics, "chartLandRejections",
                   result.diagnostics.chartLandRejections);
   AddOptionalLong(diagnostics, "missingSafetyTiles",
                   result.diagnostics.missingSafetyTiles);
-  AddOptionalLong(diagnostics, "fineTilesBuilt", result.diagnostics.fineTilesBuilt);
+  AddOptionalLong(diagnostics, "fineTilesBuilt",
+                  result.diagnostics.fineTilesBuilt);
   AddOptionalLong(diagnostics, "persistentCacheHits",
                   result.diagnostics.persistentCacheHits);
   AddOptionalLong(diagnostics, "chartApiCallsFromWorkers",

@@ -97,10 +97,9 @@ std::shared_ptr<OpenCpnSharedWeatherCache> SharedWeatherCacheFor(
 
   const std::string key =
       (configuration.DepartureTimeOptimizationGroupId +
-       wxString::Format(":grib%d:currents%d:climatology%d",
-                        configuration.UseGrib ? 1 : 0,
-                        configuration.Currents ? 1 : 0,
-                        configuration.ClimatologyType))
+       wxString::Format(
+           ":grib%d:currents%d:climatology%d", configuration.UseGrib ? 1 : 0,
+           configuration.Currents ? 1 : 0, configuration.ClimatologyType))
           .ToStdString();
   static std::mutex registryMutex;
   static std::map<std::string, std::shared_ptr<OpenCpnSharedWeatherCache> >
@@ -203,7 +202,33 @@ public:
     return "OpenCPN GRIB/climatology timeline";
   }
 
+  struct CacheDiagnostics {
+    std::uint64_t calls{};
+    std::uint64_t immediateHits{};
+    std::uint64_t localHits{};
+    std::uint64_t sharedHits{};
+    std::uint64_t misses{};
+    std::uint64_t waits{};
+    std::uint64_t interpolationMicroseconds{};
+  };
+
+  CacheDiagnostics cacheDiagnostics() const {
+    return {cacheCalls_,
+            cacheImmediateHits_,
+            cacheLocalHits_,
+            cacheHits_,
+            cacheMisses_,
+            cacheWaits_,
+            cacheInterpolationMicroseconds_};
+  }
+
 private:
+  struct LocalCacheSlot {
+    bool valid{};
+    OpenCpnWeatherCacheKey key{};
+    OpenCpnSample sample{};
+  };
+
   static wr::EnvironmentalSourceMetadata metadata(
       wr::EnvironmentalSource source, wr::TimePoint time) {
     return {
@@ -212,14 +237,17 @@ private:
   }
 
   OpenCpnSample load(wr::GeoPoint position, wr::TimePoint requested) const {
+    ++cacheCalls_;
     // Fifteen-minute weather slices match final validation and avoid a full
     // copied GRIB grid for every sub-second timestamp encountered by graph
-    // labels.  A 0.005-degree spatial key is roughly 0.18 NM east/west in the
-    // Irish Sea and 0.30 NM north/south: materially finer than both common
-    // forecast grids and the final validation spacing, while allowing nearby
-    // heading candidates to share the same interpolation result.
+    // labels. A 0.01-degree spatial key is roughly 0.36 NM east/west in the
+    // Irish Sea and 0.60 NM north/south. This is still 2.5 times finer in each
+    // dimension than the 0.025-degree high-resolution Irish Sea fixture (and
+    // materially finer than common forecast grids), while avoiding hundreds
+    // of thousands of distinct sub-grid interpolations which contain no new
+    // forecast information.
     constexpr std::int64_t kSliceSeconds = 15 * 60;
-    constexpr double kSpatialSlicesPerDegree = 200.0;
+    constexpr double kSpatialSlicesPerDegree = 100.0;
     const auto seconds = requested.time_since_epoch().count();
     const auto quantizedSeconds =
         ((seconds + kSliceSeconds / 2) / kSliceSeconds) * kSliceSeconds;
@@ -229,20 +257,65 @@ private:
             std::llround(position.latitude * kSpatialSlicesPerDegree)),
         static_cast<int>(
             std::llround(position.longitude * kSpatialSlicesPerDegree))};
+    // Environment resolution requests wind, current and waves consecutively
+    // for the same quantised point/time. Each route owns its provider, so this
+    // single-entry hot cache removes two mutex/hash lookups per snapshot
+    // without changing the shared cache key or any interpolated value.
+    if (lastSampleValid_ && lastSampleKey_ == key) {
+      ++cacheImmediateHits_;
+      return lastSample_;
+    }
+    // Search frontiers revisit nearby canonical weather buckets frequently.
+    // Keep a small route-local direct-mapped cache in front of the shared
+    // departure-family cache so parallel candidates do not serialize millions
+    // of read-only hits on the shared mutex. A collision only loses a cache
+    // entry; it cannot change the canonical value returned.
+    const std::size_t localIndex =
+        OpenCpnWeatherCacheKeyHash{}(key) & (localCache_.size() - 1U);
+    LocalCacheSlot& local = localCache_[localIndex];
+    if (local.valid && local.key == key) {
+      ++cacheLocalHits_;
+      lastSampleKey_ = key;
+      lastSample_ = local.sample;
+      lastSampleValid_ = true;
+      return local.sample;
+    }
     {
       std::unique_lock<std::mutex> lock(sharedCache_->mutex);
       for (;;) {
         const auto found = sharedCache_->samples.find(key);
-        if (found != sharedCache_->samples.end()) return found->second;
-        if (sharedCache_->inFlight.insert(key).second) break;
+        if (found != sharedCache_->samples.end()) {
+          ++cacheHits_;
+          local.valid = true;
+          local.key = key;
+          local.sample = found->second;
+          lastSampleKey_ = key;
+          lastSample_ = found->second;
+          lastSampleValid_ = true;
+          return found->second;
+        }
+        if (sharedCache_->inFlight.insert(key).second) {
+          ++cacheMisses_;
+          break;
+        }
+        ++cacheWaits_;
         sharedCache_->ready.wait(lock);
       }
     }
+    const auto interpolationStarted = std::chrono::steady_clock::now();
     const auto publish = [&](const OpenCpnSample& sample) {
+      cacheInterpolationMicroseconds_ +=
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - interpolationStarted)
+              .count();
       {
         std::lock_guard<std::mutex> lock(sharedCache_->mutex);
-        if (sharedCache_->samples.size() >= 150000) {
-          size_t erase = 15000;
+        // A full-quality Irish Sea route can legitimately touch more than
+        // 150k fine weather keys. Retaining the working set avoids repeatedly
+        // interpolating evicted points; 500k entries remains a bounded cache
+        // (roughly tens of MiB for this compact sample).
+        if (sharedCache_->samples.size() >= 500000) {
+          size_t erase = 50000;
           for (auto it = sharedCache_->samples.begin();
                it != sharedCache_->samples.end() && erase > 0;) {
             it = sharedCache_->samples.erase(it);
@@ -253,10 +326,22 @@ private:
         sharedCache_->inFlight.erase(key);
       }
       sharedCache_->ready.notify_all();
+      local.valid = true;
+      local.key = key;
+      local.sample = sample;
+      lastSampleKey_ = key;
+      lastSample_ = sample;
+      lastSampleValid_ = true;
       return sample;
     };
 
     const wr::TimePoint sampleTime{wr::Duration{quantizedSeconds}};
+    // Interpolate at the key's canonical centre, not whichever fine-grained
+    // search state happens to populate the bucket first. This makes shared
+    // and retained-cache results independent of traversal, thread scheduling
+    // and eviction order.
+    const wr::GeoPoint samplePosition{key.latitude / kSpatialSlicesPerDegree,
+                                      key.longitude / kSpatialSlicesPerDegree};
     RouteMapConfiguration configuration = configuration_;
     configuration.time = ToWx(sampleTime);
     configuration.grib = nullptr;
@@ -272,7 +357,7 @@ private:
       }
     }
 
-    RoutePoint point(position.latitude, position.longitude);
+    RoutePoint point(samplePosition.latitude, samplePosition.longitude);
     OpenCpnSample sample;
     sample.sampleTime = sampleTime;
     climatology_wind_atlas atlas{};
@@ -282,11 +367,11 @@ private:
         sample.currentSpeed, atlas, sample.dataMask);
     if (sample.available) {
       sample.waveHeight = WeatherDataProvider::GetSwell(
-          configuration, position.latitude, position.longitude);
+          configuration, samplePosition.latitude, samplePosition.longitude);
       sample.waveDirection = WeatherDataProvider::GetWaveDirection(
-          configuration, position.latitude, position.longitude);
+          configuration, samplePosition.latitude, samplePosition.longitude);
       sample.wavePeriod = WeatherDataProvider::GetWavePeriod(
-          configuration, position.latitude, position.longitude);
+          configuration, samplePosition.latitude, samplePosition.longitude);
     }
     return publish(sample);
   }
@@ -294,6 +379,18 @@ private:
   RouteMapOverlay& overlay_;
   RouteMapConfiguration configuration_;
   std::shared_ptr<OpenCpnSharedWeatherCache> sharedCache_;
+  mutable std::uint64_t cacheCalls_{};
+  mutable std::uint64_t cacheImmediateHits_{};
+  mutable std::uint64_t cacheLocalHits_{};
+  mutable std::uint64_t cacheHits_{};
+  mutable std::uint64_t cacheMisses_{};
+  mutable std::uint64_t cacheWaits_{};
+  mutable std::uint64_t cacheInterpolationMicroseconds_{};
+  mutable bool lastSampleValid_{};
+  mutable OpenCpnWeatherCacheKey lastSampleKey_{};
+  mutable OpenCpnSample lastSample_{};
+  // Power-of-two size is required by the inexpensive mask in load().
+  mutable std::vector<LocalCacheSlot> localCache_{32768U};
 };
 
 class OpenCpnPerformanceModel final : public wr::VesselPerformanceModel {
@@ -439,9 +536,68 @@ public:
 
   bool segmentForbiddenAt(wr::GeoPoint start, wr::GeoPoint end,
                           wr::TimePoint time, double margin) const override {
+    // Speculative forward/reverse/graph edges use the fast shoreline. Every
+    // deliverable candidate is batch-prepared and independently replayed
+    // against authoritative OpenCPN charts below; a rejection can then invoke
+    // full chart-aware propagation. Chart-checking exploratory endpoint fans
+    // here repeats the expensive raster work for paths which are never
+    // candidates.
+    return segmentForbiddenAtImpl(start, end, time, margin,
+                                  configuration_.UseChartSafetyForPropagation);
+  }
+
+  bool validationSegmentFromKnownSafeForbiddenAt(wr::GeoPoint start,
+                                                 wr::GeoPoint end,
+                                                 wr::TimePoint time,
+                                                 double margin) const override {
+    // Scouts only describe/prewarm a corridor and are never deliverable
+    // routes. All production candidates, including those found with the fast
+    // shoreline search, are replayed against authoritative OpenCPN charts.
+    return segmentForbiddenAtImpl(start, end, time, margin,
+                                  !configuration_.chart_safety_scout_preview);
+  }
+
+  void prepareValidationRoute(std::span<const wr::RouteLeg> legs,
+                              double margin) const override {
+    if (configuration_.chart_safety_scout_preview || legs.empty()) return;
+
+    constexpr unsigned kMaximumPreparationRounds = 64;
+    unsigned rounds = 0;
+    unsigned missing = 0;
+    for (; rounds < kMaximumPreparationRounds; ++rounds) {
+      RouteMapConfiguration configuration = configuration_;
+      configuration.UseChartSafetyForPropagation = true;
+      configuration.SafetyMarginLand = std::max(0.0, margin);
+      configuration.chart_safety_missing_tile_rejections = 0;
+      for (const auto& leg : legs) {
+        configuration.time = ToWx(leg.startTime);
+        const double bearing = wr::initialBearingDegrees(leg.start, leg.end);
+        (void)ConstraintChecker::CheckLandConstraint(
+            configuration, leg.start.latitude, leg.start.longitude,
+            leg.end.latitude, leg.end.longitude, bearing);
+      }
+      missing = configuration.chart_safety_missing_tile_rejections;
+      if (missing == 0) break;
+      if (!overlay_.AwaitChartSafetyData()) break;
+    }
+    wxLogMessage(
+        "WR_VALIDATION_TILE_BATCH route=\"%s -> %s\" legs=%lu rounds=%u "
+        "remaining_missing=%u authoritative_chart=1",
+        configuration_.Start, configuration_.End,
+        static_cast<unsigned long>(legs.size()), rounds + 1, missing);
+  }
+
+  bool validationFailureRequiresSearchEscalation() const override {
+    return !configuration_.UseChartSafetyForPropagation;
+  }
+
+private:
+  bool segmentForbiddenAtImpl(wr::GeoPoint start, wr::GeoPoint end,
+                              wr::TimePoint time, double margin,
+                              bool authoritativeChart) const {
     RouteMapConfiguration configuration = configuration_;
     configuration.time = ToWx(time);
-    configuration.UseChartSafetyForPropagation = true;
+    configuration.UseChartSafetyForPropagation = authoritativeChart;
     configuration.SafetyMarginLand = std::max(0.0, margin);
     if (!ConstraintChecker::CheckMaxCourseAngleConstraint(
             configuration, end.latitude, end.longitude) ||
@@ -455,7 +611,9 @@ public:
     if (configuration.chart_safety_missing_tile_rejections > 0) {
       if (!overlay_.AwaitChartSafetyData()) return true;
       configuration = configuration_;
-      configuration.UseChartSafetyForPropagation = true;
+      configuration.time = ToWx(time);
+      configuration.UseChartSafetyForPropagation = authoritativeChart;
+      configuration.SafetyMarginLand = std::max(0.0, margin);
       safe = ConstraintChecker::CheckLandConstraint(
           configuration, start.latitude, start.longitude, end.latitude,
           end.longitude, bearing);
@@ -471,6 +629,7 @@ public:
         end.longitude);
   }
 
+public:
   bool segmentFromKnownSafeForbidden(wr::GeoPoint start, wr::GeoPoint end,
                                      double margin) const override {
     return segmentForbidden(start, end, margin);
@@ -499,8 +658,42 @@ public:
     return false;
   }
 
-  double distanceToForbiddenNm(wr::GeoPoint) const override {
-    return std::numeric_limits<double>::infinity();
+  double distanceToForbiddenNm(wr::GeoPoint point) const override {
+    // The validator only needs to distinguish a point which is already clear
+    // of the configured stand-off from one inside that buffer. A zero-length
+    // OpenCPN chord has no raster samples and therefore cannot prove this.
+    // Tiny radial spokes do exercise the authoritative route mask while
+    // remaining much smaller than both the safety margin and a retained route
+    // state. While inside the buffer, dense replay uses zero-margin chart
+    // checks and may switch back to the full margin only after these probes
+    // clear.
+    auto pointClearAtConfiguredMargin = [&]() {
+      RouteMapConfiguration configuration = configuration_;
+      configuration.time = configuration.StartTime;
+      configuration.UseChartSafetyForPropagation = true;
+      configuration.SafetyMarginLand =
+          std::max(0.0, configuration_.SafetyMarginLand);
+      configuration.chart_safety_missing_tile_rejections = 0;
+      bool clear = true;
+      constexpr double kProbeLengthNm = 0.02;
+      for (double bearing = 0.0; bearing < 360.0; bearing += 45.0) {
+        const wr::GeoPoint end =
+            wr::destinationPoint(point, bearing, kProbeLengthNm);
+        if (!ConstraintChecker::CheckLandConstraint(
+                configuration, point.latitude, point.longitude, end.latitude,
+                end.longitude, bearing)) {
+          clear = false;
+          break;
+        }
+      }
+      return std::pair{clear,
+                       configuration.chart_safety_missing_tile_rejections};
+    };
+
+    auto [clear, missing] = pointClearAtConfiguredMargin();
+    if (missing > 0 && overlay_.AwaitChartSafetyData())
+      std::tie(clear, missing) = pointClearAtConfiguredMargin();
+    return clear ? std::numeric_limits<double>::infinity() : 0.0;
   }
   std::string identity() const override {
     return "OpenCPN chart semantics, GSHHS fallback and exclusion boundaries";
@@ -563,7 +756,8 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
       wr::distanceNm(request.start, request.destination);
   wxString previewValue;
   const bool preview =
-      wxGetEnv("WR_ROUTING_PREVIEW", &previewValue) && previewValue != "0";
+      configuration.chart_safety_scout_preview ||
+      (wxGetEnv("WR_ROUTING_PREVIEW", &previewValue) && previewValue != "0");
   const weather_routing::RoutingQualityPolicy quality =
       weather_routing::SelectRoutingQualityPolicy(
           preview, configuration.ByDegrees,
@@ -648,6 +842,8 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
   const wr::RoutingRequest request = BuildRequest(overlay, configuration);
   wr::RoutingEngine engine;
   const wr::RoutingResult result = engine.route(request, environment);
+  const OpenCpnWeatherProvider::CacheDiagnostics weatherCache =
+      weather->cacheDiagnostics();
   const auto elapsedMilliseconds =
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - started)
@@ -672,6 +868,19 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       static_cast<unsigned long long>(result.diagnostics.constraintRejections),
       static_cast<unsigned long long>(result.diagnostics.validationSamples),
       result.diagnostics.closestApproachNm);
+  wxLogMessage(
+      "WR_MODERN_WEATHER_CACHE route=\"%s -> %s\" calls=%llu "
+      "immediate_hits=%llu local_hits=%llu shared_hits=%llu misses=%llu "
+      "waits=%llu "
+      "interpolation_us=%llu",
+      configuration.Start, configuration.End,
+      static_cast<unsigned long long>(weatherCache.calls),
+      static_cast<unsigned long long>(weatherCache.immediateHits),
+      static_cast<unsigned long long>(weatherCache.localHits),
+      static_cast<unsigned long long>(weatherCache.sharedHits),
+      static_cast<unsigned long long>(weatherCache.misses),
+      static_cast<unsigned long long>(weatherCache.waits),
+      static_cast<unsigned long long>(weatherCache.interpolationMicroseconds));
   for (const auto& reason : result.diagnostics.stageStopReasons)
     wxLogMessage("WR_MODERN_NATIVE_STAGE route=\"%s -> %s\" %s",
                  configuration.Start, configuration.End,

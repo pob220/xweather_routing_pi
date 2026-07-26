@@ -26,6 +26,10 @@ public:
       const RoutingRequest& request, const RoutingEnvironment& environment,
       const VesselPerformanceModel& performance, std::span<const RouteLeg> legs,
       RoutingDiagnostics* diagnostics = nullptr) const;
+  RouteValidationResult validatePrefix(
+      const RoutingRequest& request, const RoutingEnvironment& environment,
+      const VesselPerformanceModel& performance, std::span<const RouteLeg> legs,
+      RoutingDiagnostics* diagnostics = nullptr) const;
 };
 
 class RoutingEngine {

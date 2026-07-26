@@ -213,7 +213,8 @@ RouteMapConfiguration::RouteMapConfiguration()
       chart_safety_missing_tile_min_lon(NAN),
       chart_safety_missing_tile_max_lon(NAN),
       chart_safety_start_endpoint_reach_nm(0.0),
-      chart_safety_end_endpoint_reach_nm(0.0) {}
+      chart_safety_end_endpoint_reach_nm(0.0),
+      chart_safety_scout_preview(false) {}
 
 double RouteMapConfiguration::GetBoatLat() {
   if (s_plugin_instance) return s_plugin_instance->m_boat_lat;
@@ -367,7 +368,12 @@ void RouteMap::PublishTimelineFrame(const Shared_GribRecordSet& frame) {
     m_GribTimelineCondition.notify_all();
     return;
   }
-  constexpr std::size_t kMaximumRetainedTimelineFrames = 8;
+  // Native forward refinements revisit the same passage chronology. Eight
+  // quarter-hour frames cover only two hours, causing a typical day passage
+  // to evict and rebuild interpolated GRIB frames repeatedly. Twelve hours is
+  // a bounded working set which covers ordinary coastal routes while the LRU
+  // still caps memory for longer searches.
+  constexpr std::size_t kMaximumRetainedTimelineFrames = 48;
   const auto key = m_PendingGribTimelineKey;
   m_GribTimelineFrames[key] = frame;
   m_GribTimelineLru.erase(

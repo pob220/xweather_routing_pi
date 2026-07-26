@@ -36,8 +36,9 @@ services as the GUI path. It assumes:
 - chart-backed safety uses OpenCPN core/plugin APIs, not plugin-side chart
   parsing.
 
-The scenario file does not currently name a GRIB file or polar file. Those are
-still supplied by the existing OpenCPN/Weather Routing configuration.
+The scenario can name a boat/polar file through `route.boatFile`. GRIB data is
+still supplied by the existing OpenCPN/Weather Routing configuration or the
+headless GRIB override below.
 
 For repeatable integration tests, `WR_HEADLESS_GRIB_FILE` can name an existing
 GRIB file. The runner asks the GRIB plugin to open it through the plugin's
@@ -125,6 +126,16 @@ The first milestone supports:
 - `departureOptimization.afterMinutes`
 - `departureOptimization.stepMinutes`
 - `environment.useCurrents`
+- `environment.useGrib`
+- `route.boatFile` (`~/` is expanded using the current user's home)
+- `route.timeStepSeconds`
+- `route.headingFromDegrees`, `route.headingToDegrees`,
+  `route.headingStepDegrees`
+- `route.maxTrueWindKnots`, `route.maxApparentWindKnots`
+- `route.optimizeTacking`, `route.upwindEfficiency`,
+  `route.downwindEfficiency`, `route.nightEfficiency`
+- `route.useMotor`, `route.motorSpeedThresholdKnots`,
+  `route.motorSpeedKnots`
 - `safety.mode`: `none`, `gshhs`, or `chart`
 - `safety.enforce`
 - `safety.landMarginNm`
