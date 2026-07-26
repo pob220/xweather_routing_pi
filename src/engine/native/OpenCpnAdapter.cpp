@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <limits>
 #include <map>
 #include <memory>
@@ -16,11 +17,13 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "ConstraintChecker.h"
 #include "RouteMapOverlay.h"
+#include "RoutingQualityPolicy.h"
 #include "SunCalculator.h"
 #include "WeatherDataProvider.h"
 #include "supercpn/weather_routing/Engine.h"
@@ -58,11 +61,72 @@ struct OpenCpnSample {
   wr::TimePoint sampleTime{};
 };
 
+struct OpenCpnWeatherCacheKey {
+  std::int64_t time{};
+  int latitude{};
+  int longitude{};
+  bool operator==(const OpenCpnWeatherCacheKey&) const = default;
+};
+
+struct OpenCpnWeatherCacheKeyHash {
+  std::size_t operator()(const OpenCpnWeatherCacheKey& key) const noexcept {
+    std::size_t value = std::hash<std::int64_t>{}(key.time);
+    value ^= std::hash<int>{}(key.latitude) + 0x9e3779b9U + (value << 6U) +
+             (value >> 2U);
+    value ^= std::hash<int>{}(key.longitude) + 0x9e3779b9U + (value << 6U) +
+             (value >> 2U);
+    return value;
+  }
+};
+
+struct OpenCpnSharedWeatherCache {
+  std::mutex mutex;
+  std::condition_variable ready;
+  std::unordered_map<OpenCpnWeatherCacheKey, OpenCpnSample,
+                     OpenCpnWeatherCacheKeyHash>
+      samples;
+  std::unordered_set<OpenCpnWeatherCacheKey, OpenCpnWeatherCacheKeyHash>
+      inFlight;
+};
+
+std::shared_ptr<OpenCpnSharedWeatherCache> SharedWeatherCacheFor(
+    const RouteMapConfiguration& configuration) {
+  if (!configuration.DepartureTimeOptimizationCandidate ||
+      configuration.DepartureTimeOptimizationGroupId.IsEmpty())
+    return std::make_shared<OpenCpnSharedWeatherCache>();
+
+  const std::string key =
+      (configuration.DepartureTimeOptimizationGroupId +
+       wxString::Format(":grib%d:currents%d:climatology%d",
+                        configuration.UseGrib ? 1 : 0,
+                        configuration.Currents ? 1 : 0,
+                        configuration.ClimatologyType))
+          .ToStdString();
+  static std::mutex registryMutex;
+  static std::map<std::string, std::shared_ptr<OpenCpnSharedWeatherCache> >
+      registry;
+  std::lock_guard<std::mutex> lock(registryMutex);
+  const auto found = registry.find(key);
+  if (found != registry.end()) return found->second;
+
+  // Keep completed slices alive across bounded candidate batches.  A weak
+  // registry loses the cache if one batch finishes before the next begins.
+  constexpr std::size_t kRetainedDepartureGroups = 2;
+  if (registry.size() >= kRetainedDepartureGroups)
+    registry.erase(registry.begin());
+  std::shared_ptr<OpenCpnSharedWeatherCache> cache =
+      std::make_shared<OpenCpnSharedWeatherCache>();
+  registry[key] = cache;
+  return cache;
+}
+
 class OpenCpnWeatherProvider final : public wr::WeatherProvider {
 public:
   OpenCpnWeatherProvider(RouteMapOverlay& overlay,
                          RouteMapConfiguration configuration)
-      : overlay_(overlay), configuration_(std::move(configuration)) {}
+      : overlay_(overlay),
+        configuration_(std::move(configuration)),
+        sharedCache_(SharedWeatherCacheFor(configuration_)) {}
 
   wr::ParameterCoverage windCoverage() const override {
     return {configuration_.UseGrib || configuration_.ClimatologyType >
@@ -140,23 +204,6 @@ public:
   }
 
 private:
-  struct CacheKey {
-    std::int64_t time{};
-    int latitude{};
-    int longitude{};
-    bool operator==(const CacheKey&) const = default;
-  };
-  struct CacheKeyHash {
-    std::size_t operator()(const CacheKey& key) const noexcept {
-      std::size_t value = std::hash<std::int64_t>{}(key.time);
-      value ^= std::hash<int>{}(key.latitude) + 0x9e3779b9U + (value << 6U) +
-               (value >> 2U);
-      value ^= std::hash<int>{}(key.longitude) + 0x9e3779b9U + (value << 6U) +
-               (value >> 2U);
-      return value;
-    }
-  };
-
   static wr::EnvironmentalSourceMetadata metadata(
       wr::EnvironmentalSource source, wr::TimePoint time) {
     return {
@@ -176,16 +223,38 @@ private:
     const auto seconds = requested.time_since_epoch().count();
     const auto quantizedSeconds =
         ((seconds + kSliceSeconds / 2) / kSliceSeconds) * kSliceSeconds;
-    const CacheKey key{quantizedSeconds,
-                       static_cast<int>(std::llround(position.latitude *
-                                                     kSpatialSlicesPerDegree)),
-                       static_cast<int>(std::llround(position.longitude *
-                                                     kSpatialSlicesPerDegree))};
+    const OpenCpnWeatherCacheKey key{
+        quantizedSeconds,
+        static_cast<int>(
+            std::llround(position.latitude * kSpatialSlicesPerDegree)),
+        static_cast<int>(
+            std::llround(position.longitude * kSpatialSlicesPerDegree))};
     {
-      std::lock_guard<std::mutex> lock(cacheMutex_);
-      const auto found = cache_.find(key);
-      if (found != cache_.end()) return found->second;
+      std::unique_lock<std::mutex> lock(sharedCache_->mutex);
+      for (;;) {
+        const auto found = sharedCache_->samples.find(key);
+        if (found != sharedCache_->samples.end()) return found->second;
+        if (sharedCache_->inFlight.insert(key).second) break;
+        sharedCache_->ready.wait(lock);
+      }
     }
+    const auto publish = [&](const OpenCpnSample& sample) {
+      {
+        std::lock_guard<std::mutex> lock(sharedCache_->mutex);
+        if (sharedCache_->samples.size() >= 150000) {
+          size_t erase = 15000;
+          for (auto it = sharedCache_->samples.begin();
+               it != sharedCache_->samples.end() && erase > 0;) {
+            it = sharedCache_->samples.erase(it);
+            --erase;
+          }
+        }
+        sharedCache_->samples.emplace(key, sample);
+        sharedCache_->inFlight.erase(key);
+      }
+      sharedCache_->ready.notify_all();
+      return sample;
+    };
 
     const wr::TimePoint sampleTime{wr::Duration{quantizedSeconds}};
     RouteMapConfiguration configuration = configuration_;
@@ -197,7 +266,7 @@ private:
       if (!overlay_.AcquireGribTimelineFrame(configuration.time, frame)) {
         if (configuration.ClimatologyType <=
             RouteMapConfiguration::CURRENTS_ONLY)
-          return {};
+          return publish({});
       } else {
         configuration.grib = frame.GetGribRecordSet();
       }
@@ -219,18 +288,12 @@ private:
       sample.wavePeriod = WeatherDataProvider::GetWavePeriod(
           configuration, position.latitude, position.longitude);
     }
-    {
-      std::lock_guard<std::mutex> lock(cacheMutex_);
-      if (cache_.size() >= 100000) cache_.clear();
-      cache_.emplace(key, sample);
-    }
-    return sample;
+    return publish(sample);
   }
 
   RouteMapOverlay& overlay_;
   RouteMapConfiguration configuration_;
-  mutable std::mutex cacheMutex_;
-  mutable std::unordered_map<CacheKey, OpenCpnSample, CacheKeyHash> cache_;
+  std::shared_ptr<OpenCpnSharedWeatherCache> sharedCache_;
 };
 
 class OpenCpnPerformanceModel final : public wr::VesselPerformanceModel {
@@ -498,15 +561,19 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
 
   const double routeDistance =
       wr::distanceNm(request.start, request.destination);
-  std::int64_t baseStep = std::max<std::int64_t>(
-      15 * 60,
-      static_cast<std::int64_t>(std::llround(configuration.DeltaTime)));
-  request.options.timeStep = wr::Duration{baseStep};
+  wxString previewValue;
+  const bool preview =
+      wxGetEnv("WR_ROUTING_PREVIEW", &previewValue) && previewValue != "0";
+  const weather_routing::RoutingQualityPolicy quality =
+      weather_routing::SelectRoutingQualityPolicy(
+          preview, configuration.ByDegrees,
+          static_cast<std::int64_t>(std::llround(configuration.DeltaTime)));
+  const std::int64_t baseStep = quality.time_step_seconds;
+  request.options.timeStep = wr::Duration{quality.time_step_seconds};
   request.options.minimumTimeStep = wr::Duration{10 * 60};
-  request.options.headingStepDegrees =
-      std::clamp(configuration.ByDegrees, 5.0, 20.0);
+  request.options.headingStepDegrees = quality.heading_step_degrees;
   request.options.refinedHeadingStepDegrees =
-      std::clamp(configuration.ByDegrees / 2.0, 2.5, 7.5);
+      quality.refined_heading_step_degrees;
   request.options.maximumSearchAngleDegrees = configuration.MaxSearchAngle;
   request.options.destinationToleranceNm = 0.35;
   const double nominalDistance =
@@ -514,11 +581,14 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
                         ? configuration.MotorSpeed * baseStep / 10800.0
                         : baseStep / 1800.0);
   request.options.spatialCellNm = std::clamp(nominalDistance, 1.0, 5.0);
-  request.options.labelsPerCell = 10;
+  request.options.labelsPerCell = quality.labels_per_cell;
+  request.options.adaptiveTimeStep = true;
+  request.options.adaptiveHeadings = true;
+  request.options.adaptiveFrontierDensity = true;
   request.options.useReverseRecovery =
       configuration.UseReverseReachabilityRecovery;
   request.options.useGraphFallback = true;
-  request.options.retryStages = 7;
+  request.options.retryStages = quality.retry_stages;
   request.options.reverseLayers = static_cast<unsigned>(
       std::max(8, configuration.ReverseReachabilitySearchBackIsochrones));
   request.options.reverseHorizon = wr::Duration{static_cast<std::int64_t>(
@@ -530,6 +600,7 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   // With currents enabled there is no declared upper bound on favourable COG,
   // so zero deliberately selects Dijkstra instead of an inadmissible A* bound.
   request.options.heuristicMaximumSpeedKnots = 0.0;
+  request.options.preserveRouteFamilies = quality.preserve_route_families;
 
   const double scale = std::clamp(routeDistance / 100.0, 0.6, 4.0);
   request.limits.maximumGeneratedStates =

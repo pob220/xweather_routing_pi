@@ -246,6 +246,9 @@ SET (HDRS
             include/Boat.h
             include/RouteMap.h
             include/RouteMapOverlay.h
+            include/DepartureScheduler.h
+            include/RoutingQualityPolicy.h
+            include/RoutingFootprint.h
             include/RouteWaypointExtractor.h
             include/RoutingTablePanel.h
             include/Utilities.h

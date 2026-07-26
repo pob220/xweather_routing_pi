@@ -40,6 +40,9 @@ set(TEST_SRC
     StabilityCorridor_tests.cpp
     StabilityCorridorLifecycle_tests.cpp
     RoutingScenarioJson_tests.cpp
+    DepartureScheduler_tests.cpp
+    RoutingQualityPolicy_tests.cpp
+    RoutingFootprint_tests.cpp
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp
     ModernNativeEngine_tests.cpp
@@ -103,8 +106,13 @@ set(TEST_SRC
    # Workaround as per https://discourse.cmake.org/t/how-to-get-an-lc-rpath-and-rpath-prefix-on-a-dylib-on-macos/5540/5
    # TODO: Quinton: Make this robust on non-Mac platforms.
    set_target_properties(weather_routing_pi_tests PROPERTIES
+       # The test executable lives three directories below the host build
+       # library directory.  Use an origin-relative build rpath so CTest and
+       # gtest discovery work without a caller-specific LD_LIBRARY_PATH.
+       BUILD_WITH_INSTALL_RPATH FALSE
+       SKIP_BUILD_RPATH FALSE
        BUILD_RPATH "${CMAKE_BINARY_DIR}/lib"
-       INSTALL_RPATH "../lib"    
+       INSTALL_RPATH "../lib"
        )
    
 # Add the test

@@ -1274,13 +1274,18 @@ std::optional<std::pair<SearchArtifacts, std::size_t>> reverseRecovery(
 struct QueueEntry {
   double priority{};
   double cost{};
+  double destinationDistanceNm{};
   std::uint64_t serial{};
   std::size_t node{};
 };
 struct QueueLater {
   bool operator()(const QueueEntry& a, const QueueEntry& b) const {
-    return std::tie(a.priority, a.cost, a.serial) >
-           std::tie(b.priority, b.cost, b.serial);
+    // Distance is only a tie-breaker after the complete objective cost.  This
+    // keeps Dijkstra/A* optimality intact while avoiding insertion-order
+    // expansion of thousands of equal-time labels before a destination-side
+    // label from that same cost layer.
+    return std::tie(a.priority, a.cost, a.destinationDistanceNm, a.serial) >
+           std::tie(b.priority, b.cost, b.destinationDistanceNm, b.serial);
   }
 };
 
@@ -1361,7 +1366,9 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
       if (request.options.heuristicMaximumSpeedKnots > 0.0)
         heuristic = distanceNm(node.position, request.destination) /
                     request.options.heuristicMaximumSpeedKnots * 3600.0;
-      open.push({cost + heuristic, cost, serial++, index});
+      open.push({cost + heuristic, cost,
+                 distanceNm(node.position, request.destination), serial++,
+                 index});
       const auto elapsedBucket =
           std::chrono::duration_cast<Duration>(node.time - request.departure)
               .count() /
@@ -1383,7 +1390,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     initial.position = request.start;
     initial.time = request.departure;
     result.nodes.push_back(std::move(initial));
-    open.push({0.0, 0.0, 0, 0});
+    open.push({0.0, 0.0, distanceNm(request.start, request.destination), 0, 0});
   }
   RoutingStatus dataFailure = RoutingStatus::Complete;
   while (!open.empty()) {
@@ -1504,7 +1511,10 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
         heuristic =
             distanceNm(result.nodes[index].position, request.destination) /
             request.options.heuristicMaximumSpeedKnots * 3600.0;
-      open.push({cost + heuristic, cost, serial++, index});
+      open.push({cost + heuristic, cost,
+                 distanceNm(result.nodes[index].position,
+                            request.destination),
+                 serial++, index});
     };
     for (double heading :
          headings(request.options.graphHeadingStepDegrees, bearing, true,

@@ -34,6 +34,7 @@
 #include "ConstraintChecker.h"
 #include "WeatherDataProvider.h"
 #include "RouteMapOverlay.h"
+#include "RoutingFootprint.h"
 #include "SettingsDialog.h"
 #include "georef.h"
 #include "ModernNativeRoute.h"
@@ -1843,7 +1844,7 @@ RouteMapOverlay::GetRetainedFrontierSegments() {
                               trace.route[i - 1].second, trace.route[i].first,
                               trace.route[i].second});
     Unlock();
-    return segments;
+    return weather_routing_engine::DeduplicateRoutingFootprint(segments);
   }
   for (IsoChronList::iterator layer = origin.begin(); layer != origin.end();
        ++layer) {
@@ -1853,7 +1854,7 @@ RouteMapOverlay::GetRetainedFrontierSegments() {
       CollectRetainedFrontierSegments(*route, &segments);
   }
   Unlock();
-  return segments;
+  return weather_routing_engine::DeduplicateRoutingFootprint(segments);
 }
 
 void RouteMapOverlay::RequestGrib(wxDateTime time) {

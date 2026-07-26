@@ -44,6 +44,7 @@
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "DepartureScheduler.h"
 #include "WeatherDataProvider.h"
 #include "StabilityRouteAdapter.h"
 #include "headless/HeadlessRouteRunner.h"
@@ -65,6 +66,7 @@ static const int DEFERRED_ROUTING_MULTILEG_OPTIMIZATION = 2;
 static const int DEFERRED_ROUTING_COMPUTE_CURRENT = 3;
 static const int DEFERRED_ROUTING_COMPUTE_ALL = 4;
 static const int UI_TIMING_COMPLETED_ROUTES_PER_TICK = 4;
+static const int UI_TIMING_ACTIVE_SERVICE_INTERVAL_MS = 2;
 static const long UI_TIMING_LOG_THRESHOLD_MS = 100;
 static bool s_loggedDetectLandGshhsWarning = false;
 static std::set<wxString> s_chartSafetySharedPrewarmScopes;
@@ -414,6 +416,65 @@ static PlugInSegmentSafetyOptions ChartSafetyRouteMaskOptions(
   return options;
 }
 
+static bool PrewarmChartSafetyHazardSnapshot(
+    const std::vector<RouteMapConfiguration>& configurations,
+    const wxString& context, bool enable_fast_path) {
+  if (configurations.empty()) return false;
+  double min_lat = 90.0;
+  double max_lat = -90.0;
+  double min_lon = 180.0;
+  double max_lon = -180.0;
+  double maximum_padding_nm = 40.0;
+  for (std::vector<RouteMapConfiguration>::const_iterator it =
+           configurations.begin();
+       it != configurations.end(); ++it) {
+    min_lat = wxMin(min_lat, wxMin(it->StartLat, it->EndLat));
+    max_lat = wxMax(max_lat, wxMax(it->StartLat, it->EndLat));
+    min_lon = wxMin(min_lon, wxMin(it->StartLon, it->EndLon));
+    max_lon = wxMax(max_lon, wxMax(it->StartLon, it->EndLon));
+    maximum_padding_nm = wxMax(
+        maximum_padding_nm,
+        0.45 * DistGreatCircle_Plugin(it->StartLat, it->StartLon, it->EndLat,
+                                      it->EndLon));
+  }
+  const double latitude_padding = maximum_padding_nm / 60.0;
+  const double maximum_latitude =
+      wxMin(89.0, wxMax(fabs(min_lat), fabs(max_lat)) + latitude_padding);
+  const double longitude_padding =
+      maximum_padding_nm /
+      (60.0 * wxMax(0.1, fabs(cos(maximum_latitude * M_PI / 180.0))));
+  min_lat = wxMax(-89.0, min_lat - latitude_padding);
+  max_lat = wxMin(89.0, max_lat + latitude_padding);
+  min_lon = wxMax(-180.0, min_lon - longitude_padding);
+  max_lon = wxMin(180.0, max_lon + longitude_padding);
+
+  PlugInSegmentSafetyOptions options =
+      ChartSafetyRouteMaskOptions(configurations.front());
+  PlugInSegmentSafetyResult result = {};
+  result.struct_size = sizeof(result);
+  wxString shadow_only_value;
+  const bool shadow_only =
+      wxGetEnv("WR_HAZARD_SNAPSHOT_SHADOW_ONLY", &shadow_only_value) &&
+      shadow_only_value != "0";
+  const bool effective_fast_path = enable_fast_path && !shadow_only;
+  const bool ok = PlugIn_PrewarmSegmentSafetyHazardSnapshot(
+      min_lat, min_lon, max_lat, max_lon, effective_fast_path ? 1 : 0, 1,
+      &options, &result);
+  wxLogMessage(
+      "WR_HAZARD_SNAPSHOT_PREWARM context=%s routes=%lu ok=%d "
+      "fast_path=%d shadow_only=%d area=[%.6f..%.6f,%.6f..%.6f] "
+      "charts=%d supported=%d hazard_rings=%d elapsed_ms=%d message=\"%s\"",
+      context, static_cast<unsigned long>(configurations.size()), ok ? 1 : 0,
+      effective_fast_path ? 1 : 0, shadow_only ? 1 : 0, min_lat, max_lat,
+      min_lon, max_lon, result.candidate_chart_count, result.s57_chart_count,
+      result.land_ring_count, result.cache_build_ms, result.message);
+  // A successfully constructed snapshot may still contain only chart types
+  // which cannot provide deterministic immutable SAFE certificates (notably
+  // CM93 composites).  Callers should retain the authoritative route-mask
+  // prewarm unless at least one supported vector chart was captured.
+  return ok && result.s57_chart_count > 0;
+}
+
 static wxString ChartSafetySharedPrewarmScopeKey(
     const RouteMapConfiguration& configuration) {
   PlugInSegmentSafetyOptions options =
@@ -494,6 +555,23 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
   wxString prewarm_mode = _("corridor");
   PlugInSegmentSafetyOptions options =
       ChartSafetyRouteMaskOptions(configuration);
+  const bool snapshot_ready = PrewarmChartSafetyHazardSnapshot(
+      std::vector<RouteMapConfiguration>(1, configuration), context, true);
+  if (ModernNativeRouteEnabled(configuration) && snapshot_ready) {
+    wxLogMessage(
+        "WR_ROUTE_MASK_PREWARM_DEFERRED context=%s route=\"%s to %s\" "
+        "snapshot_ready=%d engine=modern-native "
+        "policy=short-edge-on-demand-authoritative",
+        context, configuration.Start, configuration.End,
+        snapshot_ready ? 1 : 0);
+    return;
+  }
+  if (ModernNativeRouteEnabled(configuration))
+    wxLogMessage(
+        "WR_ROUTE_MASK_PREWARM_REQUIRED context=%s route=\"%s to %s\" "
+        "snapshot_ready=0 engine=modern-native "
+        "policy=authoritative-corridor-then-on-demand",
+        context, configuration.Start, configuration.End);
   prewarm_ok = PlugIn_PrewarmSegmentSafetyRouteMaskForSegment(
       configuration.StartLat, configuration.StartLon, configuration.EndLat,
       configuration.EndLon, prewarm_margin_nm, &options, &result);
@@ -3049,6 +3127,7 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimization(
   offsets.push_back(0);
   std::sort(offsets.begin(), offsets.end());
   offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
+  weather_routing::OrderDepartureOffsets(offsets);
 
   if (offsets.size() > MAX_DEPARTURE_OPTIMIZATION_CANDIDATES) {
     wxMessageBox(
@@ -5656,10 +5735,9 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
     candidate_routes.push_back(candidateRoute);
   }
 
-  // Run all scouts before any chart-enforced worker starts.  This lets the
-  // core union every candidate's independently buffered path into one shared
-  // tile set and avoids early workers discovering tiles belonging to a later
-  // departure's route family.
+  // Run representative route-family scouts before chart-enforced workers.
+  // Candidates in one departure group reuse that scout; any weather-driven
+  // path divergence is handled by the authoritative on-demand tile service.
   PrepareChartSafetyScoutEnvelopes(candidate_routes,
                                    _("departure optimisation scouts"));
   for (std::vector<RouteMapOverlay*>::iterator route = candidate_routes.begin();
@@ -6575,8 +6653,24 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   FinishChartSafetyComputeProgressIfDone();
   advanceMs += sectionTimer.Time();
 
-  if ((int)m_RunningRouteMaps.size() <
-          m_SettingsDialog.m_sConcurrentThreads->GetValue() &&
+  bool departure_candidates_active = false;
+  for (RouteMapOverlay* route : m_RunningRouteMaps)
+    if (route &&
+        route->GetConfiguration().DepartureTimeOptimizationCandidate) {
+      departure_candidates_active = true;
+      break;
+    }
+  if (!departure_candidates_active)
+    for (RouteMapOverlay* route : m_WaitingRouteMaps)
+      if (route &&
+          route->GetConfiguration().DepartureTimeOptimizationCandidate) {
+        departure_candidates_active = true;
+        break;
+      }
+  const int route_worker_limit = weather_routing::EffectiveRouteWorkerLimit(
+      m_SettingsDialog.m_sConcurrentThreads->GetValue(),
+      departure_candidates_active);
+  if ((int)m_RunningRouteMaps.size() < route_worker_limit &&
       m_WaitingRouteMaps.size()) {
     sectionTimer.Start();
     RouteMapOverlay* routemapoverlay = m_WaitingRouteMaps.front();
@@ -6618,9 +6712,21 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   }
 
   long tickMs = tickTimer.Time();
+  // A running route normally asks for one GRIB sample on almost every timer
+  // tick.  Logging each successful, cached request at MESSAGE level can write
+  // tens of records per second and make the diagnostic path a measurable part
+  // of routing time.  Retain a periodic service heartbeat while reporting
+  // slow and completion events immediately.
+  static unsigned routineServiceLogCycles = 0;
+  bool periodicServiceLog = false;
+  if (gribRequests > 0 || chartSafetyRequestsServiced > 0) {
+    periodicServiceLog = ++routineServiceLogCycles >= 40;
+    if (periodicServiceLog) routineServiceLogCycles = 0;
+  } else {
+    routineServiceLogCycles = 0;
+  }
   if (tickMs >= UI_TIMING_LOG_THRESHOLD_MS || completedProcessed > 0 ||
-      gribRequests > 0 || chartSafetyRequestsServiced > 0 ||
-      completedBatchLimitHit) {
+      periodicServiceLog || completedBatchLimitHit) {
     wxLogMessage(
         "WR_UI_TIMING OnComputationTimer tick_ms=%ld running_before=%d "
         "waiting_before=%d running_after=%lu waiting_after=%lu "
@@ -6645,9 +6751,17 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   }
 
   if (m_RunningRouteMaps.size()) {
-    /* todo, instead of respawning the funky timer here,
-       maybe we can do it from the thread instead to eliminate the delay */
-    m_tCompute.Start(25, true);
+    // A native worker blocks while a GRIB or chart request is serviced on the
+    // GUI thread.  The historical fixed 25 ms poll imposed up to 40 round
+    // trips per second even when a cached request itself took microseconds.
+    // Poll promptly after servicing work, then return to the low-frequency
+    // idle cadence when no request was present so ordinary GUI work is not
+    // needlessly churned.
+    const int nextIntervalMs =
+        gribRequests > 0 || chartSafetyRequestsServiced > 0
+            ? UI_TIMING_ACTIVE_SERVICE_INTERVAL_MS
+            : 25;
+    m_tCompute.Start(nextIntervalMs, true);
     return;
   }
 
@@ -8074,6 +8188,14 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
   ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
   if (!use_chart_safety || !enforce_chart_safety) return;
 
+  std::vector<RouteMapConfiguration> snapshot_configurations;
+  for (std::vector<RouteMapOverlay*>::const_iterator route =
+           routemapoverlays.begin();
+       route != routemapoverlays.end(); ++route)
+    if (*route && (*route)->GetConfiguration().DetectLand)
+      snapshot_configurations.push_back((*route)->GetConfiguration());
+  PrewarmChartSafetyHazardSnapshot(snapshot_configurations, context, true);
+
   struct ScoutEnvelope {
     RouteMapConfiguration configuration;
     std::vector<std::pair<double, double> > points;
@@ -8081,6 +8203,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     bool complete;
   };
   std::map<wxString, std::vector<ScoutEnvelope> > groups;
+  std::map<wxString, ScoutEnvelope> reusable_scouts;
   for (std::vector<RouteMapOverlay*>::const_iterator route =
            routemapoverlays.begin();
        route != routemapoverlays.end(); ++route) {
@@ -8093,6 +8216,26 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     if (s_chartSafetySharedPrewarmScopes.find(scope) !=
         s_chartSafetySharedPrewarmScopes.end())
       continue;
+
+    std::map<wxString, ScoutEnvelope>::const_iterator reusable =
+        reusable_scouts.find(scope);
+    if (reusable != reusable_scouts.end()) {
+      configuration.chart_safety_start_endpoint_reach_nm =
+          reusable->second.configuration
+              .chart_safety_start_endpoint_reach_nm;
+      configuration.chart_safety_end_endpoint_reach_nm =
+          reusable->second.configuration.chart_safety_end_endpoint_reach_nm;
+      (*route)->SetConfiguration(configuration);
+      (*route)->Reset();
+      wxLogMessage(
+          "WR_SCOUT_ROUTE reused scope=%s route=\"%s to %s\" "
+          "source=shared-route-family-scout start_reach_nm=%.3f "
+          "end_reach_nm=%.3f",
+          scope, configuration.Start, configuration.End,
+          configuration.chart_safety_start_endpoint_reach_nm,
+          configuration.chart_safety_end_endpoint_reach_nm);
+      continue;
+    }
 
     ScoutEnvelope envelope;
     envelope.configuration = configuration;
@@ -8123,6 +8266,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
         envelope.complete ? 1 : 0,
         envelope.configuration.chart_safety_start_endpoint_reach_nm,
         envelope.configuration.chart_safety_end_endpoint_reach_nm);
+    reusable_scouts[scope] = envelope;
     groups[scope].push_back(envelope);
   }
 

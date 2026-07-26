@@ -26,6 +26,7 @@
 #include <string>
 
 #include "RouteMap.h"
+#include "RoutingFootprint.h"
 #include "LineBufferOverlay.h"
 
 class PlugIn_ViewPort;
@@ -38,13 +39,6 @@ namespace supercpn::weather_routing {
 struct RoutingResult;
 struct RoutingProgressUpdate;
 }  // namespace supercpn::weather_routing
-
-struct RouteMapFrontierSegment {
-  double lat1;
-  double lon1;
-  double lat2;
-  double lon2;
-};
 
 struct ModernIsochroneLayer {
   struct Trace {
