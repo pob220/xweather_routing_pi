@@ -136,6 +136,7 @@ protected:
   void OnRemoveDegreeStep(wxCommandEvent& event);
   void OnClearDegreeSteps(wxCommandEvent& event);
   void OnGenerateDegreeSteps(wxCommandEvent& event);
+  void UpdateChartSafetyRamLabel();
   void OnClose(wxCommandEvent& event) { Hide(); }
 
 private:

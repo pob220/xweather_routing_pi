@@ -56,6 +56,16 @@ rejects dominated labels before making semantic chart queries and never
 expands a destination label whose complete lineage failed replay. A complete
 graph route still receives an independent end-to-end replay before acceptance.
 
+Graph fallback uses adaptive corridor widening. It first searches the focused
+cross-track corridor used by the previous fast path, then admits deferred
+labels in a wider intermediate stage, and finally removes that graph-only
+corridor. The configured **Max Diverted Course** remains authoritative for
+every admitted segment, so a value below 180 degrees still limits diversion;
+at 180 degrees the final graph stage has no additional geometric corridor.
+Deferred labels consume the same bounded graph-label budget but do not trigger
+semantic chart queries until their stage is activated. This preserves the
+cheap common case without excluding a safe route around a large obstruction.
+
 ## OpenCPN integration and safety
 
 `OpenCpnAdapter.cpp` maps the established plugin configuration and boat polars
@@ -81,6 +91,13 @@ isochrone contour or inspection trace.
 The existing progress dialog reports forward propagation, reverse recovery,
 time-dependent graph fallback and independent validation. Stop requests share
 an atomic cancellation token with the engine and wake any pending GRIB request.
+
+The route editor's **Advanced** tab exposes **Departure-time route workers**.
+Each worker calculates one complete candidate route; `0` selects the bounded
+automatic policy. The value is stored with the configuration and as the
+default for newly created routes. The same tab exposes the plugin's persistent
+**Chart-safety RAM cache** budget; `0` selects the hardware-derived automatic
+budget.
 
 Weather samples are cached at 15-minute and 0.01-degree keys, which remain
 finer than the 0.025-degree Irish Sea acceptance GRIB. Forty-eight copied GRIB

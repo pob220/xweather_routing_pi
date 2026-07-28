@@ -466,6 +466,8 @@ protected:
   wxCheckBox* m_cbInvertedRegions;
   wxCheckBox* m_cbAnchoring;
   wxSpinCtrl* m_sDepartureTimeOptimizationConcurrentRoutes;
+  wxSpinCtrl* m_sChartSafetyRamCacheMiB;
+  wxStaticText* m_tChartSafetyRamEffective;
   wxCheckBox* m_cbUseMotor;
   wxSpinCtrlDouble* m_sMotorSpeedThreshold;
   wxSpinCtrlDouble* m_sMotorSpeed;

@@ -732,6 +732,9 @@ public:
   bool MultiLegDepartureOptimizationActive() const {
     return m_ActiveMultiLegDepartureOptimization;
   }
+  int ChartSafetyRamCacheMiB() const;
+  int EffectiveChartSafetyRamCacheMiB() const;
+  void SetChartSafetyRamCacheMiB(int ramMiB);
   void CloseMultiLegDepartureOptimizationResults() {
     CancelMultiLegDepartureOptimization(true);
   }

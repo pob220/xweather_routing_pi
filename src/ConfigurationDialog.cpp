@@ -336,6 +336,9 @@ void ConfigurationDialog::SetConfigurations(
   SET_SPIN_VALUE(DepartureTimeOptimizationStepMinutes,
                  (*it).DepartureTimeOptimizationStepMinutes % 60);
   SET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
+  m_sChartSafetyRamCacheMiB->SetValue(
+      m_WeatherRouting.ChartSafetyRamCacheMiB());
+  UpdateChartSafetyRamLabel();
 
   bool timeButtonsEnabled = m_tpTime->IsEnabled() &&
                             m_dpStartDate->IsEnabled() &&
@@ -553,6 +556,8 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
   m_sDepartureTimeOptimizationConcurrentRoutes->SetValue(0);
   m_edited_controls.push_back(
       m_sDepartureTimeOptimizationConcurrentRoutes);
+  m_sChartSafetyRamCacheMiB->SetValue(0);
+  m_edited_controls.push_back(m_sChartSafetyRamCacheMiB);
   m_cIntegrator->SetSelection(0);
   m_sWindStrength->SetValue(100);
   m_sUpwindEfficiency->SetValue(100);
@@ -576,6 +581,14 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
 
   m_bBlockUpdate = false;
   Update();
+}
+
+void ConfigurationDialog::UpdateChartSafetyRamLabel() {
+  const int effective = m_WeatherRouting.EffectiveChartSafetyRamCacheMiB();
+  m_tChartSafetyRamEffective->SetLabel(
+      m_sChartSafetyRamCacheMiB->GetValue() == 0
+          ? wxString::Format(_("MiB; Auto = %d"), effective)
+          : wxString::Format(_("MiB; active = %d"), effective));
 }
 
 void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
@@ -622,6 +635,15 @@ void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
 
 void ConfigurationDialog::Update() {
   if (m_bBlockUpdate) return;
+
+  if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                (wxObject*)m_sChartSafetyRamCacheMiB) !=
+      m_edited_controls.end()) {
+    m_WeatherRouting.SetChartSafetyRamCacheMiB(
+        m_sChartSafetyRamCacheMiB->GetValue());
+    m_sChartSafetyRamCacheMiB->SetForegroundColour(wxColour(0, 0, 0));
+    UpdateChartSafetyRamLabel();
+  }
 
   m_cStart->Enable(!m_rbStartFromBoat->GetValue());
   m_cEnd->Enable(true);

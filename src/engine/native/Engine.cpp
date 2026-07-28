@@ -184,6 +184,38 @@ std::vector<double> headings(double step, double bearing, bool adaptive,
   return result;
 }
 
+std::vector<double> graphCorridorSchedule(const RoutingOptions& options) {
+  const double initial = std::max(0.0, options.graphCorridorWidthNm);
+  if (!std::isfinite(initial))
+    return {std::numeric_limits<double>::infinity()};
+
+  const double requestedMaximum = options.maximumGraphCorridorWidthNm;
+  const double maximum =
+      std::isfinite(requestedMaximum)
+          ? std::max(initial, requestedMaximum)
+          : std::numeric_limits<double>::infinity();
+  std::vector<double> widths{initial};
+  if (maximum <= initial + 1e-9) return widths;
+
+  // One intermediate doubling retains the fast, focused graph behaviour for
+  // ordinary passages. The final stage then covers the complete configured
+  // envelope (or becomes unbounded when an external geometric constraint,
+  // such as OpenCPN's MaxDivertedCourse, is authoritative).
+  const double intermediate = std::max(initial + 1.0, initial * 2.0);
+  if (intermediate < maximum) widths.push_back(intermediate);
+  widths.push_back(maximum);
+  return widths;
+}
+
+std::string graphCorridorDescription(double widthNm) {
+  if (!std::isfinite(widthNm)) return "unbounded";
+  std::ostringstream stream;
+  stream.setf(std::ios::fixed);
+  stream.precision(1);
+  stream << widthNm << " NM";
+  return stream.str();
+}
+
 bool hardEnvironmentConstraints(const RoutingRequest& request,
                                 const EnvironmentalSnapshot& environment) {
   if (request.constraints.maximumTrueWindKnots &&
@@ -1437,11 +1469,49 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
   std::priority_queue<QueueEntry, std::vector<QueueEntry>, QueueLater> open;
   std::unordered_map<GraphLabelKey, std::vector<std::size_t>, GraphLabelKeyHash>
       labels;
+  std::unordered_map<GraphLabelKey, std::vector<Node>, GraphLabelKeyHash>
+      deferredLabels;
+  std::size_t deferredLabelCount{};
   std::uint64_t serial = 1;
+  std::uint64_t graphLabelsThisSearch{};
   const Duration step = std::max(
       request.options.minimumTimeStep,
       std::min(request.options.timeStep, Duration{std::chrono::minutes{30}}));
+  const std::vector<double> corridorWidths =
+      graphCorridorSchedule(request.options);
+  std::size_t corridorStage{};
+  double activeCorridorWidthNm = corridorWidths.front();
+  const std::uint64_t graphGeneratedStatesAtStart =
+      diagnostics.generatedStates;
+  const std::uint64_t graphGeneratedStateBudget =
+      request.limits.maximumGeneratedStates -
+      std::min(request.limits.maximumGeneratedStates,
+               graphGeneratedStatesAtStart);
+  const auto stageBudgetNumerator = [&]() {
+    if (corridorStage + 1 == corridorWidths.size()) return std::uint64_t{2};
+    return static_cast<std::uint64_t>(corridorStage + 1);
+  };
+  const auto stageBudgetDenominator = [&]() {
+    if (corridorStage + 1 == corridorWidths.size()) return std::uint64_t{2};
+    return static_cast<std::uint64_t>(
+        std::max<std::size_t>(2, 2 * (corridorWidths.size() - 1)));
+  };
+  const auto stageGeneratedStateCeiling = [&]() {
+    return graphGeneratedStatesAtStart +
+           graphGeneratedStateBudget * stageBudgetNumerator() /
+               stageBudgetDenominator();
+  };
+  const auto stageGraphLabelCeiling = [&]() {
+    return request.limits.maximumGraphLabels * stageBudgetNumerator() /
+           stageBudgetDenominator();
+  };
+  diagnostics.graphCorridorWidthsNm.push_back(activeCorridorWidthNm);
+  diagnostics.stageStopReasons.push_back(
+      "graph fallback corridor stage 1/" +
+      std::to_string(corridorWidths.size()) + ": " +
+      graphCorridorDescription(activeCorridorWidthNm));
   std::optional<double> localDestinationRadiusNm;
+  std::optional<double> initialLocalDestinationRadiusNm;
   std::optional<TimePoint> localGraphDeadline;
   if (seed && seed->nodes.size() > 1) {
     result.nodes = seed->nodes;
@@ -1513,8 +1583,10 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
               elapsedBucket, static_cast<int>(node.role)}]
           .push_back(index);
       ++diagnostics.graphLabels;
+      ++graphLabelsThisSearch;
     }
     localGraphDeadline = latestSeedTime + request.options.reverseHorizon;
+    initialLocalDestinationRadiusNm = localDestinationRadiusNm;
     diagnostics.stageStopReasons.push_back(
         "graph fallback seeded from " +
         std::to_string(acceptedSeedIndices.size()) +
@@ -1528,7 +1600,182 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     open.push({0.0, 0.0, distanceNm(request.start, request.destination), 0, 0});
   }
   RoutingStatus dataFailure = RoutingStatus::Complete;
-  while (!open.empty()) {
+  bool graphLabelLimitReached = false;
+  bool deferredCapacityReached = false;
+  const auto labelKey = [&](const Node& node) {
+    const auto elapsedBucket =
+        std::chrono::duration_cast<Duration>(node.time - request.departure)
+            .count() /
+        std::max<std::int64_t>(1, step.count());
+    return GraphLabelKey{
+        stateCell(request, node, request.options.spatialCellNm / 2.0,
+                  request.options.dominanceHeadingToleranceDegrees),
+        elapsedBucket, static_cast<int>(node.role)};
+  };
+  const auto outsideActiveCorridor = [&](const Node& node) {
+    if (localDestinationRadiusNm &&
+        distanceNm(node.position, request.destination) >
+            *localDestinationRadiusNm)
+      return true;
+    return std::isfinite(activeCorridorWidthNm) &&
+           std::abs(crossTrackDistanceNm(request.start, request.destination,
+                                         node.position)) >
+               activeCorridorWidthNm;
+  };
+  const double maximumCorridorWidthNm = corridorWidths.back();
+  const auto outsideMaximumCorridor = [&](const Node& node) {
+    return std::isfinite(maximumCorridorWidthNm) &&
+           std::abs(crossTrackDistanceNm(request.start, request.destination,
+                                         node.position)) >
+               maximumCorridorWidthNm;
+  };
+  const auto defer = [&](Node next) {
+    if (outsideMaximumCorridor(next)) {
+      ++diagnostics.pruned.outsideCorridor;
+      return;
+    }
+    auto& candidates = deferredLabels[labelKey(next)];
+    // Do not let an as-yet unvalidated deferred label dominate another one:
+    // the cheaper label might later fail a chart-safety check while the other
+    // is the only safe route around the obstruction. Bound all admitted and
+    // deferred graph labels together instead.
+    if (graphLabelsThisSearch + deferredLabelCount >=
+        request.limits.maximumGraphLabels) {
+      ++diagnostics.pruned.cellLabelCap;
+      deferredCapacityReached = true;
+      return;
+    }
+    candidates.push_back(std::move(next));
+    ++deferredLabelCount;
+  };
+  std::function<void(Node)> admit;
+  admit = [&](Node next) {
+    if (outsideActiveCorridor(next)) {
+      defer(std::move(next));
+      return;
+    }
+    auto& cellLabels = labels[labelKey(next)];
+    const bool dominated = std::any_of(
+        cellLabels.begin(), cellLabels.end(), [&](std::size_t otherIndex) {
+          const Node& other = result.nodes[otherIndex];
+          return other.fuel <= next.fuel && other.risk <= next.risk &&
+                 other.motorDuration <= next.motorDuration &&
+                 stateCost(request, other) <= stateCost(request, next);
+        });
+    if (dominated) {
+      ++diagnostics.pruned.dominated;
+      return;
+    }
+    if (cellLabels.size() >= request.options.labelsPerCell) {
+      ++diagnostics.pruned.cellLabelCap;
+      return;
+    }
+    // Deferred labels have not yet incurred any expensive chart query.
+    // Perform the complete constraint and chart-safety check only when their
+    // corridor stage becomes active.
+    if (nodeMotionForbidden(request, environment, next, diagnostics)) return;
+    if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
+      graphLabelLimitReached = true;
+      return;
+    }
+    result.nodes.push_back(std::move(next));
+    const std::size_t index = result.nodes.size() - 1;
+    cellLabels.push_back(index);
+    ++diagnostics.graphLabels;
+    ++graphLabelsThisSearch;
+    const double cost = stateCost(request, result.nodes[index]);
+    double heuristic = 0.0;
+    if (request.options.heuristicMaximumSpeedKnots > 0.0)
+      heuristic =
+          distanceNm(result.nodes[index].position, request.destination) /
+          request.options.heuristicMaximumSpeedKnots * 3600.0;
+    open.push({cost + heuristic, cost,
+               distanceNm(result.nodes[index].position, request.destination),
+               serial++, index});
+  };
+  const auto widenCorridor = [&]() {
+    if (corridorStage + 1 >= corridorWidths.size() ||
+        deferredLabelCount == 0)
+      return false;
+    const double previousWidth = activeCorridorWidthNm;
+    ++corridorStage;
+    activeCorridorWidthNm = corridorWidths[corridorStage];
+    const bool finalStage = corridorStage + 1 == corridorWidths.size();
+    if (finalStage) {
+      // The seed-local radius was only an accelerator. It must not become an
+      // undocumented geometric restriction on the final graph stage.
+      localDestinationRadiusNm.reset();
+    } else if (initialLocalDestinationRadiusNm) {
+      const double initialWidth = std::max(1.0, corridorWidths.front());
+      localDestinationRadiusNm =
+          *initialLocalDestinationRadiusNm *
+          std::max(1.0, activeCorridorWidthNm / initialWidth);
+    }
+
+    std::vector<Node> ready;
+    for (auto it = deferredLabels.begin(); it != deferredLabels.end();) {
+      std::vector<Node> remaining;
+      for (auto& node : it->second) {
+        if (outsideActiveCorridor(node)) {
+          remaining.push_back(std::move(node));
+        } else {
+          ready.push_back(std::move(node));
+          --deferredLabelCount;
+        }
+      }
+      if (remaining.empty()) {
+        it = deferredLabels.erase(it);
+      } else {
+        it->second = std::move(remaining);
+        ++it;
+      }
+    }
+    std::stable_sort(ready.begin(), ready.end(), [&](const Node& a,
+                                                     const Node& b) {
+      return std::tuple{a.time, stateCost(request, a), a.position.latitude,
+                        a.position.longitude, a.predecessor} <
+             std::tuple{b.time, stateCost(request, b), b.position.latitude,
+                        b.position.longitude, b.predecessor};
+    });
+    diagnostics.graphCorridorWidthsNm.push_back(activeCorridorWidthNm);
+    diagnostics.stageStopReasons.push_back(
+        "graph fallback widened corridor after exhaustion from " +
+        graphCorridorDescription(previousWidth) + " to " +
+        graphCorridorDescription(activeCorridorWidthNm) + "; activating " +
+        std::to_string(ready.size()) + " deferred labels");
+    for (auto& node : ready) admit(std::move(node));
+    reportProgress(request, RoutingProgressStage::GraphFallback, diagnostics,
+                   static_cast<unsigned>(corridorStage + 1),
+                   static_cast<unsigned>(corridorWidths.size()));
+    return true;
+  };
+
+  while (true) {
+    if (corridorStage + 1 < corridorWidths.size() &&
+        deferredLabelCount > 0 &&
+        (diagnostics.generatedStates >= stageGeneratedStateCeiling() ||
+         graphLabelsThisSearch >= stageGraphLabelCeiling())) {
+      if (!widenCorridor()) break;
+      if (graphLabelLimitReached) {
+        result.failure = RoutingStatus::ResourceLimitReached;
+        result.reason = "maximum graph labels reached during corridor widening";
+        result.resourceLimited = true;
+        diagnostics.resourceLimitEvents.push_back(result.reason);
+        return result;
+      }
+      continue;
+    }
+    if (open.empty()) {
+      if (!widenCorridor()) break;
+      if (graphLabelLimitReached) {
+        result.failure = RoutingStatus::ResourceLimitReached;
+        result.reason = "maximum graph labels reached during corridor widening";
+        result.resourceLimited = true;
+        diagnostics.resourceLimitEvents.push_back(result.reason);
+        return result;
+      }
+      continue;
+    }
     if (request.cancellation.cancelled()) {
       result.failure = RoutingStatus::Cancelled;
       result.reason = "routing cancelled";
@@ -1568,7 +1815,15 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
       if (auto direct = directConnection(
               request, environment, performance, from,
               directConnectionWindow(request, from, step * 3), diagnostics)) {
+        if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
+          result.failure = RoutingStatus::ResourceLimitReached;
+          result.reason = "maximum graph labels reached";
+          result.resourceLimited = true;
+          diagnostics.resourceLimitEvents.push_back(result.reason);
+          return result;
+        }
         ++diagnostics.graphLabels;
+        ++graphLabelsThisSearch;
         direct->predecessor = entry.node;
         result.nodes.push_back(std::move(*direct));
         const std::size_t candidate = result.nodes.size() - 1;
@@ -1593,68 +1848,11 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
             ? request.options.minimumTimeStep
             : step;
     bool movementGenerated = false;
-    const auto admit = [&](Node next) {
-      if (localDestinationRadiusNm &&
-          distanceNm(next.position, request.destination) >
-              *localDestinationRadiusNm) {
-        ++diagnostics.pruned.outsideCorridor;
-        return;
-      }
-      if (std::abs(crossTrackDistanceNm(request.start, request.destination,
-                                        next.position)) >
-          request.options.graphCorridorWidthNm) {
-        ++diagnostics.pruned.outsideCorridor;
-        return;
-      }
-      next.predecessor = entry.node;
-      const auto elapsedBucket =
-          std::chrono::duration_cast<Duration>(next.time - request.departure)
-              .count() /
-          std::max<std::int64_t>(1, step.count());
-      const auto key = std::tuple{
-          stateCell(request, next, request.options.spatialCellNm / 2.0,
-                    request.options.dominanceHeadingToleranceDegrees),
-          elapsedBucket, static_cast<int>(next.role)};
-      auto& cellLabels = labels[key];
-      const bool dominated = std::any_of(
-          cellLabels.begin(), cellLabels.end(), [&](std::size_t otherIndex) {
-            const Node& other = result.nodes[otherIndex];
-            return other.fuel <= next.fuel && other.risk <= next.risk &&
-                   other.motorDuration <= next.motorDuration &&
-                   stateCost(request, other) <= stateCost(request, next);
-          });
-      if (dominated) {
-        ++diagnostics.pruned.dominated;
-        return;
-      }
-      if (cellLabels.size() >= request.options.labelsPerCell) {
-        ++diagnostics.pruned.cellLabelCap;
-        return;
-      }
-      // As in forward isochrones, admit only chart-safe labels, but avoid
-      // spending host semantic queries on labels already rejected by the
-      // corridor or dominance filters.  Every admitted predecessor is safe,
-      // and final validation independently replays the complete route.
-      if (nodeMotionForbidden(request, environment, next, diagnostics)) return;
-      result.nodes.push_back(std::move(next));
-      const std::size_t index = result.nodes.size() - 1;
-      cellLabels.push_back(index);
-      ++diagnostics.graphLabels;
-      const double cost = stateCost(request, result.nodes[index]);
-      double heuristic = 0.0;
-      if (request.options.heuristicMaximumSpeedKnots > 0.0)
-        heuristic =
-            distanceNm(result.nodes[index].position, request.destination) /
-            request.options.heuristicMaximumSpeedKnots * 3600.0;
-      open.push({cost + heuristic, cost,
-                 distanceNm(result.nodes[index].position, request.destination),
-                 serial++, index});
-    };
     for (double heading :
          headings(request.options.graphHeadingStepDegrees, bearing, true,
                   request.options.graphHeadingStepDegrees / 2.0,
                   request.options.maximumSearchAngleDegrees)) {
-      if (diagnostics.graphLabels >= request.limits.maximumGraphLabels) {
+      if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
         result.failure = RoutingStatus::ResourceLimitReached;
         result.reason = "maximum graph labels reached";
         result.resourceLimited = true;
@@ -1679,15 +1877,24 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
           reportProgress(request, RoutingProgressStage::GraphFallback,
                          diagnostics);
         movementGenerated = true;
+        next.predecessor = entry.node;
         admit(std::move(next));
+        if (graphLabelLimitReached) {
+          result.failure = RoutingStatus::ResourceLimitReached;
+          result.reason = "maximum graph labels reached";
+          result.resourceLimited = true;
+          diagnostics.resourceLimitEvents.push_back(result.reason);
+          return result;
+        }
       }
     }
     if (!movementGenerated &&
         diagnostics.generatedStates < request.limits.maximumGeneratedStates &&
-        diagnostics.graphLabels < request.limits.maximumGraphLabels) {
+        graphLabelsThisSearch < request.limits.maximumGraphLabels) {
       if (auto waiting = waitInPlace(request, environment, from, expansionStep,
                                      diagnostics)) {
         ++diagnostics.generatedStates;
+        waiting->predecessor = entry.node;
         admit(std::move(*waiting));
       }
     }
@@ -1698,7 +1905,16 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
   result.reason =
       dataFailure != RoutingStatus::Complete
           ? "environmental coverage ended before graph search could complete"
-          : "graph corridor exhausted without a feasible label";
+      : deferredCapacityReached
+          ? "graph deferred-label resource limit reached before a feasible "
+            "route was found"
+          : "all configured graph corridor stages exhausted without a "
+            "feasible label";
+  if (deferredCapacityReached) {
+    result.failure = RoutingStatus::ResourceLimitReached;
+    result.resourceLimited = true;
+    diagnostics.resourceLimitEvents.push_back(result.reason);
+  }
   return result;
 }
 
@@ -2069,8 +2285,12 @@ RoutingResult RoutingEngine::routeMember(
                                 : std::min(5U, request.options.retryStages);
   const std::uint64_t recoveryReserve =
       request.options.useGraphFallback && request.options.retryStages >= 7
-          ? std::max<std::uint64_t>(1,
-                                    request.limits.maximumGeneratedStates / 4U)
+          ? request.options.forceForwardFailureForTesting
+                ? request.limits.maximumGeneratedStates -
+                      std::min<std::uint64_t>(
+                          request.limits.maximumGeneratedStates, 1000U)
+                : std::max<std::uint64_t>(
+                      1, request.limits.maximumGeneratedStates / 4U)
           : 0U;
   const std::uint64_t forwardGeneratedStateCeiling =
       request.limits.maximumGeneratedStates -
@@ -2240,7 +2460,12 @@ RoutingResult RoutingEngine::routeMember(
     reportProgress(request, RoutingProgressStage::GraphFallback,
                    result.diagnostics);
     result.diagnostics.stagesAttempted.push_back(SolverPath::GraphFallback);
-    latest = graphSearch(request, environment, performance, &latest,
+    // Test-forced forward failure deliberately exercises graph recovery from
+    // the known-safe departure instead of accidentally seeding it with an
+    // otherwise successful forward fan.
+    const SearchArtifacts* graphSeed =
+        request.options.forceForwardFailureForTesting ? nullptr : &latest;
+    latest = graphSearch(request, environment, performance, graphSeed,
                          result.diagnostics);
     if (latest.solution) {
       found =

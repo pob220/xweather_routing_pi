@@ -6660,6 +6660,18 @@ void WeatherRouting::OnChartAwarenessSettings(wxCommandEvent& event) {
   }
 }
 
+int WeatherRouting::ChartSafetyRamCacheMiB() const {
+  return m_weather_routing_pi.ChartSafetyRamCacheMiB();
+}
+
+int WeatherRouting::EffectiveChartSafetyRamCacheMiB() const {
+  return m_weather_routing_pi.EffectiveChartSafetyRamCacheMiB();
+}
+
+void WeatherRouting::SetChartSafetyRamCacheMiB(int ramMiB) {
+  m_weather_routing_pi.SetChartSafetyRamCacheMiB(ramMiB);
+}
+
 void WeatherRouting::OnSettings(wxCommandEvent& event) {
   m_SettingsDialog.Show();
 }

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -97,6 +99,96 @@ public:
   }
   std::string identity() const override { return "blocking-meridian"; }
 };
+
+class MeridianBarrierWithOpenEndsProvider final
+    : public LandAndBoundaryProvider {
+public:
+  MeridianBarrierWithOpenEndsProvider(double longitude, double centreLatitude,
+                                      double halfHeightDegrees)
+      : longitude_(longitude),
+        centreLatitude_(centreLatitude),
+        halfHeightDegrees_(halfHeightDegrees) {}
+
+  bool pointForbidden(GeoPoint) const override { return false; }
+  bool segmentForbidden(GeoPoint start, GeoPoint end, double) const override {
+    const double longitudeDelta = end.longitude - start.longitude;
+    if (std::abs(longitudeDelta) < 1e-12) return false;
+    const double fraction = (longitude_ - start.longitude) / longitudeDelta;
+    if (fraction < 0.0 || fraction > 1.0) return false;
+    const double crossingLatitude =
+        start.latitude + fraction * (end.latitude - start.latitude);
+    return std::abs(crossingLatitude - centreLatitude_) <= halfHeightDegrees_;
+  }
+  double distanceToForbiddenNm(GeoPoint point) const override {
+    return std::abs(point.longitude - longitude_) * 60.0;
+  }
+  std::string identity() const override {
+    return "meridian-barrier-with-open-ends";
+  }
+
+private:
+  double longitude_;
+  double centreLatitude_;
+  double halfHeightDegrees_;
+};
+
+RoutingRequest GraphDetourRequest(double maximumCorridorWidthNm) {
+  auto request = TestRequest();
+  request.start = {0.0, 0.0};
+  request.destination = {0.0, 0.2};
+  request.options.graphHeadingStepDegrees = 10.0;
+  request.options.maximumSearchAngleDegrees = 180.0;
+  request.options.spatialCellNm = 0.5;
+  request.options.forceForwardFailureForTesting = true;
+  request.options.forceReverseFailureForTesting = true;
+  request.options.graphCorridorWidthNm = 1.0;
+  request.options.maximumGraphCorridorWidthNm = maximumCorridorWidthNm;
+  // The synthetic field has no favourable current, so this is an admissible
+  // A* bound and keeps the recovery-specific regression tests compact.
+  request.options.heuristicMaximumSpeedKnots = 20.0;
+  request.limits.maximumRouteDuration = std::chrono::hours{6};
+  request.limits.maximumGeneratedStates = 100000;
+  request.limits.maximumRetainedStates = 30000;
+  request.limits.maximumGraphLabels = 50000;
+  return request;
+}
+
+class ConstantSpeedPerformance final : public VesselPerformanceModel {
+public:
+  bool valid(std::string*) const override { return true; }
+  std::vector<PerformanceCandidate> candidates(double, double,
+                                               const WaveSample&,
+                                               PropulsionMode,
+                                               Duration) const override {
+    return {{true, PropulsionMode::Sail, ProfileRole::SailOnly, "constant", 0,
+             8.0, 0.0}};
+  }
+  PerformanceCandidate evaluate(PropulsionMode, ProfileRole, const std::string&,
+                                double, double,
+                                const WaveSample&) const override {
+    return {true, PropulsionMode::Sail, ProfileRole::SailOnly, "constant", 0,
+            8.0, 0.0};
+  }
+  std::vector<PerformanceCandidate> candidatesAt(
+      GeoPoint, TimePoint, double, double, const WaveSample& wave,
+      PropulsionMode mode, Duration duration) const override {
+    return candidates(0.0, 0.0, wave, mode, duration);
+  }
+  PerformanceCandidate evaluateAt(
+      GeoPoint, TimePoint, PropulsionMode mode, ProfileRole role,
+      const std::string& identity, double, double,
+      const WaveSample& wave) const override {
+    return evaluate(mode, role, identity, 0.0, 0.0, wave);
+  }
+};
+
+RoutingEnvironment GraphDetourEnvironment(
+    std::shared_ptr<const LandAndBoundaryProvider> boundaries =
+        std::make_shared<OpenWaterProvider>()) {
+  auto environment = TestEnvironment(std::move(boundaries));
+  environment.performance = std::make_shared<ConstantSpeedPerformance>();
+  return environment;
+}
 
 class RecordingTimedBoundaryProvider final : public LandAndBoundaryProvider {
 public:
@@ -540,6 +632,76 @@ TEST(ModernNativeEngine, UsesRecoveryCascadeAndIndependentValidation) {
   EXPECT_NE(result.solverPath, SolverPath::AdaptiveIsochrone);
   EXPECT_TRUE(result.validation.passed);
   EXPECT_GT(result.diagnostics.validationSamples, 0U);
+}
+
+TEST(ModernNativeEngine, GraphFallbackStaysInFastCorridorWhenItCanSolve) {
+  auto request = GraphDetourRequest(
+      std::numeric_limits<double>::infinity());
+  request.options.graphCorridorWidthNm = 5.0;
+  const auto result = RoutingEngine{}.route(request, GraphDetourEnvironment());
+
+  ASSERT_TRUE(Successful(result.status))
+      << result.message << " generated=" << result.diagnostics.generatedStates
+      << " labels=" << result.diagnostics.graphLabels
+      << " closest=" << result.diagnostics.closestApproachNm;
+  ASSERT_EQ(result.solverPath, SolverPath::GraphFallback);
+  ASSERT_EQ(result.diagnostics.graphCorridorWidthsNm.size(), 1U);
+  EXPECT_DOUBLE_EQ(result.diagnostics.graphCorridorWidthsNm.front(), 5.0);
+}
+
+TEST(ModernNativeEngine, GraphFallbackWidensToReachSafeOffCourseRoute) {
+  auto request = GraphDetourRequest(5.0);
+  auto boundaries = std::make_shared<MeridianBarrierWithOpenEndsProvider>(
+      (request.start.longitude + request.destination.longitude) / 2.0,
+      (request.start.latitude + request.destination.latitude) / 2.0, 0.03);
+  const auto result =
+      RoutingEngine{}.route(request, GraphDetourEnvironment(boundaries));
+
+  ASSERT_TRUE(Successful(result.status))
+      << result.message << " generated=" << result.diagnostics.generatedStates
+      << " labels=" << result.diagnostics.graphLabels
+      << " closest=" << result.diagnostics.closestApproachNm;
+  ASSERT_EQ(result.solverPath, SolverPath::GraphFallback);
+  ASSERT_GE(result.diagnostics.graphCorridorWidthsNm.size(), 2U);
+  EXPECT_DOUBLE_EQ(result.diagnostics.graphCorridorWidthsNm.front(), 1.0);
+  EXPECT_GT(result.diagnostics.graphCorridorWidthsNm.back(), 1.0);
+  EXPECT_LE(result.diagnostics.graphCorridorWidthsNm.back(), 5.0);
+  double maximumCrossTrackNm = 0.0;
+  for (const auto& leg : result.legs)
+    maximumCrossTrackNm =
+        std::max(maximumCrossTrackNm,
+                 std::abs(crossTrackDistanceNm(request.start,
+                                               request.destination, leg.end)));
+  EXPECT_GT(maximumCrossTrackNm, 1.5);
+  EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
+}
+
+TEST(ModernNativeEngine, UnboundedFinalGraphStageRemovesGraphOnlyLimit) {
+  auto request =
+      GraphDetourRequest(std::numeric_limits<double>::infinity());
+  auto boundaries = std::make_shared<MeridianBarrierWithOpenEndsProvider>(
+      (request.start.longitude + request.destination.longitude) / 2.0,
+      (request.start.latitude + request.destination.latitude) / 2.0, 0.055);
+  const auto result =
+      RoutingEngine{}.route(request, GraphDetourEnvironment(boundaries));
+
+  ASSERT_TRUE(Successful(result.status))
+      << result.message << " generated=" << result.diagnostics.generatedStates
+      << " labels=" << result.diagnostics.graphLabels
+      << " closest=" << result.diagnostics.closestApproachNm;
+  ASSERT_EQ(result.solverPath, SolverPath::GraphFallback);
+  ASSERT_EQ(result.diagnostics.graphCorridorWidthsNm.size(), 3U);
+  EXPECT_DOUBLE_EQ(result.diagnostics.graphCorridorWidthsNm[0], 1.0);
+  EXPECT_DOUBLE_EQ(result.diagnostics.graphCorridorWidthsNm[1], 2.0);
+  EXPECT_TRUE(std::isinf(result.diagnostics.graphCorridorWidthsNm[2]));
+  double maximumCrossTrackNm = 0.0;
+  for (const auto& leg : result.legs)
+    maximumCrossTrackNm =
+        std::max(maximumCrossTrackNm,
+                 std::abs(crossTrackDistanceNm(request.start,
+                                               request.destination, leg.end)));
+  EXPECT_GT(maximumCrossTrackNm, 2.8);
+  EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
 }
 
 TEST(ModernNativeEngine, FavourableCurrentMayExceedPolarSpeed) {

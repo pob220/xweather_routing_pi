@@ -254,7 +254,12 @@ struct RoutingOptions {
   unsigned retryStages{7};
   unsigned reverseLayers{8};
   Duration reverseHorizon{std::chrono::hours{24}};
+  // The graph starts inside the fast corridor and, only if that search
+  // exhausts, progressively admits deferred labels out to the maximum.
+  // Setting the maximum to infinity removes the graph-only geometric bound;
+  // normal route constraints and resource limits still apply.
   double graphCorridorWidthNm{120.0};
+  double maximumGraphCorridorWidthNm{120.0};
   double graphHeadingStepDegrees{5.0};
   double heuristicMaximumSpeedKnots{};
   double dominancePositionToleranceNm{2.0};
@@ -541,6 +546,7 @@ struct RoutingDiagnostics {
   std::uint64_t reverseRejectedBridges{};
   std::vector<std::string> reverseRejectionReasons;
   std::uint64_t graphLabels{};
+  std::vector<double> graphCorridorWidthsNm;
   std::uint64_t waitStates{};
   std::uint64_t validationSamples{};
   double closestApproachNm{std::numeric_limits<double>::infinity()};

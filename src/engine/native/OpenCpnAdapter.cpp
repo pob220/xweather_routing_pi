@@ -789,6 +789,14 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
       std::max(24.0, configuration.ReverseReachabilityHorizonHours) * 3600.0)};
   request.options.graphCorridorWidthNm =
       std::max(40.0, wr::distanceNm(request.start, request.destination) * 0.45);
+  // The inexpensive first graph phase remains tightly focused. If it cannot
+  // solve the passage, widen to the complete user-configured
+  // MaxDivertedCourse envelope. ConstraintChecker is authoritative for that
+  // envelope on every admitted segment, so infinity here removes only the
+  // graph's formerly independent cross-track restriction. MaxDivertedCourse,
+  // chart safety, weather constraints and resource limits still apply.
+  request.options.maximumGraphCorridorWidthNm =
+      std::numeric_limits<double>::infinity();
   request.options.graphHeadingStepDegrees =
       request.options.refinedHeadingStepDegrees;
   // With currents enabled there is no declared upper bound on favourable COG,

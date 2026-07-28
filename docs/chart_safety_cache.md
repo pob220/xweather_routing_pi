@@ -57,3 +57,9 @@ shape; any other solver excursion is populated safely on demand.
 The Chart Awareness settings page shows capability state, effective RAM,
 cache counts and I/O totals, and provides an explicit clear action. Headless
 test runs log the same counters as `WR_PLUGIN_CHART_CACHE`.
+
+The same RAM budget is also available in the Weather Routing configuration
+dialog's **Advanced** tab, beside the departure-time worker control. Changes
+take effect immediately and are saved for subsequent OpenCPN launches. The RAM
+budget affects only the plugin's hot tile cache; certified tile persistence on
+SSD remains enabled independently.
