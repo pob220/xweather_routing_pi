@@ -16,7 +16,8 @@
     "enabled": true,
     "beforeMinutes": 240,
     "afterMinutes": 240,
-    "stepMinutes": 60
+    "stepMinutes": 60,
+    "concurrentRoutes": 6
   },
   "environment": {
     "useCurrents": true

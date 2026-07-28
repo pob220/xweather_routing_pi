@@ -125,6 +125,8 @@ The first milestone supports:
 - `departureOptimization.beforeMinutes`
 - `departureOptimization.afterMinutes`
 - `departureOptimization.stepMinutes`
+- `departureOptimization.concurrentRoutes` (`0` selects Auto; explicit values
+  are limited to `1`–`12`)
 - `environment.useCurrents`
 - `environment.useGrib`
 - `route.boatFile` (`~/` is expanded using the current user's home)
@@ -158,6 +160,11 @@ The first milestone supports:
 `minimumDepthM` is parsed and retained in the scenario DTO. It is only applied
 when the current Weather Routing/OpenCPN route safety configuration exposes a
 matching option.
+
+`departureOptimization.concurrentRoutes` uses the same scheduler policy as the
+Advanced route editor. Auto reserves two logical CPUs for OpenCPN and the
+operating system and uses at most four concurrent route candidates. The
+global Weather Routing concurrent-thread setting remains a hard upper bound.
 
 `reverseReachability` is optional and defaults off. This first milestone is a
 bounded final-approach recovery/diagnostic pass, not arrival-time routing and

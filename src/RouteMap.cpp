@@ -149,6 +149,7 @@ RouteMapConfiguration::RouteMapConfiguration()
       DepartureTimeOptimizationEnabled(false),
       DepartureTimeOptimizationRangeMinutes(360),
       DepartureTimeOptimizationStepMinutes(60),
+      DepartureTimeOptimizationConcurrentRoutes(0),
       DepartureTimeOptimizationCandidate(false),
       DepartureTimeOptimizationOffsetMinutes(0),
       IsMultiLegGenerated(false),

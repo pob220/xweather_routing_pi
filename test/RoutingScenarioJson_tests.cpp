@@ -19,6 +19,7 @@ TEST(RoutingScenarioJson, LoadsStabilityCorridorOptions) {
       weather_routing_headless::LoadRoutingScenarioJson(path, scenario, error))
       << error;
   EXPECT_TRUE(scenario.stabilityCorridor.enabled);
+  EXPECT_EQ(6, scenario.departureOptimization.concurrentRoutes);
   EXPECT_EQ("departureCandidates", scenario.stabilityCorridor.source);
   EXPECT_EQ(3, scenario.stabilityCorridor.minimumRoutes);
   EXPECT_DOUBLE_EQ(120.0, scenario.stabilityCorridor.maxEtaPenaltyMinutes);

@@ -9,12 +9,15 @@
 
 #include "RoutingScenarioJson.h"
 
+#include <algorithm>
 #include <fstream>
 #include <memory>
 #include <sstream>
 
 #include <json/json.h>
 #include <wx/filename.h>
+
+#include "DepartureScheduler.h"
 
 namespace {
 
@@ -113,8 +116,15 @@ bool LoadRoutingScenarioJson(const wxString& path,
     JsonInt(opt, "beforeMinutes", scenario.departureOptimization.beforeMinutes);
     JsonInt(opt, "afterMinutes", scenario.departureOptimization.afterMinutes);
     JsonInt(opt, "stepMinutes", scenario.departureOptimization.stepMinutes);
+    JsonInt(opt, "concurrentRoutes",
+            scenario.departureOptimization.concurrentRoutes);
     if (scenario.departureOptimization.stepMinutes <= 0)
       scenario.departureOptimization.stepMinutes = 60;
+    scenario.departureOptimization.concurrentRoutes =
+        std::max(0, std::min(
+                        weather_routing::
+                            kMaximumParallelDepartureCandidates,
+                        scenario.departureOptimization.concurrentRoutes));
   }
 
   const Json::Value& environment = root["environment"];

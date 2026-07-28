@@ -1913,6 +1913,40 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   fgSizer113->Add(fgSizer1121, 1, wxEXPAND, 5);
 
+  wxFlexGridSizer* fgSizerDepartureConcurrency;
+  fgSizerDepartureConcurrency = new wxFlexGridSizer(0, 3, 0, 0);
+  fgSizerDepartureConcurrency->SetFlexibleDirection(wxBOTH);
+  fgSizerDepartureConcurrency->SetNonFlexibleGrowMode(
+      wxFLEX_GROWMODE_SPECIFIED);
+
+  wxStaticText* departureConcurrencyLabel =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
+                       _("Concurrent departure routes"), wxDefaultPosition,
+                       wxDefaultSize, 0);
+  departureConcurrencyLabel->Wrap(-1);
+  fgSizerDepartureConcurrency->Add(
+      departureConcurrencyLabel, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  m_sDepartureTimeOptimizationConcurrentRoutes = new wxSpinCtrl(
+      sbOptions1->GetStaticBox(), wxID_ANY, wxT("0"), wxDefaultPosition,
+      wxSize(140, -1), wxSP_ARROW_KEYS, 0, 12, 0);
+  m_sDepartureTimeOptimizationConcurrentRoutes->SetToolTip(_(
+      "Number of departure-time candidate routes to calculate in parallel. "
+      "Use 0 for Auto (up to 4, based on available CPUs). The global "
+      "concurrent thread setting remains a hard limit."));
+  fgSizerDepartureConcurrency->Add(
+      m_sDepartureTimeOptimizationConcurrentRoutes, 0,
+      wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  wxStaticText* departureConcurrencyUnits =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY, _("0 = Auto"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  departureConcurrencyUnits->Wrap(-1);
+  fgSizerDepartureConcurrency->Add(
+      departureConcurrencyUnits, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  fgSizer113->Add(fgSizerDepartureConcurrency, 1, wxEXPAND, 5);
+
   wxFlexGridSizer* fgSizer115;
   fgSizer115 = new wxFlexGridSizer(0, 2, 0, 0);
   fgSizer115->SetFlexibleDirection(wxBOTH);
@@ -2348,6 +2382,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sDepartureTimeOptimizationStepMinutes->Connect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationConcurrentRoutes->Connect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_tBoat->Connect(wxEVT_COMMAND_TEXT_UPDATED,
@@ -2992,6 +3029,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sDepartureTimeOptimizationStepMinutes->Disconnect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sDepartureTimeOptimizationConcurrentRoutes->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_tBoat->Disconnect(wxEVT_COMMAND_TEXT_UPDATED,

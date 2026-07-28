@@ -3559,11 +3559,19 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                     scenario.departureOptimization.afterMinutes);
           configuration.DepartureTimeOptimizationStepMinutes =
               scenario.departureOptimization.stepMinutes;
+          configuration.DepartureTimeOptimizationConcurrentRoutes =
+              scenario.departureOptimization.concurrentRoutes;
         } else {
           configuration.DepartureTimeOptimizationRangeMinutes =
               EnvLong("WR_HEADLESS_OPT_RANGE_MIN", 240);
           configuration.DepartureTimeOptimizationStepMinutes =
               EnvLong("WR_HEADLESS_OPT_STEP_MIN", 60);
+          configuration.DepartureTimeOptimizationConcurrentRoutes = std::max(
+              0L, std::min(
+                      static_cast<long>(
+                          weather_routing::
+                              kMaximumParallelDepartureCandidates),
+                      EnvLong("WR_HEADLESS_OPT_CONCURRENT_ROUTES", 0)));
         }
         if (scenario_loaded && scenario.environment.hasUseCurrents)
           configuration.Currents = scenario.environment.useCurrents;
@@ -5824,6 +5832,16 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   // Run representative route-family scouts before chart-enforced workers.
   // Candidates in one departure group reuse that scout; any weather-driven
   // path divergence is handled by the authoritative on-demand tile service.
+  const int logical_cpu_count = wxThread::GetCPUCount();
+  const int effective_workers = weather_routing::EffectiveRouteWorkerLimit(
+      m_SettingsDialog.m_sConcurrentThreads->GetValue(), true,
+      base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count);
+  wxLogMessage(
+      "WR_DEPARTURE_SCHEDULER group=%s candidates=%lu requested=%d "
+      "logical_cpus=%d global_limit=%d effective=%d",
+      groupId, static_cast<unsigned long>(candidate_routes.size()),
+      base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count,
+      m_SettingsDialog.m_sConcurrentThreads->GetValue(), effective_workers);
   PrepareChartSafetyScoutEnvelopes(candidate_routes,
                                    _("departure optimisation scouts"));
   for (std::vector<RouteMapOverlay*>::iterator route = candidate_routes.begin();
@@ -6744,9 +6762,14 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   advanceMs += sectionTimer.Time();
 
   bool departure_candidates_active = false;
+  int requested_departure_workers =
+      weather_routing::kAutomaticParallelDepartureCandidates;
   for (RouteMapOverlay* route : m_RunningRouteMaps)
     if (route && route->GetConfiguration().DepartureTimeOptimizationCandidate) {
       departure_candidates_active = true;
+      requested_departure_workers =
+          route->GetConfiguration()
+              .DepartureTimeOptimizationConcurrentRoutes;
       break;
     }
   if (!departure_candidates_active)
@@ -6754,11 +6777,15 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
       if (route &&
           route->GetConfiguration().DepartureTimeOptimizationCandidate) {
         departure_candidates_active = true;
+        requested_departure_workers =
+            route->GetConfiguration()
+                .DepartureTimeOptimizationConcurrentRoutes;
         break;
       }
   const int route_worker_limit = weather_routing::EffectiveRouteWorkerLimit(
       m_SettingsDialog.m_sConcurrentThreads->GetValue(),
-      departure_candidates_active);
+      departure_candidates_active, requested_departure_workers,
+      wxThread::GetCPUCount());
   if ((int)m_RunningRouteMaps.size() < route_worker_limit &&
       m_WaitingRouteMaps.size()) {
     sectionTimer.Start();
@@ -6988,6 +7015,11 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
             AttributeInt(e, "DepartureTimeOptimizationRangeMinutes", 360);
         configuration.DepartureTimeOptimizationStepMinutes =
             AttributeInt(e, "DepartureTimeOptimizationStepMinutes", 60);
+        configuration.DepartureTimeOptimizationConcurrentRoutes = std::max(
+            0, std::min(
+                   weather_routing::kMaximumParallelDepartureCandidates,
+                   AttributeInt(
+                       e, "DepartureTimeOptimizationConcurrentRoutes", 0)));
         configuration.IsMultiLegGenerated =
             AttributeBool(e, "IsMultiLegGenerated", false);
         const char* multiLegGroupId = e->Attribute("MultiLegGroupId");
@@ -7189,6 +7221,8 @@ void WeatherRouting::SaveXML(wxString filename) {
                     configuration.DepartureTimeOptimizationRangeMinutes);
     c->SetAttribute("DepartureTimeOptimizationStepMinutes",
                     configuration.DepartureTimeOptimizationStepMinutes);
+    c->SetAttribute("DepartureTimeOptimizationConcurrentRoutes",
+                    configuration.DepartureTimeOptimizationConcurrentRoutes);
     c->SetAttribute("IsMultiLegGenerated", configuration.IsMultiLegGenerated);
     if (!configuration.MultiLegGroupId.IsEmpty())
       c->SetAttribute("MultiLegGroupId",
@@ -9923,6 +9957,8 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("UseMotor"), configuration.UseMotor);
   pConf->Write(_T("MotorSpeedThreshold"), configuration.MotorSpeedThreshold);
   pConf->Write(_T("MotorSpeed"), configuration.MotorSpeed);
+  pConf->Write(_T("DepartureTimeOptimizationConcurrentRoutes"),
+               configuration.DepartureTimeOptimizationConcurrentRoutes);
   pConf->Flush();
 }
 
@@ -10014,6 +10050,15 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.MotorSpeedThreshold);
   pConf->Read(_T("MotorSpeed"), &configuration.MotorSpeed,
               configuration.MotorSpeed);
+  long departure_concurrent_routes =
+      configuration.DepartureTimeOptimizationConcurrentRoutes;
+  pConf->Read(_T("DepartureTimeOptimizationConcurrentRoutes"),
+              &departure_concurrent_routes, departure_concurrent_routes);
+  configuration.DepartureTimeOptimizationConcurrentRoutes = std::max(
+      0L, std::min(
+              static_cast<long>(
+                  weather_routing::kMaximumParallelDepartureCandidates),
+              departure_concurrent_routes));
 }
 
 RouteMapConfiguration WeatherRouting::DefaultConfiguration() {

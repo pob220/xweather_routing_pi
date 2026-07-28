@@ -276,6 +276,11 @@ struct RouteMapConfiguration {
   int DepartureTimeOptimizationRangeMinutes;
   /** Minutes between candidate departure times. */
   int DepartureTimeOptimizationStepMinutes;
+  /**
+   * Maximum departure candidates to calculate concurrently. Zero selects the
+   * scheduler's automatic machine-appropriate value.
+   */
+  int DepartureTimeOptimizationConcurrentRoutes;
   /** Runtime-only marker for generated optimization candidates. */
   bool DepartureTimeOptimizationCandidate;
   /** Runtime-only nominal departure used to compute displayed offsets. */

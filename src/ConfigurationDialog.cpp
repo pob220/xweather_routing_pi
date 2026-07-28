@@ -335,6 +335,7 @@ void ConfigurationDialog::SetConfigurations(
                  (*it).DepartureTimeOptimizationStepMinutes / 60);
   SET_SPIN_VALUE(DepartureTimeOptimizationStepMinutes,
                  (*it).DepartureTimeOptimizationStepMinutes % 60);
+  SET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
 
   bool timeButtonsEnabled = m_tpTime->IsEnabled() &&
                             m_dpStartDate->IsEnabled() &&
@@ -549,6 +550,9 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
   m_cbInvertedRegions->SetValue(false);
   m_cbUseReverseReachabilityRecovery->SetValue(false);
   m_cbAnchoring->SetValue(false);
+  m_sDepartureTimeOptimizationConcurrentRoutes->SetValue(0);
+  m_edited_controls.push_back(
+      m_sDepartureTimeOptimizationConcurrentRoutes);
   m_cIntegrator->SetSelection(0);
   m_sWindStrength->SetValue(100);
   m_sUpwindEfficiency->SetValue(100);
@@ -766,6 +770,7 @@ void ConfigurationDialog::Update() {
     GET_CHECKBOX(InvertedRegions);
     GET_CHECKBOX(UseReverseReachabilityRecovery);
     GET_CHECKBOX(Anchoring);
+    GET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
 
     GET_CHECKBOX(UseGrib);
     if (m_cClimatologyType->GetSelection() != -1)

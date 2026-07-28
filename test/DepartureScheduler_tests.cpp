@@ -18,3 +18,20 @@ TEST(DepartureScheduler, BoundsOnlyDepartureCandidateBatches) {
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, false), 20);
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(0, false), 1);
 }
+
+TEST(DepartureScheduler, AutomaticModeUsesCpuCapacityAndLeavesHeadroom) {
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 20), 4);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 8), 4);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 4), 2);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 2), 1);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 1), 1);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 0), 4);
+}
+
+TEST(DepartureScheduler, ExplicitModeHonoursRouteGlobalAndSafetyBounds) {
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 6, 20), 6);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(4, true, 8, 20), 4);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 12, 20), 12);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 99, 20), 12);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, false, 6, 20), 20);
+}

@@ -28,9 +28,14 @@ struct RoutingScenarioDepartureOptimization {
   int beforeMinutes;
   int afterMinutes;
   int stepMinutes;
+  int concurrentRoutes;
 
   RoutingScenarioDepartureOptimization()
-      : enabled(false), beforeMinutes(0), afterMinutes(0), stepMinutes(60) {}
+      : enabled(false),
+        beforeMinutes(0),
+        afterMinutes(0),
+        stepMinutes(60),
+        concurrentRoutes(0) {}
 };
 
 struct RoutingScenarioEnvironment {

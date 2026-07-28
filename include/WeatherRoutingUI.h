@@ -465,6 +465,7 @@ protected:
   wxStaticText* m_staticText130;
   wxCheckBox* m_cbInvertedRegions;
   wxCheckBox* m_cbAnchoring;
+  wxSpinCtrl* m_sDepartureTimeOptimizationConcurrentRoutes;
   wxCheckBox* m_cbUseMotor;
   wxSpinCtrlDouble* m_sMotorSpeedThreshold;
   wxSpinCtrlDouble* m_sMotorSpeed;
