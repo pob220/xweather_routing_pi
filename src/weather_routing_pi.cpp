@@ -31,6 +31,7 @@
 #include <cstring>
 
 #include "Utilities.h"
+#include "ChartSafetyHost.h"
 #include "Boat.h"
 #include "RoutePoint.h"
 #include "RouteMap.h"
@@ -115,7 +116,8 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
   // End of from Shipdriver
 
   b_in_boundary_reply = false;
-  m_use_persistent_chart_safe_cache = false;
+  m_use_persistent_chart_safe_cache = true;
+  m_chart_safety_ram_cache_mib = 0;
   m_tCursorLatLon.Connect(
       wxEVT_TIMER, wxTimerEventHandler(weather_routing_pi::OnCursorLatLonTimer),
       NULL, this);
@@ -184,7 +186,8 @@ int weather_routing_pi::Init() {
 }
 
 bool weather_routing_pi::DeInit() {
-  PlugIn_SaveSegmentSafetyPersistentCache();
+  m_chart_safety_cache.Flush(true);
+  weather_routing::chart_safety_host::Shutdown();
   m_tCursorLatLon.Stop();
   if (m_pWeather_Routing) m_pWeather_Routing->Close();
   WeatherRouting* wr = m_pWeather_Routing;
@@ -459,6 +462,23 @@ public:
       : m_plugin(plugin) {}
 
   void Notify() override {
+    // Timers are also dispatched inside modal startup loops. Never construct
+    // Weather Routing until OpenCPN has completed those loops and initialized
+    // its waypoint manager.
+    for (wxWindowList::compatibility_iterator node =
+             wxTopLevelWindows.GetFirst();
+         node; node = node->GetNext()) {
+      wxDialog* dialog = wxDynamicCast(node->GetData(), wxDialog);
+      if (dialog && dialog->IsModal()) {
+        wxLogMessage(
+            "WR_HEADLESS_ROUTE_TEST startup_wait reason=modal_dialog "
+            "title=\"%s\"",
+            dialog->GetTitle());
+        StartOnce(1000);
+        return;
+      }
+    }
+
     weather_routing_pi* plugin = m_plugin;
     delete this;
 
@@ -611,10 +631,39 @@ bool weather_routing_pi::LoadConfig() {
 
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
   pConf->Read(_T("UsePersistentCertifiedSafeAreaCache"),
-              &m_use_persistent_chart_safe_cache, false);
+              &m_use_persistent_chart_safe_cache, true);
+  long ram_mib = 0;
+  pConf->Read(_T("ChartSafetyRamCacheMiB"), &ram_mib, 0L);
+  m_chart_safety_ram_cache_mib =
+      static_cast<int>(wxMax(0L, wxMin(8192L, ram_mib)));
+
+  const bool had_use_setting =
+      pConf->HasEntry(_T("UseExperimentalChartSafety"));
+  const bool had_enforce_setting =
+      pConf->HasEntry(_T("EnforceExperimentalChartSafety"));
+
+  wxFileName cache_file(StandardPath(), _T("chart_safety_tiles_v1.cache"));
+  m_chart_safety_cache.Configure(
+      cache_file.GetFullPath().ToStdString(), m_chart_safety_ram_cache_mib,
+      m_use_persistent_chart_safe_cache);
+  const bool enhanced =
+      weather_routing::chart_safety_host::Initialize(&m_chart_safety_cache);
+  if (enhanced) {
+    // The enhanced capability is safe-by-construction. On a new installation
+    // make it the default while preserving any explicit user choice.
+    if (!had_use_setting)
+      pConf->Write(_T("UseExperimentalChartSafety"), true);
+    if (!had_enforce_setting)
+      pConf->Write(_T("EnforceExperimentalChartSafety"), true);
+  }
+  wxLogMessage("WeatherRouting chart safety: %s RAM=%d MiB persistent=%d",
+               weather_routing::chart_safety_host::Status().c_str(),
+               m_chart_safety_cache.EffectiveRamMiB(),
+               m_use_persistent_chart_safe_cache ? 1 : 0);
+
   const char* clear_cache = getenv("WR_HEADLESS_CLEAR_CERT_SAFE_CACHE");
   if (clear_cache && !strcmp(clear_cache, "1"))
-    PlugIn_ClearSegmentSafetyPersistentCache();
+    m_chart_safety_cache.Clear();
   const char* cache_override = getenv("WR_HEADLESS_PERSISTENT_CERT_SAFE_CACHE");
   if (cache_override) {
     wxString value(cache_override);
@@ -622,8 +671,16 @@ bool weather_routing_pi::LoadConfig() {
     m_use_persistent_chart_safe_cache =
         value == "1" || value == "true" || value == "yes";
   }
-  PlugIn_SetSegmentSafetyPersistentCacheEnabled(
-      m_use_persistent_chart_safe_cache ? 1 : 0);
+  const char* ram_override = getenv("WR_HEADLESS_CHART_SAFETY_RAM_MIB");
+  if (ram_override) {
+    long override_mib = 0;
+    if (wxString(ram_override).ToLong(&override_mib))
+      m_chart_safety_ram_cache_mib =
+          static_cast<int>(wxMax(0L, wxMin(8192L, override_mib)));
+  }
+  m_chart_safety_cache.SetRequestedRamMiB(m_chart_safety_ram_cache_mib);
+  m_chart_safety_cache.SetPersistentEnabled(
+      m_use_persistent_chart_safe_cache);
   return true;
 }
 
@@ -635,15 +692,34 @@ bool weather_routing_pi::SaveConfig() {
   pConf->SetPath(_T ( "/PlugIns/WeatherRouting" ));
   pConf->Write(_T("UsePersistentCertifiedSafeAreaCache"),
                m_use_persistent_chart_safe_cache);
-  PlugIn_SetSegmentSafetyPersistentCacheEnabled(
-      m_use_persistent_chart_safe_cache ? 1 : 0);
+  pConf->Write(_T("ChartSafetyRamCacheMiB"),
+               static_cast<long>(m_chart_safety_ram_cache_mib));
   return true;
 }
 
-void weather_routing_pi::SetUsePersistentChartSafeCache(bool enabled) {
+void weather_routing_pi::SetUsePersistentChartSafeCache(bool enabled,
+                                                        bool save) {
   m_use_persistent_chart_safe_cache = enabled;
-  PlugIn_SetSegmentSafetyPersistentCacheEnabled(enabled ? 1 : 0);
+  m_chart_safety_cache.SetPersistentEnabled(enabled);
+  if (save) SaveConfig();
+}
+
+void weather_routing_pi::SetChartSafetyRamCacheMiB(int ram_mib) {
+  m_chart_safety_ram_cache_mib = wxMax(0, wxMin(8192, ram_mib));
+  m_chart_safety_cache.SetRequestedRamMiB(m_chart_safety_ram_cache_mib);
   SaveConfig();
+}
+
+bool weather_routing_pi::ClearChartSafetyCache() {
+  return m_chart_safety_cache.Clear();
+}
+
+bool weather_routing_pi::FlushChartSafetyCache() {
+  return m_chart_safety_cache.Flush(false);
+}
+
+bool weather_routing_pi::HasEnhancedChartSafety() const {
+  return weather_routing::chart_safety_host::Available();
 }
 
 void weather_routing_pi::SetColorScheme(PI_ColorScheme cs) {

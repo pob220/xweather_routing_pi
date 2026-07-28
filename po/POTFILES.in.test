@@ -1,3 +1,7 @@
+src/AppendOnlyCache.cpp
+src/ChartSafetyCache.cpp
+src/ChartSafetyHost.cpp
+src/OceanPrewarmPolicy.cpp
 src/weather_routing_pi.cpp
 src/WeatherRouting.cpp
 src/SunCalculator.cpp
@@ -47,6 +51,10 @@ src/engine/native/Engine.cpp
 src/engine/native/Validator.cpp
 src/engine/native/Ensemble.cpp
 src/engine/native/OpenCpnAdapter.cpp
+include/AppendOnlyCache.h
+include/ChartSafetyCache.h
+include/ChartSafetyHost.h
+include/OceanPrewarmPolicy.h
 include/ClimatologyThreadGuard.h
 include/weather_routing_pi.h
 include/WeatherRouting.h

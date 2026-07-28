@@ -172,6 +172,10 @@ add_definitions(-DUSE_S57)
 
 
 SET(SRCS
+            src/AppendOnlyCache.cpp
+            src/ChartSafetyCache.cpp
+            src/ChartSafetyHost.cpp
+            src/OceanPrewarmPolicy.cpp
             src/weather_routing_pi.cpp
             src/WeatherRouting.cpp
             src/SunCalculator.cpp
@@ -224,6 +228,10 @@ SET(SRCS
 )
 
 SET (HDRS
+            include/AppendOnlyCache.h
+            include/ChartSafetyCache.h
+            include/ChartSafetyHost.h
+            include/OceanPrewarmPolicy.h
             include/ClimatologyThreadGuard.h
             include/weather_routing_pi.h
             include/WeatherRouting.h
@@ -305,6 +313,10 @@ include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/s
 ##==============================================================
 
 target_sources(${PACKAGE_NAME} PUBLIC ${SRC} )
+
+if(CMAKE_DL_LIBS)
+  target_link_libraries(${PACKAGE_NAME} ${CMAKE_DL_LIBS})
+endif()
 
 
 if (NOT OCPN_FLATPAK_CONFIG)

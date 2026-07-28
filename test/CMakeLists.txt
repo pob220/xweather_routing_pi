@@ -33,6 +33,9 @@ aui
 REQUIRED)
 
 set(TEST_SRC
+    AppendOnlyCache_tests.cpp
+    ChartSafetyCache_tests.cpp
+    OceanPrewarmPolicy_tests.cpp
     Polar_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
@@ -46,6 +49,9 @@ set(TEST_SRC
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp
     ModernNativeEngine_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/AppendOnlyCache.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartSafetyCache.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/OceanPrewarmPolicy.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
@@ -72,6 +78,7 @@ set(TEST_SRC
        PRIVATE
             ${WEATHER_ROUTING_SOURCE_DIR}/src
             ${WEATHER_ROUTING_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/include
    #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/api-18/include
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/libtess2/include
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/tinyxml/include

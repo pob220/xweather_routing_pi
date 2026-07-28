@@ -44,6 +44,8 @@
 #include "WeatherRouting.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "ChartSafetyHost.h"
+#include "OceanPrewarmPolicy.h"
 #include "DepartureScheduler.h"
 #include "WeatherDataProvider.h"
 #include "StabilityRouteAdapter.h"
@@ -286,7 +288,7 @@ static double EnvDouble(const char* name, double default_value) {
 }
 
 static void FinishHeadlessRouteTestProcess(int exit_code = 0) {
-  PlugIn_SaveSegmentSafetyPersistentCache();
+  weather_routing::chart_safety_host::FlushCache();
   wxLog::FlushActive();
   if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1")) {
     wxLogMessage("WR_HEADLESS_ROUTE_TEST process_exit code=%d", exit_code);
@@ -476,7 +478,7 @@ static bool PrewarmChartSafetyHazardSnapshot(
       wxGetEnv("WR_HAZARD_SNAPSHOT_SHADOW_ONLY", &shadow_only_value) &&
       shadow_only_value != "0";
   const bool effective_fast_path = enable_fast_path && !shadow_only;
-  const bool ok = PlugIn_PrewarmSegmentSafetyHazardSnapshot(
+  const bool ok = weather_routing::chart_safety_host::PrewarmHazardSnapshot(
       min_lat, min_lon, max_lat, max_lon, effective_fast_path ? 1 : 0, 1,
       &options, &result);
   wxLogMessage(
@@ -564,11 +566,116 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
              -1, -1);
   }
 
-  // This is only a fallback for a scout which could not produce usable
-  // geometry.  Keep it on the exact direct segment; any additional viable
-  // frontier tiles are requested safely by workers through the main-thread
-  // tile service.
-  double prewarm_margin_nm = 0.0;
+  // This is only a fallback for a scout which could not reach the destination.
+  // Prewarm route-shaped search hints, not a latitude/longitude rectangle.
+  // This is cache preparation only: it neither constrains the solver nor
+  // changes the authoritative safety result.  Long ocean passages use a
+  // sparse fan of narrow bowed alternatives instead of an enormous filled
+  // band.  The outer alternatives scale to 15% of passage length (with an
+  // ocean-scale cap), so several-thousand-mile passages cover realistic
+  // synoptic diversions while tile count and SSD traffic remain linear.
+  double direct_course = 0.0;
+  double direct_distance_nm = 0.0;
+  ll_gc_ll_reverse(configuration.StartLat, configuration.StartLon,
+                   configuration.EndLat, configuration.EndLon, &direct_course,
+                   &direct_distance_nm);
+  const weather_routing::OceanPrewarmPlan ocean_prewarm =
+      weather_routing::BuildOceanPrewarmPlan(direct_distance_nm);
+  const bool ocean_passage = ocean_prewarm.enabled;
+  const bool direct_crosses_land = PlugIn_GSHHS_CrossesLand(
+      configuration.StartLat, configuration.StartLon, configuration.EndLat,
+      configuration.EndLon);
+  double prewarm_margin_nm =
+      ocean_passage
+          ? ocean_prewarm.raster_margin_nm
+          : wxMin(12.0, wxMax(4.0, direct_distance_nm * 0.05));
+  if (direct_crosses_land && !ocean_passage) prewarm_margin_nm = 4.0;
+  const double ocean_outer_diversion_nm =
+      ocean_prewarm.outer_diversion_nm;
+  const double ocean_inner_diversion_nm =
+      ocean_prewarm.inner_diversion_nm;
+  const int direct_steps =
+      wxMax(1, wxMin(64, static_cast<int>(
+                              std::ceil(direct_distance_nm / 10.0))));
+  std::vector<double> corridor_latitudes;
+  std::vector<double> corridor_longitudes;
+  std::vector<int> corridor_point_counts;
+  double maximum_diversion_nm = 0.0;
+  const int maximum_corridors =
+      ocean_passage ? ocean_prewarm.corridor_count : 3;
+  corridor_latitudes.reserve((direct_steps + 1) * maximum_corridors);
+  corridor_longitudes.reserve((direct_steps + 1) * maximum_corridors);
+  corridor_point_counts.reserve(maximum_corridors);
+
+  auto append_corridor = [&](double signed_diversion_nm,
+                             bool require_gshhs_clear) {
+    std::vector<double> latitudes;
+    std::vector<double> longitudes;
+    latitudes.reserve(direct_steps + 1);
+    longitudes.reserve(direct_steps + 1);
+    for (int step = 0; step <= direct_steps; ++step) {
+      const double fraction = static_cast<double>(step) / direct_steps;
+      double latitude = configuration.StartLat;
+      double longitude = configuration.StartLon;
+      if (step > 0) {
+        ll_gc_ll(configuration.StartLat, configuration.StartLon, direct_course,
+                 direct_distance_nm * fraction, &latitude, &longitude);
+      }
+      if (signed_diversion_nm != 0.0 && step > 0 && step < direct_steps) {
+        const double bow = std::fabs(signed_diversion_nm) *
+                           std::sin(std::acos(-1.0) * fraction);
+        double offset_latitude = latitude;
+        double offset_longitude = longitude;
+        ll_gc_ll(latitude, longitude,
+                 direct_course +
+                     (signed_diversion_nm < 0.0 ? -90.0 : 90.0),
+                 bow,
+                 &offset_latitude, &offset_longitude);
+        latitude = offset_latitude;
+        longitude = offset_longitude;
+      }
+      latitudes.push_back(latitude);
+      longitudes.push_back(longitude);
+    }
+    if (require_gshhs_clear) {
+      for (int step = 1; step <= direct_steps; ++step) {
+        if (PlugIn_GSHHS_CrossesLand(
+                latitudes[step - 1], longitudes[step - 1], latitudes[step],
+                longitudes[step]))
+          return false;
+      }
+    }
+    corridor_latitudes.insert(corridor_latitudes.end(), latitudes.begin(),
+                              latitudes.end());
+    corridor_longitudes.insert(corridor_longitudes.end(), longitudes.begin(),
+                               longitudes.end());
+    corridor_point_counts.push_back(direct_steps + 1);
+    maximum_diversion_nm =
+        wxMax(maximum_diversion_nm, std::fabs(signed_diversion_nm));
+    return true;
+  };
+
+  if (ocean_passage) {
+    append_corridor(0.0, false);
+    append_corridor(-ocean_inner_diversion_nm, false);
+    append_corridor(ocean_inner_diversion_nm, false);
+    append_corridor(-ocean_outer_diversion_nm, false);
+    append_corridor(ocean_outer_diversion_nm, false);
+  } else if (!direct_crosses_land) {
+    append_corridor(0.0, false);
+  } else {
+    const double factors[] = {0.10, 0.20, 0.30, 0.45};
+    for (double factor : factors) {
+      const double diversion =
+          wxMin(120.0, wxMax(12.0, direct_distance_nm * factor));
+      if (append_corridor(-diversion, true) &&
+          corridor_point_counts.size() >= 2)
+        break;
+      if (append_corridor(diversion, true) &&
+          corridor_point_counts.size() >= 2)
+        break;
+    }
+  }
 
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
@@ -595,21 +702,39 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
         "snapshot_ready=0 engine=modern-native "
         "policy=authoritative-corridor-then-on-demand",
         context, configuration.Start, configuration.End);
-  prewarm_ok = PlugIn_PrewarmSegmentSafetyRouteMaskForSegment(
-      configuration.StartLat, configuration.StartLon, configuration.EndLat,
-      configuration.EndLon, prewarm_margin_nm, &options, &result);
+  if (corridor_point_counts.empty()) {
+    wxLogMessage(
+        "WR_ROUTE_MASK_PREWARM_DEFERRED context=%s route=\"%s to %s\" "
+        "direct_crosses_land=1 gshhs_alternative_corridors=0 "
+        "policy=scout-shape-plus-on-demand-authoritative",
+        context, configuration.Start, configuration.End);
+    return;
+  }
+  prewarm_ok = weather_routing::chart_safety_host::
+      PrewarmRouteMaskForPolylinesWithTileHalo(
+          corridor_latitudes.data(), corridor_longitudes.data(),
+          corridor_point_counts.data(),
+          static_cast<int>(corridor_point_counts.size()), prewarm_margin_nm, 1,
+          &options, &result);
   PlugInSegmentSafetyOptions search_options =
       ChartSafetySearchRouteMaskOptions(configuration);
   const bool search_mask_differs = std::fabs(search_options.safety_margin_nm -
                                              options.safety_margin_nm) > 1e-9;
   const bool search_prewarm_ok =
       !search_mask_differs ||
-      PlugIn_PrewarmSegmentSafetyRouteMaskForSegment(
-          configuration.StartLat, configuration.StartLon, configuration.EndLat,
-          configuration.EndLon, prewarm_margin_nm, &search_options,
-          &search_result);
+      weather_routing::chart_safety_host::
+          PrewarmRouteMaskForPolylinesWithTileHalo(
+              corridor_latitudes.data(), corridor_longitudes.data(),
+              corridor_point_counts.data(),
+              static_cast<int>(corridor_point_counts.size()),
+              prewarm_margin_nm, 1, &search_options, &search_result);
   prewarm_ok = prewarm_ok && search_prewarm_ok;
-  if (enforce_chart_safety) prewarm_mode = _("direct-segment-fallback");
+  if (enforce_chart_safety)
+    prewarm_mode =
+        ocean_passage
+            ? _("ocean-alternative-corridors")
+            : (direct_crosses_land ? _("GSHHS-clear alternative corridors")
+                                   : _("route-shaped-search-corridor"));
   if (!prewarm_ok) {
     wxLogMessage(
         "WeatherRouting Detect Land: chart safety prewarm failed context=%s "
@@ -622,10 +747,12 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
   wxString message = wxString::Format(
       "WeatherRouting Detect Land: chart safety prewarm context=%s "
       "route=\"%s to %s\" start=(%.6f,%.6f) end=(%.6f,%.6f) "
-      "mode=%s safety_margin_nm=%.3f prewarm_margin_nm=%.3f enforce=%d ",
+      "mode=%s safety_margin_nm=%.3f prewarm_margin_nm=%.3f "
+      "corridors=%d ocean_diversion_nm=%.1f enforce=%d ",
       context, configuration.Start, configuration.End, configuration.StartLat,
       configuration.StartLon, configuration.EndLat, configuration.EndLon,
       prewarm_mode, configuration.SafetyMarginLand, prewarm_margin_nm,
+      static_cast<int>(corridor_point_counts.size()), maximum_diversion_nm,
       enforce_chart_safety ? 1 : 0);
   message += wxString::Format(
       "tile_builds=%d tile_hits=%d build_ms=%d cells=%d land=%d water=%d "
@@ -982,7 +1109,13 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   if (m_colpane) m_colpane->Expand();
 
-  OpenXML(m_default_configuration_path, false);
+  if (EnvString("WR_HEADLESS_SCENARIO").IsEmpty()) {
+    OpenXML(m_default_configuration_path, false);
+  } else {
+    wxLogMessage(
+        "WR_HEADLESS_SCENARIO self_contained=1 "
+        "saved_configuration_load_skipped=1");
+  }
 
   wxPoint p = GetPosition();
   pConf->Read(_T ( "DialogX" ), &p.x, p.x);
@@ -3332,6 +3465,10 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimizationNow(
 }
 
 void WeatherRouting::RunHeadlessRouteTestFromEnv() {
+  // A scenario run is an automated test transaction, not an editing session.
+  // Configuration mutations below can otherwise arm the normal five-second
+  // autosave timer and display a modal error over the running benchmark.
+  m_tAutoSaveXML.Stop();
   wxString mode = EnvString("WR_HEADLESS_ROUTE_TEST");
   weather_routing_engine::RoutingScenario scenario;
   wxString scenario_path;
@@ -3361,8 +3498,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                scenario.safety.enforce ? "1" : "0");
     }
     if (scenario.safety.hasPersistentCertifiedCacheEnabled)
-      PlugIn_SetSegmentSafetyPersistentCacheEnabled(
-          scenario.safety.persistentCertifiedCacheEnabled ? 1 : 0);
+      m_weather_routing_pi.SetUsePersistentChartSafeCache(
+          scenario.safety.persistentCertifiedCacheEnabled, false);
     wxString write_error;
     if (!weather_routing_headless::HeadlessRouteRunner::WriteStartedResult(
             scenario_output_path, scenario, write_error)) {
@@ -3494,10 +3631,19 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       if (!std::isnan(start_lat) && !std::isnan(start_lon) &&
           !std::isnan(end_lat) && !std::isnan(end_lon)) {
         RouteMapConfiguration configuration = DefaultConfiguration();
-        if (!m_WeatherRoutes.empty() && m_WeatherRoutes.front() &&
+        if (!scenario_loaded && !m_WeatherRoutes.empty() &&
+            m_WeatherRoutes.front() &&
             m_WeatherRoutes.front()->routemapoverlay) {
           configuration =
               m_WeatherRoutes.front()->routemapoverlay->GetConfiguration();
+        }
+        if (scenario_loaded) {
+          // Headless scenario files are self-contained.  Inheriting an
+          // unrelated saved GUI route made GRIB-only benchmarks silently
+          // initialize climatology (and any other stale route settings).
+          configuration.ClimatologyType = RouteMapConfiguration::DISABLED;
+          configuration.AllowDataDeficient = false;
+          configuration.AvoidCycloneTracks = false;
         }
         configuration.RouteGUID.Clear();
         configuration.StartType = RouteMapConfiguration::START_FROM_POSITION;
@@ -3634,8 +3780,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
             configuration.SafetyMarginLand =
                 wxMax(0.0, scenario.safety.landMarginNm);
           if (scenario.safety.hasPersistentCertifiedCacheEnabled)
-            PlugIn_SetSegmentSafetyPersistentCacheEnabled(
-                scenario.safety.persistentCertifiedCacheEnabled ? 1 : 0);
+            m_weather_routing_pi.SetUsePersistentChartSafeCache(
+                scenario.safety.persistentCertifiedCacheEnabled, false);
         }
         if (!AddConfiguration(configuration)) {
           wxLogMessage(
@@ -3717,8 +3863,15 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
           "DepartureTimeOptimizationEnabled=%d.",
           selected_config.DepartureTimeOptimizationEnabled ? 1 : 0);
     }
-    if (selected_config_changed)
+    if (selected_config_changed) {
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=set_selected_configuration "
+          "phase=begin");
       selected_route->SetConfiguration(selected_config);
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=set_selected_configuration "
+          "phase=end");
+    }
     bool departure_opt = mode.IsSameAs("single-opt", false) ||
                          mode.IsSameAs("departure-opt", false) ||
                          selected_config.DepartureTimeOptimizationEnabled;
@@ -3738,8 +3891,18 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
       selected_config.chart_safety_missing_tile_max_lat = NAN;
       selected_config.chart_safety_missing_tile_min_lon = NAN;
       selected_config.chart_safety_missing_tile_max_lon = NAN;
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=set_propagation_configuration "
+          "phase=begin");
       selected_route->SetConfiguration(selected_config);
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=set_propagation_configuration "
+          "phase=end");
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=start_route phase=begin");
       Start(selected_route);
+      wxLogMessage(
+          "WR_HEADLESS_ROUTE_TEST setup_step=start_route phase=end");
       started = true;
     }
 
@@ -6402,14 +6565,67 @@ void WeatherRouting::OnChartAwarenessSettings(wxCommandEvent& event) {
                   wxDefaultPosition, wxDefaultSize,
                   wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
   wxBoxSizer* top = new wxBoxSizer(wxVERTICAL);
+
+  wxStaticText* capability = new wxStaticText(
+      &dialog, wxID_ANY,
+      m_weather_routing_pi.HasEnhancedChartSafety()
+          ? _("Full chart-aware safety is available and enabled by default. "
+              "OpenCPN remains the chart-classification authority; this "
+              "plugin owns its RAM and persistent tile cache.")
+          : _("This OpenCPN build does not provide the optional enhanced "
+              "chart-safety capability. The plugin remains usable with "
+              "standard GSHHS land checks. If chart safety is explicitly "
+              "enforced, routing fails closed instead of silently "
+              "downgrading."));
+  capability->Wrap(470);
+  top->Add(capability, 0, wxALL | wxEXPAND, 10);
+
   wxCheckBox* persistent = new wxCheckBox(
       &dialog, wxID_ANY, _("Use Persistent Certified Safe-Area Cache"));
   persistent->SetValue(m_weather_routing_pi.UsePersistentChartSafeCache());
-  top->Add(persistent, 0, wxALL | wxEXPAND, 10);
+  top->Add(persistent, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
+
+  wxBoxSizer* ram_row = new wxBoxSizer(wxHORIZONTAL);
+  ram_row->Add(new wxStaticText(&dialog, wxID_ANY,
+                                _("Chart-safety RAM cache (MiB):")),
+               0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+  wxSpinCtrl* ram = new wxSpinCtrl(&dialog, wxID_ANY);
+  ram->SetRange(0, 8192);
+  ram->SetIncrement(256);
+  ram->SetValue(m_weather_routing_pi.ChartSafetyRamCacheMiB());
+  ram->SetToolTip(
+      _("0 selects Auto. Auto uses approximately 1/32 of physical RAM, "
+        "bounded between 256 and 2048 MiB."));
+  ram_row->Add(ram, 1, wxEXPAND);
+  top->Add(ram_row, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
+
+  wxStaticText* effective = new wxStaticText(
+      &dialog, wxID_ANY,
+      wxString::Format(_("Current effective RAM budget: %d MiB"),
+                       m_weather_routing_pi
+                           .EffectiveChartSafetyRamCacheMiB()));
+  top->Add(effective, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
 
   wxButton* clear = new wxButton(
       &dialog, wxID_ANY, _("Clear Persistent Certified Safe-Area Cache"));
   top->Add(clear, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
+
+  const weather_routing::ChartSafetyCacheStats cache_stats =
+      m_weather_routing_pi.ChartSafetyCacheStatistics();
+  wxStaticText* stats = new wxStaticText(
+      &dialog, wxID_ANY,
+      wxString::Format(
+          _("Cache: %lu RAM tiles (%.1f MiB), %lu disk tiles "
+            "(%.1f MiB); hits RAM=%llu disk=%llu, misses=%llu"),
+          static_cast<unsigned long>(cache_stats.ram_entries),
+          cache_stats.ram_bytes / (1024.0 * 1024.0),
+          static_cast<unsigned long>(cache_stats.disk_entries),
+          cache_stats.disk_file_bytes / (1024.0 * 1024.0),
+          static_cast<unsigned long long>(cache_stats.ram_hits),
+          static_cast<unsigned long long>(cache_stats.disk_hits),
+          static_cast<unsigned long long>(cache_stats.misses)));
+  stats->Wrap(470);
+  top->Add(stats, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 10);
 
   wxStaticText* note = new wxStaticText(
       &dialog, wxID_ANY,
@@ -6427,7 +6643,7 @@ void WeatherRouting::OnChartAwarenessSettings(wxCommandEvent& event) {
   top->Add(buttons, 0, wxALL | wxALIGN_RIGHT, 10);
 
   clear->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-    bool ok = PlugIn_ClearSegmentSafetyPersistentCache();
+    bool ok = m_weather_routing_pi.ClearChartSafetyCache();
     wxLogMessage("WR_CERT_SAFE_CACHE clear_requested success=%d", ok ? 1 : 0);
     wxMessageBox(
         ok ? _("Persistent certified safe-area cache cleared.")
@@ -6438,6 +6654,7 @@ void WeatherRouting::OnChartAwarenessSettings(wxCommandEvent& event) {
   dialog.SetSizerAndFit(top);
   if (dialog.ShowModal() == wxID_OK) {
     m_weather_routing_pi.SetUsePersistentChartSafeCache(persistent->GetValue());
+    m_weather_routing_pi.SetChartSafetyRamCacheMiB(ram->GetValue());
     wxLogMessage("WR_CERT_SAFE_CACHE ui_set enabled=%d",
                  persistent->GetValue() ? 1 : 0);
   }
@@ -6728,7 +6945,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
       wxStopWatch chartRequestTimer;
       PlugInSegmentSafetyRequestServiceResult service = {};
       service.struct_size = sizeof(service);
-      PlugIn_ServicePendingSegmentSafetyRequests(16, 50, &service);
+      weather_routing::chart_safety_host::ServicePendingRequests(
+          16, 50, &service);
       chartSafetyRequestMs += chartRequestTimer.Time();
       chartSafetyRequestsServiced += service.requests_serviced;
       if (service.pending_after == 0) {
@@ -6888,7 +7106,10 @@ void WeatherRouting::OnHideConfigurationTimer(wxTimerEvent&) {
   m_ConfigurationDialog.Hide();
 }
 
-void WeatherRouting::OnAutoSaveXMLTimer(wxTimerEvent&) { AutoSaveXML(); }
+void WeatherRouting::OnAutoSaveXMLTimer(wxTimerEvent&) {
+  if (!EnvString("WR_HEADLESS_ROUTE_TEST").IsEmpty()) return;
+  AutoSaveXML();
+}
 
 void WeatherRouting::AutoSaveXML() { SaveXML(m_FileName.GetFullPath()); }
 
@@ -8520,7 +8741,8 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     const bool prewarm_full_corridor =
         representative.UseChartSafetyForPropagation;
     bool ok = !prewarm_full_corridor ||
-              PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo(
+              weather_routing::chart_safety_host::
+                  PrewarmRouteMaskForPolylinesWithTileHalo(
                   latitudes.data(), longitudes.data(), point_counts.data(),
                   (int)point_counts.size(), footprint_dilation_nm,
                   footprint_fine_tile_halo, &options, &result);
@@ -8533,7 +8755,8 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     search_result.struct_size = sizeof(search_result);
     const bool search_ok =
         !prewarm_full_corridor || !search_mask_differs ||
-        PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo(
+        weather_routing::chart_safety_host::
+            PrewarmRouteMaskForPolylinesWithTileHalo(
             latitudes.data(), longitudes.data(), point_counts.data(),
             (int)point_counts.size(), footprint_dilation_nm,
             footprint_fine_tile_halo, &search_options, &search_result);
@@ -8546,13 +8769,19 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     endpoint_result.struct_size = sizeof(endpoint_result);
     bool endpoint_ok =
         endpoint_point_counts.empty() ||
-        PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo(
+        weather_routing::chart_safety_host::
+            PrewarmRouteMaskForPolylinesWithTileHalo(
             endpoint_latitudes.data(), endpoint_longitudes.data(),
             endpoint_point_counts.data(), (int)endpoint_point_counts.size(),
             footprint_dilation_nm, footprint_fine_tile_halo, &endpoint_options,
             &endpoint_result);
 
-    if (ok && search_ok && endpoint_ok)
+    // A partial scout is valuable as an additional route-shaped hint, but it
+    // cannot certify coverage to the destination.  Leave the shared scope
+    // incomplete so Start() also prewarms the direct end-to-end corridor;
+    // otherwise the authoritative worker can cross the edge of the partial
+    // footprint and serialize hundreds of single-tile GUI-thread requests.
+    if (ok && search_ok && endpoint_ok && complete_scouts > 0)
       s_chartSafetySharedPrewarmScopes.insert(group->first);
     wxLogMessage(
         "WR_ROUTE_MASK_SCOUT_ENVELOPE context=%s scope=%s candidates=%lu "
@@ -9752,7 +9981,8 @@ bool WeatherRouting::RetryRouteAfterMissingChartSafetyTiles(
   // worker published; do not grow an arbitrary rectangle around them.
   PlugInSegmentSafetyRequestServiceResult service = {};
   service.struct_size = sizeof(service);
-  PlugIn_ServicePendingSegmentSafetyRequests(64, 250, &service);
+  weather_routing::chart_safety_host::ServicePendingRequests(
+      64, 250, &service);
   wxLogMessage(
       "WR_GRID_TILE_RETRY_EXACT_SERVICE route=\"%s to %s\" retry=%d/%d "
       "serviced=%d built=%d failed=%d pending_after=%d elapsed_ms=%d",
@@ -9812,7 +10042,7 @@ void WeatherRouting::StopAll() {
   m_WaitingRouteMaps.clear();
 
   s_chartSafetySharedPrewarmScopes.clear();
-  PlugIn_ReleaseSegmentSafetyRouteMaskPins();
+  weather_routing::chart_safety_host::ReleaseRouteMaskPins();
 
   UpdateStates();
 

@@ -76,6 +76,7 @@
 #define ABOUT_AUTHOR_URL "http://seandepagnier.users.sourceforge.net"
 
 #include "ocpn_plugin.h"
+#include "ChartSafetyCache.h"
 #include "pidc.h"
 #include "qtstylesheet.h"
 
@@ -163,7 +164,20 @@ public:
   bool UsePersistentChartSafeCache() const {
     return m_use_persistent_chart_safe_cache;
   }
-  void SetUsePersistentChartSafeCache(bool enabled);
+  void SetUsePersistentChartSafeCache(bool enabled, bool save = true);
+  int ChartSafetyRamCacheMiB() const {
+    return m_chart_safety_ram_cache_mib;
+  }
+  int EffectiveChartSafetyRamCacheMiB() const {
+    return m_chart_safety_cache.EffectiveRamMiB();
+  }
+  void SetChartSafetyRamCacheMiB(int ram_mib);
+  bool ClearChartSafetyCache();
+  bool FlushChartSafetyCache();
+  bool HasEnhancedChartSafety() const;
+  weather_routing::ChartSafetyCacheStats ChartSafetyCacheStatistics() const {
+    return m_chart_safety_cache.Stats();
+  }
 
   wxWindow* GetParentWindow() { return m_parent_window; }
 
@@ -185,6 +199,8 @@ private:
 
   bool b_in_boundary_reply;
   bool m_use_persistent_chart_safe_cache;
+  int m_chart_safety_ram_cache_mib;
+  weather_routing::ChartSafetyCache m_chart_safety_cache;
 
   wxFileConfig* m_pconfig;
   wxWindow* m_parent_window;

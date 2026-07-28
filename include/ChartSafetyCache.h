@@ -1,0 +1,146 @@
+/***************************************************************************
+ * Copyright (C) 2026 OpenCPN contributors
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ ***************************************************************************/
+
+#ifndef WEATHER_ROUTING_CHART_SAFETY_CACHE_H
+#define WEATHER_ROUTING_CHART_SAFETY_CACHE_H
+
+#include <cstddef>
+#include <cstdint>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+#include "AppendOnlyCache.h"
+#include "ocpn_plugin.h"
+
+namespace weather_routing {
+
+struct ChartSafetyCacheStats {
+  std::uint64_t ram_hits{0};
+  std::uint64_t disk_hits{0};
+  std::uint64_t misses{0};
+  std::uint64_t stores{0};
+  std::uint64_t evictions{0};
+  std::uint64_t rejected_records{0};
+  std::uint64_t flushes{0};
+  std::uint64_t ram_bytes{0};
+  std::uint64_t ram_budget_bytes{0};
+  std::uint64_t disk_bytes_read{0};
+  std::uint64_t disk_bytes_written{0};
+  std::uint64_t disk_file_bytes{0};
+  std::size_t ram_entries{0};
+  std::size_t disk_entries{0};
+  std::size_t dirty_entries{0};
+};
+
+/**
+ * Plugin-owned hot RAM and persistent authoritative chart-safety tile cache.
+ *
+ * OpenCPN supplies classifications through optional callbacks. This class
+ * owns capacity, LRU eviction, persistence, corruption recovery and chart
+ * identity invalidation.
+ */
+class ChartSafetyCache {
+public:
+  ChartSafetyCache();
+  ~ChartSafetyCache();
+
+  void Configure(const std::string& path, int requested_ram_mib,
+                 bool persistent_enabled);
+  void SetIdentity(const std::string& identity);
+  void SetPersistentEnabled(bool enabled);
+  void SetRequestedRamMiB(int requested_ram_mib);
+
+  int RequestedRamMiB() const;
+  int EffectiveRamMiB() const;
+  bool PersistentEnabled() const;
+  bool Ready() const;
+  std::string Identity() const;
+  std::string LastError() const;
+  ChartSafetyCacheStats Stats() const;
+
+  bool Lookup(long lat_tile, long lon_tile, bool require_depth,
+              PlugInSegmentSafetyTile* tile);
+  void Store(const PlugInSegmentSafetyTile* tile);
+  bool Flush(bool allow_compaction = false);
+  bool Clear();
+
+  static int LookupCallback(void* context, long lat_tile, long lon_tile,
+                            int require_depth,
+                            PlugInSegmentSafetyTile* tile);
+  static void StoreCallback(void* context,
+                            const PlugInSegmentSafetyTile* tile);
+  static void IdentityCallback(void* context, const char* identity);
+
+private:
+  struct TileData {
+    int group_index{0};
+    long lat_tile{0};
+    long lon_tile{0};
+    double resolution{0.0};
+    int rows{0};
+    int cols{0};
+    int chart_db_index{-1};
+    int chart_scale{-1};
+    int source{PI_SEGMENT_SAFETY_SOURCE_NONE};
+    std::uint32_t hazard_summary_flags{0};
+    bool depth_complete{false};
+    std::string chart_path;
+    std::vector<unsigned short> hazard_flags;
+    std::vector<unsigned char> has_depth;
+    std::vector<float> min_depth_m;
+  };
+
+  struct RamEntry {
+    TileData tile;
+    std::size_t bytes{0};
+    std::list<std::string>::iterator lru;
+  };
+
+  static std::uint64_t PhysicalMemoryBytes();
+  static int ResolveEffectiveRamMiB(int requested_ram_mib);
+  static std::string TileKey(long lat_tile, long lon_tile);
+  static std::size_t TileBytes(const std::string& key, const TileData& tile);
+  static bool ReadExternalTile(const PlugInSegmentSafetyTile* source,
+                               TileData* tile);
+  static bool WriteExternalTile(const TileData& source,
+                                PlugInSegmentSafetyTile* tile);
+  static bool Serialize(const TileData& tile,
+                        std::vector<unsigned char>* bytes);
+  static bool Deserialize(const std::vector<unsigned char>& bytes,
+                          TileData* tile);
+
+  bool OpenStoreLocked();
+  void InsertRamLocked(const std::string& key, TileData tile);
+  void TouchLocked(std::map<std::string, RamEntry>::iterator entry);
+  void EnforceBudgetLocked();
+  void UpdateStoreStatsLocked();
+
+  mutable std::mutex mutex_;
+  std::string path_;
+  std::string identity_;
+  std::string last_error_;
+  int requested_ram_mib_;
+  int effective_ram_mib_;
+  bool persistent_enabled_;
+  bool configured_;
+  bool store_open_;
+  AppendOnlyCache store_;
+  std::map<std::string, RamEntry> ram_;
+  std::list<std::string> lru_;
+  std::map<std::string, AppendOnlyCacheRecord> dirty_;
+  ChartSafetyCacheStats stats_;
+};
+
+}  // namespace weather_routing
+
+#endif  // WEATHER_ROUTING_CHART_SAFETY_CACHE_H

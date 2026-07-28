@@ -20,6 +20,7 @@
 #include <wx/wx.h>
 
 #include "ConstraintChecker.h"
+#include "ChartSafetyHost.h"
 #include "WeatherDataProvider.h"
 #include "RouteMap.h"
 #include "Utilities.h"
@@ -396,8 +397,9 @@ bool EndpointMarginOnlyHitIsZeroMarginSafe(RouteMapConfiguration* configuration,
 
   PlugInSegmentSafetyResult zero_margin_result = {};
   zero_margin_result.struct_size = sizeof(zero_margin_result);
-  if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &zero_margin_options,
-                                 &zero_margin_result))
+  if (!weather_routing::chart_safety_host::CheckSegment(
+          lat1, lon1, lat2, lon2, &zero_margin_options,
+          &zero_margin_result))
     return false;
 
   AccumulateSegmentSafetyDiagnostics(zero_margin_result);
@@ -456,8 +458,19 @@ bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
   ++s_segmentSafetyApiCalls;
-  if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &options, &result)) {
+  if (!weather_routing::chart_safety_host::CheckSegment(
+          lat1, lon1, lat2, lon2, &options, &result)) {
     ++s_chartUnavailableFallbacks;
+    if (s_enforceExperimentalChartSafety) {
+      if (!s_loggedExperimentalForcedFallback) {
+        wxLogError(
+            "WeatherRouting chart safety is enforced but the enhanced "
+            "OpenCPN chart-safety capability is unavailable; rejecting "
+            "segments until the capability is restored.");
+        s_loggedExperimentalForcedFallback = true;
+      }
+      return true;
+    }
     return GshhsSegmentSafetyHitsLand(lat1, lon1, lat2, lon2,
                                       safety_margin_nm);
   }
@@ -646,12 +659,13 @@ bool FinalRouteSegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   PlugInSegmentSafetyResult result = {};
   result.struct_size = sizeof(result);
   ++s_finalRouteValidationChecks;
-  if (!PlugIn_CheckSegmentSafety(lat1, lon1, lat2, lon2, &options, &result)) {
-    bool rejects = GshhsSegmentSafetyHitsLand(lat1, lon1, lat2, lon2,
-                                             safety_margin_nm);
-    if (rejects && failure_reason)
-      *failure_reason = _("Land crossing in final route");
-    return rejects;
+  if (!weather_routing::chart_safety_host::CheckSegment(
+          lat1, lon1, lat2, lon2, &options, &result)) {
+    if (failure_reason)
+      *failure_reason =
+          _("Authoritative chart safety is unavailable in this OpenCPN "
+            "build; enforced chart-aware routing failed closed");
+    return true;
   }
 
   bool rejects = result.status == PI_SEGMENT_SAFETY_CROSSES_LAND ||
