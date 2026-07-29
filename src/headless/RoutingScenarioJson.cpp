@@ -18,6 +18,7 @@
 #include <wx/filename.h>
 
 #include "DepartureScheduler.h"
+#include "RoutingResourcePolicy.h"
 
 namespace {
 
@@ -154,6 +155,11 @@ bool LoadRoutingScenarioJson(const wxString& path,
     if (JsonInt(route, "timeStepSeconds", int_value)) {
       scenario.route.timeStepSeconds = int_value;
       scenario.route.hasTimeStepSeconds = true;
+    }
+    if (JsonInt(route, "routingEffortPercent", int_value)) {
+      scenario.route.routingEffortPercent =
+          weather_routing::NormalizeRoutingEffortPercent(int_value);
+      scenario.route.hasRoutingEffortPercent = true;
     }
     if (JsonDouble(route, "headingFromDegrees", double_value)) {
       scenario.route.headingFromDegrees = double_value;

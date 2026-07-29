@@ -25,6 +25,7 @@
   "route": {
     "boatFile": "~/.opencpn/plugins/weather_routing/boats/Nicholson_35_conservative.xml",
     "timeStepSeconds": 3600,
+    "routingEffortPercent": 400,
     "headingFromDegrees": 40,
     "headingToDegrees": 160,
     "headingStepDegrees": 5,

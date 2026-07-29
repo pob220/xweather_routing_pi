@@ -150,6 +150,7 @@ RouteMapConfiguration::RouteMapConfiguration()
       DepartureTimeOptimizationRangeMinutes(360),
       DepartureTimeOptimizationStepMinutes(60),
       DepartureTimeOptimizationConcurrentRoutes(0),
+      RoutingEffortPercent(100),
       DepartureTimeOptimizationCandidate(false),
       DepartureTimeOptimizationOffsetMinutes(0),
       IsMultiLegGenerated(false),
@@ -215,7 +216,13 @@ RouteMapConfiguration::RouteMapConfiguration()
       chart_safety_missing_tile_max_lon(NAN),
       chart_safety_start_endpoint_reach_nm(0.0),
       chart_safety_end_endpoint_reach_nm(0.0),
-      chart_safety_scout_preview(false) {}
+      chart_safety_scout_preview(false),
+      routing_generated_states(0),
+      routing_generated_state_limit(0),
+      routing_retained_states(0),
+      routing_retained_state_limit(0),
+      routing_graph_labels(0),
+      routing_graph_label_limit(0) {}
 
 double RouteMapConfiguration::GetBoatLat() {
   if (s_plugin_instance) return s_plugin_instance->m_boat_lat;

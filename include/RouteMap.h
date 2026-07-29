@@ -281,6 +281,12 @@ struct RouteMapConfiguration {
    * scheduler's automatic machine-appropriate value.
    */
   int DepartureTimeOptimizationConcurrentRoutes;
+  /**
+   * Search resource multiplier for each complete route. One hundred preserves
+   * the standard limits; higher values trade CPU time and memory for a more
+   * exhaustive search.
+   */
+  int RoutingEffortPercent;
   /** Runtime-only marker for generated optimization candidates. */
   bool DepartureTimeOptimizationCandidate;
   /** Runtime-only nominal departure used to compute displayed offsets. */
@@ -764,6 +770,13 @@ struct RouteMapConfiguration {
   // footprint. It may use preview search limits, but can never be displayed or
   // accepted as the final route.
   bool chart_safety_scout_preview;
+  /** Runtime-only native engine resource diagnostics. */
+  std::uint64_t routing_generated_states;
+  std::uint64_t routing_generated_state_limit;
+  std::uint64_t routing_retained_states;
+  std::uint64_t routing_retained_state_limit;
+  std::uint64_t routing_graph_labels;
+  std::uint64_t routing_graph_label_limit;
 };
 
 bool operator!=(const RouteMapConfiguration& c1,

@@ -35,6 +35,7 @@
 #include "Utilities.h"
 #include "Boat.h"
 #include "RouteMapOverlay.h"
+#include "RoutingResourcePolicy.h"
 #include "ConfigurationDialog.h"
 #include "BoatDialog.h"
 #include "weather_routing_pi.h"
@@ -42,6 +43,7 @@
 #include "icons.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace {
 
@@ -81,6 +83,27 @@ wxString GetWaypointGuidForSelection(wxComboBox* combo) {
   wxString guid;
   FindWaypointByName(combo->GetValue(), nullptr, &guid);
   return guid;
+}
+
+int RoutingEffortSelection(int percent) {
+  switch (weather_routing::NormalizeRoutingEffortPercent(percent)) {
+    case 150:
+      return 1;
+    case 200:
+      return 2;
+    case 400:
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+int RoutingEffortPercentForSelection(int selection) {
+  static constexpr int kEffortPercent[] = {100, 150, 200, 400};
+  if (selection < 0 ||
+      selection >= static_cast<int>(WXSIZEOF(kEffortPercent)))
+    return weather_routing::kDefaultRoutingEffortPercent;
+  return kEffortPercent[selection];
 }
 
 }  // namespace
@@ -336,6 +359,22 @@ void ConfigurationDialog::SetConfigurations(
   SET_SPIN_VALUE(DepartureTimeOptimizationStepMinutes,
                  (*it).DepartureTimeOptimizationStepMinutes % 60);
   SET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
+  const int firstRoutingEffort =
+      weather_routing::NormalizeRoutingEffortPercent(it->RoutingEffortPercent);
+  bool allRoutingEffortSame = true;
+  for (auto compare = std::next(it); compare != configurations.end();
+       ++compare) {
+    if (weather_routing::NormalizeRoutingEffortPercent(
+            compare->RoutingEffortPercent) != firstRoutingEffort) {
+      allRoutingEffortSame = false;
+      break;
+    }
+  }
+  m_cRoutingEffortPercent->SetSelection(
+      allRoutingEffortSame ? RoutingEffortSelection(firstRoutingEffort)
+                           : wxNOT_FOUND);
+  m_cRoutingEffortPercent->SetForegroundColour(
+      allRoutingEffortSame ? wxColour(0, 0, 0) : wxColour(180, 180, 180));
   m_sChartSafetyRamCacheMiB->SetValue(
       m_WeatherRouting.ChartSafetyRamCacheMiB());
   UpdateChartSafetyRamLabel();
@@ -553,6 +592,8 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
   m_cbInvertedRegions->SetValue(false);
   m_cbUseReverseReachabilityRecovery->SetValue(false);
   m_cbAnchoring->SetValue(false);
+  m_cRoutingEffortPercent->SetSelection(0);
+  m_edited_controls.push_back(m_cRoutingEffortPercent);
   m_sDepartureTimeOptimizationConcurrentRoutes->SetValue(0);
   m_edited_controls.push_back(
       m_sDepartureTimeOptimizationConcurrentRoutes);
@@ -792,6 +833,14 @@ void ConfigurationDialog::Update() {
     GET_CHECKBOX(InvertedRegions);
     GET_CHECKBOX(UseReverseReachabilityRecovery);
     GET_CHECKBOX(Anchoring);
+    if (NO_EDITED_CONTROLS ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  static_cast<wxObject*>(m_cRoutingEffortPercent)) !=
+            m_edited_controls.end()) {
+      configuration.RoutingEffortPercent = RoutingEffortPercentForSelection(
+          m_cRoutingEffortPercent->GetSelection());
+      m_cRoutingEffortPercent->SetForegroundColour(wxColour(0, 0, 0));
+    }
     GET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
 
     GET_CHECKBOX(UseGrib);

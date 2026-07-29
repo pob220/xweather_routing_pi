@@ -99,6 +99,17 @@ default for newly created routes. The same tab exposes the plugin's persistent
 **Chart-safety RAM cache** budget; `0` selects the hardware-derived automatic
 budget.
 
+The same tab exposes **Routing effort** levels of 100%, 150%, 200% and 400%.
+The policy scales generated states, retained states and recovery graph labels
+together, independently for every route and departure candidate. The standard
+100% level preserves the previous final-route limits.
+
+Chart-safety corridor scouting is bounded by deterministic generated- and
+retained-state counts. A 120-second watchdog remains only as a fault guard: if
+it fires, the partial scout is discarded and routing falls back to direct
+corridor preparation. Consequently CPU scheduling or a warm cache cannot
+change the partial scout geometry used by the final solve.
+
 Weather samples are cached at 15-minute and 0.01-degree keys, which remain
 finer than the 0.025-degree Irish Sea acceptance GRIB. Forty-eight copied GRIB
 timeline frames retain a rolling 12-hour working set. Exact route-to-cursor

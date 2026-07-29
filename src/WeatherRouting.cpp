@@ -47,6 +47,7 @@
 #include "ChartSafetyHost.h"
 #include "OceanPrewarmPolicy.h"
 #include "DepartureScheduler.h"
+#include "RoutingResourcePolicy.h"
 #include "WeatherDataProvider.h"
 #include "StabilityRouteAdapter.h"
 #include "headless/HeadlessRouteRunner.h"
@@ -372,14 +373,11 @@ static void ApplyHeadlessRouteSafetyOverrides(
 }
 
 static const int kDefaultMaxChartSafetyMissingTileRetries = 16;
-// The scout is only a chart-prewarm hint. Long recovery searches belong to the
-// authoritative solve; retaining the best frontier reached within this small
-// budget gives a useful corridor without duplicating most of the real route
-// calculation.
-// Scouts are non-authoritative cache hints. Keep them short enough that an
-// ordinary coastal passage is never dominated by preparation; any uncovered
-// chart tiles are serviced safely on demand by the main search.
-static const long kChartSafetyScoutMaxMs = 5000;
+// Scouts stop at a deterministic generated-state limit configured by the
+// native adapter. This watchdog is only a deadlock/stall escape hatch. If it
+// fires, the partial result is discarded so wall-clock timing cannot alter the
+// chart-safety corridor used by the authoritative solve.
+static const long kChartSafetyScoutWatchdogMs = 120000;
 
 static const char* RouteStartTypeName(
     RouteMapConfiguration::StartDataType type) {
@@ -3730,6 +3728,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
               boat_file = wxFileName::GetHomeDir() + boat_file.Mid(1);
             configuration.boatFileName = boat_file;
           }
+          if (scenario.route.hasRoutingEffortPercent)
+            configuration.RoutingEffortPercent =
+                weather_routing::NormalizeRoutingEffortPercent(
+                    scenario.route.routingEffortPercent);
           if (scenario.route.hasTimeStepSeconds)
             configuration.DeltaTime = wxMax(1, scenario.route.timeStepSeconds);
           if (scenario.route.hasHeadingFromDegrees)
@@ -7253,6 +7255,10 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
                    weather_routing::kMaximumParallelDepartureCandidates,
                    AttributeInt(
                        e, "DepartureTimeOptimizationConcurrentRoutes", 0)));
+        configuration.RoutingEffortPercent =
+            weather_routing::NormalizeRoutingEffortPercent(
+                AttributeInt(e, "RoutingEffortPercent",
+                             weather_routing::kDefaultRoutingEffortPercent));
         configuration.IsMultiLegGenerated =
             AttributeBool(e, "IsMultiLegGenerated", false);
         const char* multiLegGroupId = e->Attribute("MultiLegGroupId");
@@ -7456,6 +7462,10 @@ void WeatherRouting::SaveXML(wxString filename) {
                     configuration.DepartureTimeOptimizationStepMinutes);
     c->SetAttribute("DepartureTimeOptimizationConcurrentRoutes",
                     configuration.DepartureTimeOptimizationConcurrentRoutes);
+    c->SetAttribute(
+        "RoutingEffortPercent",
+        weather_routing::NormalizeRoutingEffortPercent(
+            configuration.RoutingEffortPercent));
     c->SetAttribute("IsMultiLegGenerated", configuration.IsMultiLegGenerated);
     if (!configuration.MultiLegGroupId.IsEmpty())
       c->SetAttribute("MultiLegGroupId",
@@ -7701,7 +7711,37 @@ static wxString BuildRouteFailureState(RouteMapOverlay* routemapoverlay) {
   if (!routemapoverlay) return _("Failed");
 
   wxString explicitReason = routemapoverlay->GetFailureReason();
-  if (!explicitReason.IsEmpty()) return explicitReason;
+  if (!explicitReason.IsEmpty()) {
+    const wxString lowerReason = explicitReason.Lower();
+    const bool resourceLimit =
+        lowerReason.Find("maximum generated states") != wxNOT_FOUND ||
+        lowerReason.Find("maximum retained states") != wxNOT_FOUND ||
+        lowerReason.Find("maximum graph labels") != wxNOT_FOUND ||
+        lowerReason.Find("resource limit") != wxNOT_FOUND;
+    if (resourceLimit) {
+      const RouteMapConfiguration configuration =
+          routemapoverlay->GetConfiguration();
+      return wxString::Format(
+          _("Resource limit reached at %d%% effort "
+            "(generated %llu/%llu, retained %llu/%llu, graph labels "
+            "%llu/%llu): %s"),
+          weather_routing::NormalizeRoutingEffortPercent(
+              configuration.RoutingEffortPercent),
+          static_cast<unsigned long long>(
+              configuration.routing_generated_states),
+          static_cast<unsigned long long>(
+              configuration.routing_generated_state_limit),
+          static_cast<unsigned long long>(
+              configuration.routing_retained_states),
+          static_cast<unsigned long long>(
+              configuration.routing_retained_state_limit),
+          static_cast<unsigned long long>(configuration.routing_graph_labels),
+          static_cast<unsigned long long>(
+              configuration.routing_graph_label_limit),
+          explicitReason);
+    }
+    return explicitReason;
+  }
 
   wxString state;
   bool needsComma = false;
@@ -8365,7 +8405,7 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
     return false;
   }
 
-  bool timed_out = false;
+  bool watchdog_expired = false;
   while (routemapoverlay->Running()) {
     if (routemapoverlay->NeedsGrib() && !routemapoverlay->Finished()) {
       m_RouteMapOverlayNeedingGrib = routemapoverlay;
@@ -8373,8 +8413,8 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
       m_RouteMapOverlayNeedingGrib = NULL;
     }
 
-    if (timer.Time() > kChartSafetyScoutMaxMs) {
-      timed_out = true;
+    if (timer.Time() > kChartSafetyScoutWatchdogMs) {
+      watchdog_expired = true;
       routemapoverlay->Stop();
       break;
     }
@@ -8389,11 +8429,14 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
   }
   routemapoverlay->DeleteThread();
 
-  if (timed_out) {
+  if (watchdog_expired) {
     wxLogMessage(
-        "WR_SCOUT_ROUTE bounded route=\"%s to %s\" status=timeout "
-        "scout_time_ms=%ld action=retain-best-frontier.",
+        "WR_SCOUT_ROUTE watchdog route=\"%s to %s\" status=timeout "
+        "scout_time_ms=%ld action=discard-partial-use-direct-fallback.",
         original.Start, original.End, timer.Time());
+    routemapoverlay->SetConfiguration(original);
+    routemapoverlay->Reset();
+    return false;
   }
 
   const bool complete =
@@ -8440,11 +8483,13 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
     wxString reason = routemapoverlay->GetFailureReason();
     wxLogMessage(
         "WR_SCOUT_ROUTE partial route=\"%s to %s\" status=no_route "
-        "finished=%d reached=%d timed_out=%d scout_time_ms=%ld points=%lu "
+        "finished=%d reached=%d watchdog_expired=%d scout_time_ms=%ld "
+        "points=%lu "
         "progress_nm=%.3f meaningful=%d reason=\"%s\".",
         original.Start, original.End, routemapoverlay->Finished() ? 1 : 0,
-        routemapoverlay->ReachedDestination() ? 1 : 0, timed_out ? 1 : 0,
-        timer.Time(), static_cast<unsigned long>(geometry->size()), progress_nm,
+        routemapoverlay->ReachedDestination() ? 1 : 0,
+        watchdog_expired ? 1 : 0, timer.Time(),
+        static_cast<unsigned long>(geometry->size()), progress_nm,
         geometry->empty() ? 0 : 1, reason);
   } else {
     wxLogMessage(
@@ -9801,13 +9846,16 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
       "degree{from=%.1f to=%.1f by=%.1f count=%lu} "
       "course{max_diverted=%.1f max_course=%.1f max_search=%.1f} "
       "constraints{max_true_wind=%.1f max_apparent_wind=%.1f "
-      "max_swell=%.1f max_latitude=%.1f wind_vs_current=%.1f} workers=%d",
+      "max_swell=%.1f max_latitude=%.1f wind_vs_current=%.1f} "
+      "routing_effort=%d%% workers=%d",
       configuration.FromDegree, configuration.ToDegree, configuration.ByDegrees,
       static_cast<unsigned long>(configuration.DegreeSteps.size()),
       configuration.MaxDivertedCourse, configuration.MaxCourseAngle,
       configuration.MaxSearchAngle, configuration.MaxTrueWindKnots,
       configuration.MaxApparentWindKnots, configuration.MaxSwellMeters,
       configuration.MaxLatitude, configuration.WindVSCurrent,
+      weather_routing::NormalizeRoutingEffortPercent(
+          configuration.RoutingEffortPercent),
       m_SettingsDialog.m_sConcurrentThreads->GetValue());
   wxLogMessage("%s", routeStartLog);
 
@@ -10201,6 +10249,10 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("MotorSpeed"), configuration.MotorSpeed);
   pConf->Write(_T("DepartureTimeOptimizationConcurrentRoutes"),
                configuration.DepartureTimeOptimizationConcurrentRoutes);
+  pConf->Write(
+      _T("RoutingEffortPercent"),
+      weather_routing::NormalizeRoutingEffortPercent(
+          configuration.RoutingEffortPercent));
   pConf->Flush();
 }
 
@@ -10301,6 +10353,12 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               static_cast<long>(
                   weather_routing::kMaximumParallelDepartureCandidates),
               departure_concurrent_routes));
+  long routing_effort_percent = configuration.RoutingEffortPercent;
+  pConf->Read(_T("RoutingEffortPercent"), &routing_effort_percent,
+              routing_effort_percent);
+  configuration.RoutingEffortPercent =
+      weather_routing::NormalizeRoutingEffortPercent(
+          static_cast<int>(routing_effort_percent));
 }
 
 RouteMapConfiguration WeatherRouting::DefaultConfiguration() {

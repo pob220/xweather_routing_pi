@@ -45,6 +45,7 @@ set(TEST_SRC
     RoutingScenarioJson_tests.cpp
     DepartureScheduler_tests.cpp
     RoutingQualityPolicy_tests.cpp
+    RoutingResourcePolicy_tests.cpp
     RoutingFootprint_tests.cpp
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp

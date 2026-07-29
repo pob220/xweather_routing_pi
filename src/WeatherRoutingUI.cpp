@@ -1913,6 +1913,45 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   fgSizer113->Add(fgSizer1121, 1, wxEXPAND, 5);
 
+  wxFlexGridSizer* fgSizerRoutingEffort;
+  fgSizerRoutingEffort = new wxFlexGridSizer(0, 3, 0, 0);
+  fgSizerRoutingEffort->SetFlexibleDirection(wxBOTH);
+  fgSizerRoutingEffort->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
+
+  wxStaticText* routingEffortLabel =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
+                       _("Routing effort"), wxDefaultPosition, wxDefaultSize,
+                       0);
+  routingEffortLabel->Wrap(-1);
+  fgSizerRoutingEffort->Add(routingEffortLabel, 0,
+                            wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  m_cRoutingEffortPercent =
+      new wxChoice(sbOptions1->GetStaticBox(), wxID_ANY, wxDefaultPosition,
+                   wxSize(180, -1));
+  m_cRoutingEffortPercent->Append(_("100% — Standard"));
+  m_cRoutingEffortPercent->Append(_("150% — Extended"));
+  m_cRoutingEffortPercent->Append(_("200% — Thorough"));
+  m_cRoutingEffortPercent->Append(_("400% — Exhaustive"));
+  m_cRoutingEffortPercent->SetSelection(0);
+  m_cRoutingEffortPercent->SetToolTip(_(
+      "Search allowance for each complete route. Higher settings scale "
+      "generated states, retained states and graph labels together. They can "
+      "find routes through difficult tidal or coastal passages but use more "
+      "CPU time and memory. Departure-time candidates each receive the full "
+      "selected allowance."));
+  fgSizerRoutingEffort->Add(m_cRoutingEffortPercent, 0,
+                            wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  wxStaticText* routingEffortUnits =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
+                       _("per route"), wxDefaultPosition, wxDefaultSize, 0);
+  routingEffortUnits->Wrap(-1);
+  fgSizerRoutingEffort->Add(routingEffortUnits, 0,
+                            wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  fgSizer113->Add(fgSizerRoutingEffort, 1, wxEXPAND, 5);
+
   wxFlexGridSizer* fgSizerDepartureConcurrency;
   fgSizerDepartureConcurrency = new wxFlexGridSizer(0, 3, 0, 0);
   fgSizerDepartureConcurrency->SetFlexibleDirection(wxBOTH);
@@ -2424,6 +2463,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_sDepartureTimeOptimizationStepMinutes->Connect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_cRoutingEffortPercent->Connect(
+      wxEVT_COMMAND_CHOICE_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_sDepartureTimeOptimizationConcurrentRoutes->Connect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
@@ -3074,6 +3116,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_sDepartureTimeOptimizationStepMinutes->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_cRoutingEffortPercent->Disconnect(
+      wxEVT_COMMAND_CHOICE_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_sDepartureTimeOptimizationConcurrentRoutes->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);

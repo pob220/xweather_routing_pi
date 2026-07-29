@@ -56,6 +56,8 @@ struct RoutingScenarioRouteSettings {
   bool hasBoatFile;
   int timeStepSeconds;
   bool hasTimeStepSeconds;
+  int routingEffortPercent;
+  bool hasRoutingEffortPercent;
   double headingFromDegrees;
   bool hasHeadingFromDegrees;
   double headingToDegrees;
@@ -85,6 +87,8 @@ struct RoutingScenarioRouteSettings {
       : hasBoatFile(false),
         timeStepSeconds(0),
         hasTimeStepSeconds(false),
+        routingEffortPercent(100),
+        hasRoutingEffortPercent(false),
         headingFromDegrees(0.0),
         hasHeadingFromDegrees(false),
         headingToDegrees(0.0),

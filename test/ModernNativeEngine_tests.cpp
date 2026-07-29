@@ -414,7 +414,18 @@ TEST(ModernNativeEngine, RoutesIrishSeaDeterministically) {
   ASSERT_TRUE(first.validation.passed) << first.validation.failureReason;
   EXPECT_EQ(first.validation.acceptedPrefixLegs, first.legs.size());
   EXPECT_EQ(first.metrics.elapsed, second.metrics.elapsed);
-  EXPECT_EQ(first.legs.size(), second.legs.size());
+  EXPECT_DOUBLE_EQ(first.metrics.distanceNm, second.metrics.distanceNm);
+  ASSERT_EQ(first.legs.size(), second.legs.size());
+  for (std::size_t index = 0; index < first.legs.size(); ++index) {
+    EXPECT_EQ(first.legs[index].start, second.legs[index].start);
+    EXPECT_EQ(first.legs[index].end, second.legs[index].end);
+    EXPECT_EQ(first.legs[index].startTime, second.legs[index].startTime);
+    EXPECT_EQ(first.legs[index].endTime, second.legs[index].endTime);
+    EXPECT_DOUBLE_EQ(first.legs[index].headingDegrees,
+                     second.legs[index].headingDegrees);
+    EXPECT_DOUBLE_EQ(first.legs[index].courseOverGroundDegrees,
+                     second.legs[index].courseOverGroundDegrees);
+  }
   ASSERT_FALSE(first.legs.empty());
   EXPECT_EQ(first.legs.back().end, TestRequest().destination);
 }

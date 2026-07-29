@@ -24,6 +24,7 @@
 #include "ConstraintChecker.h"
 #include "RouteMapOverlay.h"
 #include "RoutingQualityPolicy.h"
+#include "RoutingResourcePolicy.h"
 #include "SunCalculator.h"
 #include "WeatherDataProvider.h"
 #include "supercpn/weather_routing/Engine.h"
@@ -44,6 +45,37 @@ bool Complete(wr::RoutingStatus status) {
   return status == wr::RoutingStatus::Complete ||
          status == wr::RoutingStatus::CompleteUsingReverseRecovery ||
          status == wr::RoutingStatus::CompleteUsingGraphFallback;
+}
+
+std::uint64_t RouteFingerprint(const std::vector<wr::RouteLeg>& legs) {
+  if (legs.empty()) return 0;
+  std::uint64_t hash = 1469598103934665603ULL;
+  constexpr std::uint64_t prime = 1099511628211ULL;
+  const auto quantize = [](double value, double scale) {
+    return std::isfinite(value)
+               ? static_cast<std::int64_t>(std::llround(value * scale))
+               : std::numeric_limits<std::int64_t>::min();
+  };
+  for (const wr::RouteLeg& leg : legs) {
+    const std::int64_t values[] = {
+        quantize(leg.start.latitude, 1e7),
+        quantize(leg.start.longitude, 1e7),
+        quantize(leg.end.latitude, 1e7),
+        quantize(leg.end.longitude, 1e7),
+        leg.startTime.time_since_epoch().count(),
+        leg.endTime.time_since_epoch().count(),
+        quantize(leg.headingDegrees, 1000.0),
+        quantize(leg.courseOverGroundDegrees, 1000.0)};
+    for (std::int64_t value : values) {
+      std::uint64_t bits = static_cast<std::uint64_t>(value);
+      for (int byte = 0; byte < 8; ++byte) {
+        hash ^= bits & 0xffU;
+        hash *= prime;
+        bits >>= 8U;
+      }
+    }
+  }
+  return hash;
 }
 
 struct OpenCpnSample {
@@ -804,13 +836,18 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   request.options.heuristicMaximumSpeedKnots = 0.0;
   request.options.preserveRouteFamilies = quality.preserve_route_families;
 
-  const double scale = std::clamp(routeDistance / 100.0, 0.6, 4.0);
-  request.limits.maximumGeneratedStates =
-      static_cast<std::uint64_t>(900000.0 * scale);
-  request.limits.maximumRetainedStates =
-      static_cast<std::uint64_t>(70000.0 * scale);
-  request.limits.maximumGraphLabels =
-      static_cast<std::uint64_t>(180000.0 * scale);
+  const weather_routing::RoutingResourcePolicy resources =
+      weather_routing::SelectRoutingResourcePolicy(
+          routeDistance, configuration.RoutingEffortPercent,
+          configuration.chart_safety_scout_preview);
+  request.limits.maximumGeneratedStates = resources.maximum_generated_states;
+  request.limits.maximumRetainedStates = resources.maximum_retained_states;
+  request.limits.maximumGraphLabels = resources.maximum_graph_labels;
+  if (configuration.chart_safety_scout_preview) {
+    request.options.useReverseRecovery = false;
+    request.options.useGraphFallback = false;
+    request.options.retryStages = 1;
+  }
   request.limits.maximumRouteDuration = wr::Duration{30 * 24 * 3600};
   request.limits.maximumExplorationDistanceNm =
       std::max(500.0, routeDistance * 5.0);
@@ -850,6 +887,19 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
   const wr::RoutingRequest request = BuildRequest(overlay, configuration);
   wr::RoutingEngine engine;
   const wr::RoutingResult result = engine.route(request, environment);
+  RouteMapConfiguration resultConfiguration = overlay.GetConfiguration();
+  resultConfiguration.routing_generated_states =
+      result.diagnostics.generatedStates;
+  resultConfiguration.routing_generated_state_limit =
+      request.limits.maximumGeneratedStates;
+  resultConfiguration.routing_retained_states =
+      result.diagnostics.retainedStates;
+  resultConfiguration.routing_retained_state_limit =
+      request.limits.maximumRetainedStates;
+  resultConfiguration.routing_graph_labels = result.diagnostics.graphLabels;
+  resultConfiguration.routing_graph_label_limit =
+      request.limits.maximumGraphLabels;
+  overlay.SetConfigurationPreserveResult(resultConfiguration);
   const OpenCpnWeatherProvider::CacheDiagnostics weatherCache =
       weather->cacheDiagnostics();
   const auto elapsedMilliseconds =
@@ -860,11 +910,18 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
   const wxString solver = wxString::FromUTF8(wr::toString(result.solverPath));
   wxLogMessage(
       "WR_MODERN_NATIVE_SUMMARY route=\"%s -> %s\" status=%s solver=%s "
+      "candidate_offset=%d departure=\"%s\" "
       "elapsed_ms=%lld legs=%llu generated=%llu retained=%llu "
       "graph_labels=%llu wait_states=%llu land_checks=%llu "
       "land_rejections=%llu constraint_rejections=%llu "
-      "validation_samples=%llu closest_nm=%.3f",
+      "validation_samples=%llu closest_nm=%.3f effort=%d "
+      "generated_limit=%llu retained_limit=%llu graph_label_limit=%llu "
+      "scout=%d route_fingerprint=%016llx",
       configuration.Start, configuration.End, status, solver,
+      configuration.DepartureTimeOptimizationOffsetMinutes,
+      configuration.StartTime.IsValid()
+          ? configuration.StartTime.FormatISOCombined()
+          : wxString("invalid"),
       static_cast<long long>(elapsedMilliseconds),
       static_cast<unsigned long long>(result.legs.size()),
       static_cast<unsigned long long>(result.diagnostics.generatedStates),
@@ -875,7 +932,14 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       static_cast<unsigned long long>(result.diagnostics.landRejections),
       static_cast<unsigned long long>(result.diagnostics.constraintRejections),
       static_cast<unsigned long long>(result.diagnostics.validationSamples),
-      result.diagnostics.closestApproachNm);
+      result.diagnostics.closestApproachNm,
+      weather_routing::NormalizeRoutingEffortPercent(
+          configuration.RoutingEffortPercent),
+      static_cast<unsigned long long>(request.limits.maximumGeneratedStates),
+      static_cast<unsigned long long>(request.limits.maximumRetainedStates),
+      static_cast<unsigned long long>(request.limits.maximumGraphLabels),
+      configuration.chart_safety_scout_preview ? 1 : 0,
+      static_cast<unsigned long long>(RouteFingerprint(result.legs)));
   wxLogMessage(
       "WR_MODERN_WEATHER_CACHE route=\"%s -> %s\" calls=%llu "
       "immediate_hits=%llu local_hits=%llu shared_hits=%llu misses=%llu "

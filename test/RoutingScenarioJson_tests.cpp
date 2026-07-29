@@ -60,6 +60,19 @@ TEST(RoutingScenarioJson, LoadsSelfContainedGuiRegressionSettings) {
   EXPECT_DOUBLE_EQ(5.5, scenario.route.motorSpeedKnots);
 }
 
+TEST(RoutingScenarioJson, LoadsRoutingEffortForHardRouteRegression) {
+  weather_routing_engine::RoutingScenario scenario;
+  wxString error;
+  const wxString path = wxString(WEATHER_ROUTING_SOURCE_DIR) +
+                        "/testdata/scenarios/"
+                        "holyhead_lough_foyle_gui_regression.json";
+  ASSERT_TRUE(
+      weather_routing_headless::LoadRoutingScenarioJson(path, scenario, error))
+      << error;
+  EXPECT_TRUE(scenario.route.hasRoutingEffortPercent);
+  EXPECT_EQ(400, scenario.route.routingEffortPercent);
+}
+
 TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   weather_routing_engine::RoutingResult result;
   result.scenario = "Stability JSON test";

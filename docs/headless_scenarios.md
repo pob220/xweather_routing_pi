@@ -128,6 +128,13 @@ The first milestone supports:
 - `departureOptimization.concurrentRoutes` (`0` selects Auto; explicit values
   are limited to `1`–`12`)
 - `environment.useCurrents`
+- `route.routingEffortPercent` (`100`, `150`, `200` or `400`)
+
+Routing effort scales the generated-state, retained-state and recovery-graph
+budgets together for every departure candidate. It does not impose a
+wall-clock timeout, and all candidates in one optimisation use the same
+selected policy. The default is `100`; higher levels trade CPU time and memory
+for a wider search on difficult routes.
 - `environment.useGrib`
 - `route.boatFile` (`~/` is expanded using the current user's home)
 - `route.timeStepSeconds`
