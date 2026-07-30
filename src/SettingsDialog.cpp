@@ -250,21 +250,22 @@ void SettingsDialog::SetDisplayTimeZone(bool enabled,
 wxString SettingsDialog::FormatTime(const wxDateTime& utc,
                                     const wxString& format,
                                     bool appendAbbreviation) const {
-  const wxString zone = m_useLocalTimeZone ? m_displayTimeZone : "UTC";
+  const wxString zone =
+      m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
   return marine_time::FormatInTimeZone(utc, format, zone,
                                        appendAbbreviation);
 }
 
 wxDateTime SettingsDialog::ToDisplayWallClock(const wxDateTime& utc) const {
   return marine_time::ToWallClock(
-      utc, m_useLocalTimeZone ? m_displayTimeZone : "UTC");
+      utc, m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC"));
 }
 
 marine_time::WallClockConversion SettingsDialog::DisplayWallClockToUtc(
     int year, int month, int day, int hour, int minute, int second) const {
   return marine_time::FromWallClock(
       year, month, day, hour, minute, second,
-      m_useLocalTimeZone ? m_displayTimeZone : "UTC");
+      m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC"));
 }
 
 void SettingsDialog::OnHelp(wxCommandEvent& event) {
