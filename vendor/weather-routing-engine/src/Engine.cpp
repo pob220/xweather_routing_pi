@@ -921,7 +921,7 @@ std::vector<Node> pruneLayer(const RoutingRequest& request,
   // three-degree sectors/tack/mode buckets, while avoiding 600+ parents each
   // spawning a full heading fan on every hourly layer.
   const std::size_t frontierCap =
-      distanceNm(request.start, request.destination) <= 120.0
+      distanceNm(request.start, request.destination) <= 200.0
           ? std::min<std::size_t>(nominalFrontierCap, 256U)
           : nominalFrontierCap;
   if (retained.size() > frontierCap) {
@@ -2600,10 +2600,6 @@ RoutingResult RoutingEngine::routeMember(
   std::uint64_t previousAttemptGenerated{};
   for (unsigned attempt = 0; attempt < attempts; ++attempt) {
     if (attempt > 0) {
-      const std::uint64_t remaining =
-          forwardGeneratedStateCeiling -
-          std::min(forwardGeneratedStateCeiling,
-                   result.diagnostics.generatedStates);
       const std::uint64_t estimatedRefinement = std::max<std::uint64_t>(
           previousAttemptGenerated, previousAttemptGenerated * 3U / 2U);
       if (result.diagnostics.generatedStates >= forwardGeneratedStateCeiling ||

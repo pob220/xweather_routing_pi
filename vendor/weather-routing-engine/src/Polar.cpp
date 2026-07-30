@@ -215,7 +215,11 @@ std::vector<PerformanceCandidate> PolarPerformanceModel::candidates(
     for (const auto& sailing : configuration_.profiles)
       if (sailing.role == ProfileRole::SailOnly) {
         auto candidate = evaluateProfile(sailing, tws, twa, waves);
-        if (candidate.valid) result.push_back(std::move(candidate));
+        if (!candidate.valid) continue;
+        if (!sail.valid || candidate.speedThroughWaterKnots >
+                               sail.speedThroughWaterKnots)
+          sail = candidate;
+        result.push_back(std::move(candidate));
       }
   }
   const bool minimumRunBlocksSail =

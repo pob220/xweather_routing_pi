@@ -4,6 +4,8 @@ project(weather_routing_pi_tests)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(WEATHER_ROUTING_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
+set(WEATHER_ROUTING_ENGINE_DIR
+    "${WEATHER_ROUTING_SOURCE_DIR}/vendor/weather-routing-engine")
 message(STATUS "Building weather routing plugin tests")
 
 enable_testing ()
@@ -64,13 +66,13 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyThreadGuard.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/SunCalculator.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Geometry.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Providers.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Polar.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/EnvironmentResolver.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Engine.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Validator.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/native/Ensemble.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Geometry.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Providers.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Polar.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/EnvironmentResolver.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Engine.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Validator.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/Ensemble.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
    
@@ -94,6 +96,8 @@ set(TEST_SRC
        PRIVATE
             ${WEATHER_ROUTING_SOURCE_DIR}/src
             ${WEATHER_ROUTING_SOURCE_DIR}/include
+            ${WEATHER_ROUTING_ENGINE_DIR}/include
+            ${WEATHER_ROUTING_ENGINE_DIR}/src
             ${CMAKE_SOURCE_DIR}/include
    #         ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/api-18/include
             ${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/libtess2/include
@@ -113,6 +117,7 @@ set(TEST_SRC
        PRIVATE 
            GTest::gtest_main
            ${wxWidgets_LIBRARIES}
+           ocpn::api
            ocpn::libtess2
            ocpn::tinyxml
            # ocpn::dc-utils

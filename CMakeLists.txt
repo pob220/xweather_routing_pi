@@ -218,13 +218,13 @@ SET(SRCS
             src/headless/HeadlessRouteRunner.cpp
             src/headless/RoutingScenarioJson.cpp
             src/engine/StabilityCorridorCalculator.cpp
-            src/engine/native/Geometry.cpp
-            src/engine/native/Providers.cpp
-            src/engine/native/Polar.cpp
-            src/engine/native/EnvironmentResolver.cpp
-            src/engine/native/Engine.cpp
-            src/engine/native/Validator.cpp
-            src/engine/native/Ensemble.cpp
+            vendor/weather-routing-engine/src/Geometry.cpp
+            vendor/weather-routing-engine/src/Providers.cpp
+            vendor/weather-routing-engine/src/Polar.cpp
+            vendor/weather-routing-engine/src/EnvironmentResolver.cpp
+            vendor/weather-routing-engine/src/Engine.cpp
+            vendor/weather-routing-engine/src/Validator.cpp
+            vendor/weather-routing-engine/src/Ensemble.cpp
             src/engine/native/OpenCpnAdapter.cpp
 )
 
@@ -279,10 +279,10 @@ SET (HDRS
             include/weather_routing_engine/RoutingResult.h
             include/weather_routing_engine/RoutingScenario.h
             include/weather_routing_engine/StabilityCorridor.h
-            include/supercpn/weather_routing/Types.h
-            include/supercpn/weather_routing/Providers.h
-            include/supercpn/weather_routing/Engine.h
-            src/engine/native/RoutingInternal.h
+            vendor/weather-routing-engine/include/supercpn/weather_routing/Types.h
+            vendor/weather-routing-engine/include/supercpn/weather_routing/Providers.h
+            vendor/weather-routing-engine/include/supercpn/weather_routing/Engine.h
+            vendor/weather-routing-engine/src/RoutingInternal.h
             include/ModernNativeRoute.h
             src/headless/HeadlessRouteRunner.h
             src/headless/RoutingScenarioJson.h
@@ -309,7 +309,10 @@ set(SRC ${SRCS} ${HDRS} )
 ## Modify/configure 'Include' Directories below for the Plugin
 ##=============================================================
 
-include_directories(BEFORE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
+include_directories(BEFORE
+  ${PROJECT_SOURCE_DIR}/vendor/weather-routing-engine/include
+  ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_SOURCE_DIR}/src)
 
 ## Change target_sources to match your project needs.
 ##==============================================================
@@ -331,7 +334,14 @@ if (NOT OCPN_FLATPAK_CONFIG)
     target_link_libraries(${PACKAGE_NAME} windows::headers)
   endif (WIN32)
 
-  if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_API_VERSION_MINOR}/CMakeLists.txt")
+  get_filename_component(OCPN_IN_TREE_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+  if (EXISTS "${OCPN_IN_TREE_SOURCE_DIR}/include/ocpn_plugin.h")
+    add_library(OCPN_API_LOCAL INTERFACE)
+    add_library(ocpn::api ALIAS OCPN_API_LOCAL)
+    target_include_directories(OCPN_API_LOCAL INTERFACE
+      "${OCPN_IN_TREE_SOURCE_DIR}/include")
+  elseif (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_API_VERSION_MINOR}/CMakeLists.txt")
     add_subdirectory(opencpn-libs/api-${OCPN_API_VERSION_MINOR})
   elseif (EXISTS "${CMAKE_SOURCE_DIR}/include/ocpn_plugin.h")
     add_library(OCPN_API_LOCAL INTERFACE)

@@ -321,9 +321,13 @@ bool PolygonBoundaryProvider::segmentFromKnownSafeForbidden(
 double PolygonBoundaryProvider::distanceToForbiddenNm(GeoPoint point) const {
   if (pointForbidden(point)) return 0.0;
   double best = std::numeric_limits<double>::infinity();
-  for (const auto& polygon : polygons_)
-    for (const auto& vertex : polygon)
-      best = std::min(best, distanceNm(point, vertex));
+  // Clearance is distance to the boundary, not to its vertices. A long, nearly
+  // straight shoreline can place the closest vertices many miles away while
+  // the vessel is only metres off the intervening edge. Besides reporting the
+  // wrong clearance, vertex distance breaks the one-way coastal-egress rule.
+  for (const BoundaryEdge& edge : edges_)
+    best = std::min(best,
+                    pointToSegmentDistanceNm(point, edge.start, edge.end));
   return best;
 }
 

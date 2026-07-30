@@ -1,0 +1,91 @@
+#include "supercpn/weather_routing/Engine.h"
+#include "supercpn/weather_routing/Providers.h"
+#include "supercpn/weather_routing/ResourcePolicy.h"
+
+#include <chrono>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <utility>
+
+using namespace supercpn::weather_routing;
+
+namespace {
+RoutingRequest request() {
+  RoutingRequest value;
+  value.start = {50.0, -4.0};
+  value.destination = {50.0, -3.5};
+  value.departure = TimePoint{Duration{1'800'000'000}};
+  PerformanceProfile profile;
+  profile.role = ProfileRole::SailOnly;
+  profile.identity = "contract-polar";
+  profile.rows = {{10.0, {{0.0, 5.0}, {90.0, 5.0}, {180.0, 5.0}}},
+                  {20.0, {{0.0, 5.0}, {90.0, 5.0}, {180.0, 5.0}}}};
+  value.vessel.profiles = {std::move(profile)};
+  value.environment.useCurrent = false;
+  value.environment.useWaves = false;
+  value.options.timeStep = std::chrono::minutes{30};
+  value.options.minimumTimeStep = std::chrono::minutes{10};
+  value.options.destinationToleranceNm = 1.0;
+  return value;
+}
+
+RoutingEnvironment environment(const RoutingRequest& route) {
+  UniformWeatherProvider::Configuration weather;
+  weather.begins = route.departure;
+  weather.ends = route.departure + std::chrono::hours{48};
+  weather.area = {-10.0, 40.0, 5.0, 60.0};
+  weather.windTowardKnots = Vector2{0.0, 10.0};
+  weather.identity = "contract-weather";
+  RoutingEnvironment result;
+  result.grib = std::make_shared<UniformWeatherProvider>(weather);
+  return result;
+}
+
+void require(bool condition, const char* message) {
+  if (!condition) throw std::runtime_error(message);
+}
+}  // namespace
+
+int main() {
+  try {
+    const auto baseline = selectRoutingResourcePolicy(100.0, 100);
+    const auto expanded = selectRoutingResourcePolicy(100.0, 400);
+    require(baseline.maximumGeneratedStates == 1'125'000,
+            "incorrect baseline total budget");
+    require(baseline.maximumForwardGeneratedStates == 675'000,
+            "incorrect baseline forward budget");
+    require(baseline.maximumFrontierRecoveryGeneratedStates == 225'000,
+            "incorrect baseline frontier budget");
+    require(baseline.maximumGraphGeneratedStates == 225'000,
+            "incorrect baseline graph budget");
+    require(expanded.maximumGeneratedStates ==
+                baseline.maximumGeneratedStates * 4,
+            "400% effort did not scale every stage cumulatively");
+    require(normalizeRoutingEffortPercent(149) == 150,
+            "effort tier normalization changed");
+
+    const RoutingRequest route = request();
+    const RoutingEnvironment weather = environment(route);
+    RoutingEngine engine;
+    const RoutingResult first = engine.route(route, weather);
+    const RoutingResult second = engine.route(route, weather);
+    require(first.status == second.status, "routing status is not deterministic");
+    require(first.validation.passed == second.validation.passed,
+            "validation result is not deterministic");
+    require(first.legs.size() == second.legs.size(),
+            "route leg count is not deterministic");
+    require(first.metrics.elapsed == second.metrics.elapsed,
+            "route elapsed time is not deterministic");
+    require(first.diagnostics.generatedStates ==
+                second.diagnostics.generatedStates,
+            "generated-state count is not deterministic");
+    require(first.validation.passed, first.message.c_str());
+    std::cout << "deterministic route with " << first.legs.size()
+              << " legs\n";
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << error.what() << '\n';
+    return 1;
+  }
+}
