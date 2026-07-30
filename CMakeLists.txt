@@ -100,14 +100,14 @@ set(ALPHA "alpha") #Standard Repos
 #set (CLOUDSMITH_BASE_REPOSITORY "${GIT_REPOSITORY_NAME}")
 #set (CLOUDSMITH_BASE_REPOSITORY "opencpn-plugins")  # Ricks's customization
 set(CLOUDSMITH_BASE_REPOSITORY "xweather-routing")
-set(PLUGIN_GIT_REPOSITORY "pob220/weather_routing_pi")
+set(PLUGIN_GIT_REPOSITORY "pob220/xweather_routing_pi")
 
 # Keep validation independent of the OpenCPN publishing repositories.  Alpha
 # publication remains a separate, explicitly approved later step.
 set(CLOUDSMITH_USER "pob220")
 
 set(XML_INFO_URL
-    "https://github.com/pob220/weather_routing_pi"
+    "https://github.com/pob220/xweather_routing_pi"
 )
 set(XML_SUMMARY ${SHORT_DESCRIPTION})
 set(XML_DESCRIPTION ${LONG_DESCRIPTION})

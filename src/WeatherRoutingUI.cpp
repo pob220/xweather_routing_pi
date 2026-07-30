@@ -4273,7 +4273,7 @@ AboutDialogBase::AboutDialogBase(wxWindow* parent, wxWindowID id,
         "sailing routes based on computerized weather data and boat sailing "
         "ability.\n\nLicense: GPLv3+\n\nSource "
         "Code:\nhttps://github.com/pob220/"
-        "weather_routing_pi\n\nOriginal author:\nSean D'Epagnier\n\nMany "
+        "xweather_routing_pi\n\nOriginal author:\nSean D'Epagnier\n\nMany "
         "thanks to all Weather Routing contributors, translators and "
         "testers."),
       wxDefaultPosition, wxDefaultSize, 0);
