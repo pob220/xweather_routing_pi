@@ -8048,18 +8048,31 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
             configuration.UseCurrentTime
             ? _("true")
             : _("false");
+    const bool arrivalPlanning =
+        configuration.TimeMode ==
+            RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME &&
+        routemapoverlay->Running();
     wxDateTime starttime = configuration.StartTime;
-    StartTime =
-        starttime.Format(_T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
+    if (arrivalPlanning)
+      StartTime = _("Calculating...");
+    else
+      StartTime =
+          starttime.Format(_T("%x %H:%M"),
+                           wr->m_SettingsDialog.GetTimeZone());
 
     End = configuration.End;
 
     wxDateTime endtime = routemapoverlay->EndTime();
-    if (endtime.IsValid()) {
+    if (arrivalPlanning && configuration.PlannedArrivalTime.IsValid()) {
+      const wxString plannedArrival = configuration.PlannedArrivalTime.Format(
+          _T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
+      EndTime = wxString::Format(_("Target %s"), plannedArrival);
+    } else if (endtime.IsValid()) {
       EndTime =
           endtime.Format(_T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
-    } else
+    } else {
       EndTime = _T("N/A");
+    }
 
     // REFACTORING
     // I decided to dedicate a function for displaying the difference
