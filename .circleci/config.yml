@@ -95,36 +95,35 @@ jobs:
       - run:
           privileged: false
           shell: cmd.exe
+          name: Native Windows build, tests and package
           command: ci\circleci-build-msvc.bat
           no_output_timeout: 45m
+      - store_test_results:
+          path: build/test-results
       - store_artifacts:
           path: build
           destination: windows-x86
 
   macos-universal:
     macos:
-      xcode: "15.2.0"
+      xcode: "16.4.0"
+    resource_class: m4pro.medium
     environment:
       OCPN_TARGET: macos
-      CMAKE_BUILD_PARALLEL_LEVEL: "2"
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
       WX_VER: "32"
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - macos-weather-routing-v2-{{ checksum "build-deps/macos-cache-stamp" }}-{{ checksum "cmake/MacosWxwidgets.cmake" }}
       - run: chmod a+x ci/*.sh cmake/*.sh
       - run:
-          name: Universal macOS stock-API build and package
+          name: Native Apple-Silicon stock-API build, tests and package
           command: ci/circleci-build-macos-universal.sh
           no_output_timeout: 45m
-      - save_cache:
-          key: macos-weather-routing-v2-{{ checksum "build-deps/macos-cache-stamp" }}-{{ checksum "cmake/MacosWxwidgets.cmake" }}
-          paths:
-            - /tmp/local.cache.tar
-            - cache
+      - store_test_results:
+          path: artifacts/macos-arm64/tests
       - store_artifacts:
-          path: artifacts/macos-universal
+          path: artifacts/macos-arm64
 
 workflows:
   validate:
