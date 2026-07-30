@@ -46,6 +46,7 @@ struct Node {
 struct SearchArtifacts {
   std::vector<Node> nodes;
   std::vector<std::size_t> retained;
+  std::vector<std::vector<std::size_t>> recoveryFrontiers;
   std::vector<IsochroneLayer> isochrones;
   std::optional<std::size_t> solution;
   std::vector<std::size_t> alternativeSolutions;
@@ -276,7 +277,8 @@ RouteLeg buildLeg(const RoutingRequest& request, const Node& from,
                   const ResolvedEnvironment& resolved,
                   const PerformanceCandidate& performance, double heading,
                   Vector2 groundVelocity, GeoPoint end, Duration duration,
-                  Tack nextTack, Duration movingDuration) {
+                  Tack nextTack, Duration movingDuration,
+                  Duration integrationMaximumSlice) {
   RouteLeg leg;
   leg.start = from.position;
   leg.end = end;
@@ -307,6 +309,8 @@ RouteLeg buildLeg(const RoutingRequest& request, const Node& from,
                        leg.trueWindAngleDegrees <= 90.0;
   leg.gybeTransition = from.tack != Tack::Unknown && nextTack != from.tack &&
                        leg.trueWindAngleDegrees > 90.0;
+  leg.integrationMaximumSlice = std::clamp(
+      integrationMaximumSlice, Duration{1}, Duration{std::chrono::minutes{5}});
   leg.estimatedFuelLitres =
       performance.fuelLitresPerHour *
       std::chrono::duration<double>(movingDuration).count() / 3600.0;
@@ -342,9 +346,10 @@ struct MotionReplay {
 };
 
 // Integrate one fixed through-water course with the selected
-// propulsion/profile. The search deliberately uses a coarser midpoint
-// integration than the final validator, which independently replays the
-// delivered leg at a finer cadence.
+// propulsion/profile. Resolve the environment at every slice boundary as
+// well as its midpoint. Reusing the preceding midpoint at the next boundary
+// gives the search and the independent validator different trajectories in
+// spatially or temporally varying weather and current.
 std::optional<MotionReplay> integrateMotion(
     const RoutingRequest& request, const RoutingEnvironment& environment,
     const VesselPerformanceModel& performanceModel, const Node& from,
@@ -442,8 +447,16 @@ std::optional<MotionReplay> integrateMotion(
     if (midpointResolved.snapshot.waves.available)
       replay.risk += midpointResolved.snapshot.waves.significantHeightMetres *
                      sliceSeconds / 3600.0;
-    predictorResolved = midpointResolved;
     elapsed += slice;
+    if (elapsed < moving) {
+      predictorResolved = internal::resolveEnvironment(
+          request, environment, replay.end, movingStart + elapsed);
+      ++diagnostics.weatherSamples;
+      if (predictorResolved.failureStatus != RoutingStatus::Complete) {
+        if (dataFailure) *dataFailure = predictorResolved.failureStatus;
+        return {};
+      }
+    }
   }
   replay.averageSpeedThroughWaterKnots =
       speedSeconds / std::chrono::duration<double>(moving).count();
@@ -659,7 +672,8 @@ std::optional<Node> directConnection(
           (from.tack != Tack::Unknown && from.tack != acceptedTack);
       node.incomingLeg = buildLeg(
           request, from, resolved, candidate, trialHeading, groundVelocity,
-          request.destination, total, acceptedTack, trialMoving);
+          request.destination, total, acceptedTack, trialMoving,
+          Duration{std::chrono::minutes{1}});
       node.incomingLeg.speedThroughWaterKnots =
           accepted->averageSpeedThroughWaterKnots;
       node.incomingLeg.estimatedFuelLitres = fuel;
@@ -765,7 +779,8 @@ std::vector<Node> propagate(const RoutingRequest& request,
     const Vector2 ground = speedDirectionToVector(
         groundSpeed, initialBearingDegrees(from.position, end));
     node.incomingLeg = buildLeg(request, from, resolved, performance, heading,
-                                ground, end, step, nextTack, moving);
+                                ground, end, step, nextTack, moving,
+                                maximumIntegrationSlice);
     node.incomingLeg.speedThroughWaterKnots =
         replay->averageSpeedThroughWaterKnots;
     node.incomingLeg.estimatedFuelLitres = fuel;
@@ -833,6 +848,8 @@ std::vector<Node> pruneLayer(const RoutingRequest& request,
           return score(a) < score(b);
         });
     std::vector<Node> pareto;
+    std::vector<Node> lineageAlternatives;
+    std::set<std::size_t> deferredPredecessors;
     for (auto& label : labels) {
       const bool dominated =
           std::any_of(pareto.begin(), pareto.end(), [&](const Node& other) {
@@ -847,6 +864,13 @@ std::vector<Node> pruneLayer(const RoutingRequest& request,
           });
       if (dominated) {
         ++diagnostics.pruned.dominated;
+        // A locally cheaper state can become a dead end after a later wind,
+        // tide, tack or coastal constraint. Preserve one bounded alternative
+        // from a different predecessor lineage so temporary optimality cannot
+        // collapse the entire cell to a single ancestry.
+        if (lineageAlternatives.size() < labelCap &&
+            deferredPredecessors.insert(label.predecessor).second)
+          lineageAlternatives.push_back(std::move(label));
         continue;
       }
       // Semantic chart queries are materially more expensive than weather and
@@ -857,6 +881,20 @@ std::vector<Node> pruneLayer(const RoutingRequest& request,
       if (nodeMotionForbidden(request, environment, label, diagnostics))
         continue;
       pareto.push_back(std::move(label));
+    }
+    if (pareto.size() < labelCap && !lineageAlternatives.empty()) {
+      std::set<std::size_t> representedPredecessors;
+      for (const auto& label : pareto)
+        representedPredecessors.insert(label.predecessor);
+      for (auto& alternative : lineageAlternatives) {
+        if (pareto.size() >= labelCap) break;
+        if (representedPredecessors.contains(alternative.predecessor))
+          continue;
+        if (nodeMotionForbidden(request, environment, alternative, diagnostics))
+          continue;
+        representedPredecessors.insert(alternative.predecessor);
+        pareto.push_back(std::move(alternative));
+      }
     }
     if (pareto.size() > labelCap) {
       diagnostics.pruned.cellLabelCap += pareto.size() - labelCap;
@@ -1165,7 +1203,9 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
         // canonical 15-minute weather buckets here: five-minute integration
         // multiplied provider traffic by roughly three without adding
         // forecast detail, while final replay remains unchanged.
-        const Duration integrationSlice{std::chrono::minutes{15}};
+        const Duration integrationSlice{
+            attempt > 1 ? std::chrono::minutes{5}
+                        : std::chrono::minutes{15}};
         for (auto& next : propagate(request, environment, performance, from,
                                     heading, layerStep, diagnostics,
                                     integrationSlice, &dataFailure)) {
@@ -1228,6 +1268,12 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
     if (!result.retained.empty())
       result.isochrones.push_back(buildIsochroneLayer(
           request, environment, result.nodes, result.retained, headingStep));
+    if (!result.retained.empty()) {
+      constexpr std::size_t kRecoveryFrontierHistory = 8;
+      result.recoveryFrontiers.push_back(result.retained);
+      if (result.recoveryFrontiers.size() > kRecoveryFrontierHistory)
+        result.recoveryFrontiers.erase(result.recoveryFrontiers.begin());
+    }
     reportProgress(request, RoutingProgressStage::ForwardIsochrone, diagnostics,
                    attempt, totalAttempts);
     if (!result.retained.empty() && request.options.adaptiveTimeStep &&
@@ -1317,28 +1363,77 @@ std::vector<std::size_t> reconstructNodeIndices(const SearchArtifacts& search,
   return reversed;
 }
 
+std::vector<std::size_t> diverseFrontierRecoveryCandidates(
+    const RoutingRequest& request, const SearchArtifacts& search,
+    std::size_t maximumCandidates);
+
 std::optional<std::pair<SearchArtifacts, std::size_t>> reverseRecovery(
     const RoutingRequest& request, const RoutingEnvironment& environment,
     const VesselPerformanceModel& performance, SearchArtifacts search,
     RoutingDiagnostics& diagnostics) {
   diagnostics.stagesAttempted.push_back(SolverPath::ReverseRecovery);
   ++diagnostics.reverseLayers;
-  std::vector<std::size_t> candidates;
-  candidates.reserve(search.nodes.size());
-  for (std::size_t i = 0; i < search.nodes.size(); ++i) candidates.push_back(i);
-  std::stable_sort(
-      candidates.begin(), candidates.end(), [&](std::size_t a, std::size_t b) {
-        return std::tuple{
-                   distanceNm(search.nodes[a].position, request.destination),
-                   -search.nodes[a].time.time_since_epoch().count(), a} <
-               std::tuple{
-                   distanceNm(search.nodes[b].position, request.destination),
-                   -search.nodes[b].time.time_since_epoch().count(), b};
-      });
-  const std::size_t reverseCandidateLimit =
-      static_cast<std::size_t>(request.options.reverseLayers) * 64U;
-  if (candidates.size() > reverseCandidateLimit)
-    candidates.resize(reverseCandidateLimit);
+  const std::uint64_t configuredCandidateLimit =
+      request.limits.maximumReverseCandidates;
+  const std::uint64_t legacyCandidateLimit =
+      static_cast<std::uint64_t>(request.options.reverseLayers) * 64U;
+  const std::uint64_t boundedCandidateLimit =
+      configuredCandidateLimit > 0 ? configuredCandidateLimit
+                                   : legacyCandidateLimit;
+  const std::size_t reverseCandidateLimit = static_cast<std::size_t>(
+      std::min<std::uint64_t>(boundedCandidateLimit,
+                              std::numeric_limits<std::size_t>::max()));
+  std::vector<std::size_t> nearestCandidates;
+  nearestCandidates.reserve(search.nodes.size());
+  for (std::size_t i = 1; i < search.nodes.size(); ++i)
+    nearestCandidates.push_back(i);
+  std::stable_sort(nearestCandidates.begin(), nearestCandidates.end(),
+                   [&](std::size_t a, std::size_t b) {
+                     return std::tuple{
+                                distanceNm(search.nodes[a].position,
+                                           request.destination),
+                                -search.nodes[a]
+                                     .time.time_since_epoch()
+                                     .count(),
+                                a} <
+                            std::tuple{
+                                distanceNm(search.nodes[b].position,
+                                           request.destination),
+                                -search.nodes[b]
+                                     .time.time_since_epoch()
+                                     .count(),
+                                b};
+                   });
+  // Monotonic extension of the established reverse recovery: never displace
+  // the complete legacy nearest-state quota when a higher resource policy
+  // asks for lineage diversity. Additional candidates are drawn from distinct
+  // recent-frontier sectors and ancestries.
+  const std::size_t nearestQuota = static_cast<std::size_t>(
+      std::min<std::uint64_t>(legacyCandidateLimit, reverseCandidateLimit));
+  if (nearestCandidates.size() > nearestQuota)
+    nearestCandidates.resize(nearestQuota);
+  std::vector<std::size_t> candidates = std::move(nearestCandidates);
+  std::set<std::size_t> admitted(candidates.begin(), candidates.end());
+  for (const std::size_t diverse : diverseFrontierRecoveryCandidates(
+           request, search, reverseCandidateLimit)) {
+    if (candidates.size() >= reverseCandidateLimit) break;
+    if (admitted.insert(diverse).second) candidates.push_back(diverse);
+  }
+  bool bridgeBudgetReported = false;
+  const auto bridgeBudgetExhausted = [&]() {
+    if (request.limits.maximumReverseBridgeAttempts == 0 ||
+        diagnostics.reverseCandidateBridges <
+            request.limits.maximumReverseBridgeAttempts)
+      return false;
+    if (!bridgeBudgetReported) {
+      diagnostics.stageStopReasons.push_back(
+          "reverse bridge integration budget exhausted after " +
+          std::to_string(diagnostics.reverseCandidateBridges) +
+          " chronological attempts");
+      bridgeBudgetReported = true;
+    }
+    return true;
+  };
 
   std::vector<GeoPoint> approaches;
   const std::array<double, 3> approachRadii{
@@ -1360,6 +1455,7 @@ std::optional<std::pair<SearchArtifacts, std::size_t>> reverseRecovery(
   }
   for (std::size_t index : candidates) {
     if (request.cancellation.cancelled()) return {};
+    if (bridgeBudgetExhausted()) return {};
     ++diagnostics.reverseNodes;
     if ((diagnostics.reverseNodes & 63U) == 0U)
       reportProgress(request, RoutingProgressStage::ReverseRecovery,
@@ -1391,6 +1487,7 @@ std::optional<std::pair<SearchArtifacts, std::size_t>> reverseRecovery(
         });
     for (const GeoPoint approach : orderedApproaches) {
       if (request.cancellation.cancelled()) return {};
+      if (bridgeBudgetExhausted()) return {};
       ++diagnostics.reverseCandidateBridges;
       if (environment.landAndBoundaries &&
           environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
@@ -1429,6 +1526,105 @@ std::optional<std::pair<SearchArtifacts, std::size_t>> reverseRecovery(
   return {};
 }
 
+std::size_t ancestorStepsBack(const SearchArtifacts& search, std::size_t index,
+                              unsigned steps) {
+  while (steps-- > 0 && index < search.nodes.size()) {
+    const std::size_t predecessor = search.nodes[index].predecessor;
+    if (predecessor == std::numeric_limits<std::size_t>::max()) break;
+    index = predecessor;
+  }
+  return index;
+}
+
+std::vector<std::size_t> diverseFrontierRecoveryCandidates(
+    const RoutingRequest& request, const SearchArtifacts& search,
+    std::size_t maximumCandidates) {
+  if (maximumCandidates == 0) return {};
+  std::vector<std::vector<std::size_t>> frontiers =
+      search.recoveryFrontiers;
+  if (frontiers.empty() && !search.retained.empty())
+    frontiers.push_back(search.retained);
+  std::reverse(frontiers.begin(), frontiers.end());
+
+  std::vector<std::vector<std::size_t>> orderedFrontiers;
+  orderedFrontiers.reserve(frontiers.size());
+  for (auto& frontier : frontiers) {
+    using ArrivalSector = std::tuple<int, int, int>;
+    std::map<ArrivalSector, std::vector<std::size_t>> sectors;
+    for (const std::size_t index : frontier) {
+      if (index == 0 || index >= search.nodes.size()) continue;
+      const Node& node = search.nodes[index];
+      const int sector = static_cast<int>(std::floor(
+          initialBearingDegrees(request.destination, node.position) / 10.0));
+      sectors[{sector, static_cast<int>(node.tack),
+               static_cast<int>(node.mode)}]
+          .push_back(index);
+    }
+    for (auto& [key, candidates] : sectors) {
+      (void)key;
+      std::stable_sort(
+          candidates.begin(), candidates.end(),
+          [&](std::size_t a, std::size_t b) {
+            const Node& left = search.nodes[a];
+            const Node& right = search.nodes[b];
+            return std::tuple{
+                       distanceNm(left.position, request.destination),
+                       stateCost(request, left), left.time,
+                       left.position.latitude, left.position.longitude, a} <
+                   std::tuple{
+                       distanceNm(right.position, request.destination),
+                       stateCost(request, right), right.time,
+                       right.position.latitude, right.position.longitude, b};
+          });
+    }
+    std::vector<std::size_t> ordered;
+    for (std::size_t rank = 0;; ++rank) {
+      bool added = false;
+      for (auto& [key, candidates] : sectors) {
+        (void)key;
+        if (rank < candidates.size()) {
+          ordered.push_back(candidates[rank]);
+          added = true;
+        }
+      }
+      if (!added) break;
+    }
+    orderedFrontiers.push_back(std::move(ordered));
+  }
+
+  std::vector<std::size_t> selected;
+  selected.reserve(maximumCandidates);
+  std::set<std::size_t> seen;
+  std::map<std::size_t, unsigned> ancestryUse;
+  const auto admit = [&](std::size_t index,
+                         std::vector<std::size_t>& destination) {
+    if (!seen.insert(index).second) return;
+    const std::size_t ancestry = ancestorStepsBack(search, index, 4);
+    unsigned& use = ancestryUse[ancestry];
+    if (use >= 2) return;
+    ++use;
+    destination.push_back(index);
+  };
+
+  for (const std::size_t preferred : search.preferredRecoverySeeds) {
+    if (preferred > 0 && preferred < search.nodes.size())
+      admit(preferred, selected);
+    if (selected.size() >= maximumCandidates) return selected;
+  }
+  for (std::size_t rank = 0; selected.size() < maximumCandidates; ++rank) {
+    bool added = false;
+    for (const auto& frontier : orderedFrontiers) {
+      if (rank >= frontier.size()) continue;
+      const std::size_t before = selected.size();
+      admit(frontier[rank], selected);
+      added = added || selected.size() != before;
+      if (selected.size() >= maximumCandidates) break;
+    }
+    if (!added) break;
+  }
+  return selected;
+}
+
 struct QueueEntry {
   double priority{};
   double cost{};
@@ -1447,6 +1643,8 @@ struct QueueLater {
   }
 };
 
+enum class GraphSearchKind { FrontierRecovery, GlobalFallback };
+
 using GraphLabelKey = std::tuple<CellKey, std::int64_t, int>;
 
 struct GraphLabelKeyHash {
@@ -1464,8 +1662,17 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
                             const RoutingEnvironment& environment,
                             const VesselPerformanceModel& performance,
                             const SearchArtifacts* seed,
+                            std::uint64_t generatedStateBudget,
+                            std::uint64_t graphLabelBudget,
+                            GraphSearchKind kind,
                             RoutingDiagnostics& diagnostics) {
   SearchArtifacts result;
+  const bool frontierRecovery = kind == GraphSearchKind::FrontierRecovery;
+  const std::string stageName =
+      frontierRecovery ? "frontier recovery" : "graph fallback";
+  const RoutingProgressStage progressStage =
+      frontierRecovery ? RoutingProgressStage::FrontierRecovery
+                       : RoutingProgressStage::GraphFallback;
   std::priority_queue<QueueEntry, std::vector<QueueEntry>, QueueLater> open;
   std::unordered_map<GraphLabelKey, std::vector<std::size_t>, GraphLabelKeyHash>
       labels;
@@ -1483,10 +1690,12 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
   double activeCorridorWidthNm = corridorWidths.front();
   const std::uint64_t graphGeneratedStatesAtStart =
       diagnostics.generatedStates;
-  const std::uint64_t graphGeneratedStateBudget =
-      request.limits.maximumGeneratedStates -
-      std::min(request.limits.maximumGeneratedStates,
-               graphGeneratedStatesAtStart);
+  const std::uint64_t graphGeneratedStateLimit =
+      generatedStateBudget >
+              std::numeric_limits<std::uint64_t>::max() -
+                  graphGeneratedStatesAtStart
+          ? std::numeric_limits<std::uint64_t>::max()
+          : graphGeneratedStatesAtStart + generatedStateBudget;
   const auto stageBudgetNumerator = [&]() {
     if (corridorStage + 1 == corridorWidths.size()) return std::uint64_t{2};
     return static_cast<std::uint64_t>(corridorStage + 1);
@@ -1498,16 +1707,16 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
   };
   const auto stageGeneratedStateCeiling = [&]() {
     return graphGeneratedStatesAtStart +
-           graphGeneratedStateBudget * stageBudgetNumerator() /
+           generatedStateBudget * stageBudgetNumerator() /
                stageBudgetDenominator();
   };
   const auto stageGraphLabelCeiling = [&]() {
-    return request.limits.maximumGraphLabels * stageBudgetNumerator() /
+    return graphLabelBudget * stageBudgetNumerator() /
            stageBudgetDenominator();
   };
   diagnostics.graphCorridorWidthsNm.push_back(activeCorridorWidthNm);
   diagnostics.stageStopReasons.push_back(
-      "graph fallback corridor stage 1/" +
+      stageName + " corridor stage 1/" +
       std::to_string(corridorWidths.size()) + ": " +
       graphCorridorDescription(activeCorridorWidthNm));
   std::optional<double> localDestinationRadiusNm;
@@ -1551,8 +1760,8 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     const std::vector<std::size_t>& acceptedSeedIndices = seedIndices;
     diagnostics.stageStopReasons.push_back(
         seed->preferredRecoverySeeds.empty()
-            ? "graph fallback restarted from known-safe departure"
-            : "graph fallback admitted independently validated candidate "
+            ? stageName + " restarted from known-safe departure"
+            : stageName + " admitted independently validated candidate "
               "prefixes only");
     const double closestSeedNm =
         distanceNm(result.nodes[acceptedSeedIndices.front()].position,
@@ -1588,7 +1797,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     localGraphDeadline = latestSeedTime + request.options.reverseHorizon;
     initialLocalDestinationRadiusNm = localDestinationRadiusNm;
     diagnostics.stageStopReasons.push_back(
-        "graph fallback seeded from " +
+        stageName + " seeded from " +
         std::to_string(acceptedSeedIndices.size()) +
         " safe chronological prefixes; closest " +
         std::to_string(closestAcceptedSeedNm) + " NM");
@@ -1640,7 +1849,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     // is the only safe route around the obstruction. Bound all admitted and
     // deferred graph labels together instead.
     if (graphLabelsThisSearch + deferredLabelCount >=
-        request.limits.maximumGraphLabels) {
+        graphLabelBudget) {
       ++diagnostics.pruned.cellLabelCap;
       deferredCapacityReached = true;
       return;
@@ -1674,7 +1883,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     // Perform the complete constraint and chart-safety check only when their
     // corridor stage becomes active.
     if (nodeMotionForbidden(request, environment, next, diagnostics)) return;
-    if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
+    if (graphLabelsThisSearch >= graphLabelBudget) {
       graphLabelLimitReached = true;
       return;
     }
@@ -1739,12 +1948,12 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     });
     diagnostics.graphCorridorWidthsNm.push_back(activeCorridorWidthNm);
     diagnostics.stageStopReasons.push_back(
-        "graph fallback widened corridor after exhaustion from " +
+        stageName + " widened corridor after exhaustion from " +
         graphCorridorDescription(previousWidth) + " to " +
         graphCorridorDescription(activeCorridorWidthNm) + "; activating " +
         std::to_string(ready.size()) + " deferred labels");
     for (auto& node : ready) admit(std::move(node));
-    reportProgress(request, RoutingProgressStage::GraphFallback, diagnostics,
+    reportProgress(request, progressStage, diagnostics,
                    static_cast<unsigned>(corridorStage + 1),
                    static_cast<unsigned>(corridorWidths.size()));
     return true;
@@ -1815,7 +2024,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
       if (auto direct = directConnection(
               request, environment, performance, from,
               directConnectionWindow(request, from, step * 3), diagnostics)) {
-        if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
+        if (graphLabelsThisSearch >= graphLabelBudget) {
           result.failure = RoutingStatus::ResourceLimitReached;
           result.reason = "maximum graph labels reached";
           result.resourceLimited = true;
@@ -1852,7 +2061,7 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
          headings(request.options.graphHeadingStepDegrees, bearing, true,
                   request.options.graphHeadingStepDegrees / 2.0,
                   request.options.maximumSearchAngleDegrees)) {
-      if (graphLabelsThisSearch >= request.limits.maximumGraphLabels) {
+      if (graphLabelsThisSearch >= graphLabelBudget) {
         result.failure = RoutingStatus::ResourceLimitReached;
         result.reason = "maximum graph labels reached";
         result.resourceLimited = true;
@@ -1863,19 +2072,17 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
           request, environment, performance, from, heading, expansionStep,
           diagnostics, Duration{std::chrono::minutes{15}}, &dataFailure);
       for (auto& next : propagated) {
-        if (diagnostics.generatedStates >=
-            request.limits.maximumGeneratedStates) {
+        if (diagnostics.generatedStates >= graphGeneratedStateLimit) {
           result.failure = RoutingStatus::ResourceLimitReached;
           result.reason =
-              "maximum generated states reached during graph fallback";
+              "maximum generated states reached during " + stageName;
           result.resourceLimited = true;
           diagnostics.resourceLimitEvents.push_back(result.reason);
           return result;
         }
         ++diagnostics.generatedStates;
         if ((diagnostics.generatedStates & 8191U) == 0U)
-          reportProgress(request, RoutingProgressStage::GraphFallback,
-                         diagnostics);
+          reportProgress(request, progressStage, diagnostics);
         movementGenerated = true;
         next.predecessor = entry.node;
         admit(std::move(next));
@@ -1889,8 +2096,8 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
       }
     }
     if (!movementGenerated &&
-        diagnostics.generatedStates < request.limits.maximumGeneratedStates &&
-        graphLabelsThisSearch < request.limits.maximumGraphLabels) {
+        diagnostics.generatedStates < graphGeneratedStateLimit &&
+        graphLabelsThisSearch < graphLabelBudget) {
       if (auto waiting = waitInPlace(request, environment, from, expansionStep,
                                      diagnostics)) {
         ++diagnostics.generatedStates;
@@ -2144,7 +2351,79 @@ RoutingPreflightResult RoutingEngine::preflight(
 RoutingResult RoutingEngine::route(
     const RoutingRequest& request,
     const RoutingEnvironment& environment) const {
-  return routeMember(request, environment);
+  const auto normalizedEffort = [](unsigned effort) {
+    if (effort <= 125) return 100U;
+    if (effort <= 175) return 150U;
+    if (effort <= 300) return 200U;
+    return 400U;
+  };
+  const unsigned selectedEffort =
+      normalizedEffort(request.options.routingEffortPercent);
+  const std::array<unsigned, 4> tiers{100U, 150U, 200U, 400U};
+  const auto scale = [&](std::uint64_t value, unsigned tier) {
+    if (selectedEffort == tier || value == 0) return value;
+    const long double scaled =
+        static_cast<long double>(value) * tier / selectedEffort;
+    return static_cast<std::uint64_t>(std::floor(scaled + 0.5L));
+  };
+  const auto complete = [](RoutingStatus status) {
+    return status == RoutingStatus::Complete ||
+           status == RoutingStatus::CompleteUsingReverseRecovery ||
+           status == RoutingStatus::CompleteUsingFrontierRecovery ||
+           status == RoutingStatus::CompleteUsingGraphFallback;
+  };
+  const auto retryable = [](RoutingStatus status) {
+    return status == RoutingStatus::NoFeasibleRoute ||
+           status == RoutingStatus::SearchIncomplete ||
+           status == RoutingStatus::ResourceLimitReached ||
+           status == RoutingStatus::ValidationFailure;
+  };
+
+  std::vector<unsigned> attempted;
+  std::vector<std::string> priorFailures;
+  std::uint64_t cumulativeGenerated{};
+  RoutingResult last;
+  for (const unsigned tier : tiers) {
+    if (tier > selectedEffort) break;
+    RoutingRequest tierRequest = request;
+    tierRequest.options.routingEffortPercent = tier;
+    tierRequest.limits.maximumGeneratedStates =
+        scale(request.limits.maximumGeneratedStates, tier);
+    tierRequest.limits.maximumForwardGeneratedStates =
+        scale(request.limits.maximumForwardGeneratedStates, tier);
+    tierRequest.limits.maximumReverseCandidates =
+        scale(request.limits.maximumReverseCandidates, tier);
+    tierRequest.limits.maximumReverseBridgeAttempts =
+        scale(request.limits.maximumReverseBridgeAttempts, tier);
+    tierRequest.limits.maximumFrontierRecoveryGeneratedStates =
+        scale(request.limits.maximumFrontierRecoveryGeneratedStates, tier);
+    tierRequest.limits.maximumFrontierRecoveryLabels =
+        scale(request.limits.maximumFrontierRecoveryLabels, tier);
+    tierRequest.limits.maximumGraphGeneratedStates =
+        scale(request.limits.maximumGraphGeneratedStates, tier);
+    tierRequest.limits.maximumRetainedStates =
+        scale(request.limits.maximumRetainedStates, tier);
+    tierRequest.limits.maximumGraphLabels =
+        scale(request.limits.maximumGraphLabels, tier);
+
+    last = routeMember(tierRequest, environment);
+    attempted.push_back(tier);
+    cumulativeGenerated += last.diagnostics.generatedStates;
+    last.diagnostics.effortTiersAttempted = attempted;
+    last.diagnostics.cumulativeGeneratedStates = cumulativeGenerated;
+    for (const auto& failure : priorFailures)
+      last.diagnostics.stageStopReasons.insert(
+          last.diagnostics.stageStopReasons.begin(), failure);
+    if (complete(last.status)) {
+      last.diagnostics.completedEffortPercent = tier;
+      return last;
+    }
+    if (!retryable(last.status)) return last;
+    priorFailures.push_back("effort tier " + std::to_string(tier) +
+                            "% ended with " + toString(last.status) + ": " +
+                            last.message);
+  }
+  return last;
 }
 
 RoutingResult RoutingEngine::routeMember(
@@ -2251,7 +2530,7 @@ RoutingResult RoutingEngine::routeMember(
   bool found = false;
   std::string lastValidationFailure;
   std::vector<std::size_t> rejectedCandidateSafePrefixes;
-  bool candidateReplayProducedSafePrefix = false;
+  bool candidateReplayProducedUsefulPrefix = false;
   bool requiresExternalConstraintEscalation = false;
   RouteValidator candidateValidator;
   const auto acceptCandidate = [&](const SearchArtifacts& search,
@@ -2262,14 +2541,26 @@ RoutingResult RoutingEngine::routeMember(
     result.diagnostics.validationSamples += validation.samples;
     if (!validation.passed) {
       lastValidationFailure = validation.failureReason;
-      candidateReplayProducedSafePrefix = candidateReplayProducedSafePrefix ||
-                                          validation.acceptedPrefixLegs > 0;
       const std::vector<std::size_t> lineage =
           reconstructNodeIndices(search, solution);
       if (validation.acceptedPrefixLegs > 0 &&
-          validation.acceptedPrefixLegs <= lineage.size())
-        rejectedCandidateSafePrefixes.push_back(
-            lineage[validation.acceptedPrefixLegs - 1]);
+          validation.acceptedPrefixLegs <= lineage.size()) {
+        const std::size_t prefix =
+            lineage[validation.acceptedPrefixLegs - 1];
+        rejectedCandidateSafePrefixes.push_back(prefix);
+        const double routeDistanceNm =
+            distanceNm(request.start, request.destination);
+        const double remainingNm =
+            distanceNm(search.nodes[prefix].position, request.destination);
+        // A one-leg replay discrepancy near departure is evidence that the
+        // exploratory integration needs refinement, not a useful graph seed.
+        // Preserve genuinely progressed prefixes, while allowing an early
+        // mismatch to trigger the denser five-minute forward retry.
+        candidateReplayProducedUsefulPrefix =
+            candidateReplayProducedUsefulPrefix ||
+            (validation.acceptedPrefixLegs >= 3 &&
+             remainingNm <= routeDistanceNm * 0.75);
+      }
       result.diagnostics.stageStopReasons.push_back(
           "candidate rejected by independent forward validation: " +
           validation.failureReason + "; accepted prefix legs " +
@@ -2283,7 +2574,7 @@ RoutingResult RoutingEngine::routeMember(
   const unsigned attempts = request.options.forceForwardFailureForTesting
                                 ? 1U
                                 : std::min(5U, request.options.retryStages);
-  const std::uint64_t recoveryReserve =
+  const std::uint64_t legacyGraphReserve =
       request.options.useGraphFallback && request.options.retryStages >= 7
           ? request.options.forceForwardFailureForTesting
                 ? request.limits.maximumGeneratedStates -
@@ -2293,14 +2584,25 @@ RoutingResult RoutingEngine::routeMember(
                       1, request.limits.maximumGeneratedStates / 4U)
           : 0U;
   const std::uint64_t forwardGeneratedStateCeiling =
-      request.limits.maximumGeneratedStates -
-      std::min(request.limits.maximumGeneratedStates, recoveryReserve);
+      request.limits.maximumForwardGeneratedStates > 0
+          ? request.limits.maximumForwardGeneratedStates
+          : request.limits.maximumGeneratedStates -
+                std::min(request.limits.maximumGeneratedStates,
+                         legacyGraphReserve);
+  const std::uint64_t frontierRecoveryGeneratedStateBudget =
+      request.limits.maximumFrontierRecoveryGeneratedStates;
+  const std::uint64_t frontierRecoveryLabelBudget =
+      request.limits.maximumFrontierRecoveryLabels;
+  const std::uint64_t globalGraphGeneratedStateBudget =
+      request.limits.maximumGraphGeneratedStates > 0
+          ? request.limits.maximumGraphGeneratedStates
+          : legacyGraphReserve;
   std::uint64_t previousAttemptGenerated{};
   for (unsigned attempt = 0; attempt < attempts; ++attempt) {
     if (attempt > 0) {
       const std::uint64_t remaining =
-          request.limits.maximumGeneratedStates -
-          std::min(request.limits.maximumGeneratedStates,
+          forwardGeneratedStateCeiling -
+          std::min(forwardGeneratedStateCeiling,
                    result.diagnostics.generatedStates);
       const std::uint64_t estimatedRefinement = std::max<std::uint64_t>(
           previousAttemptGenerated, previousAttemptGenerated * 3U / 2U);
@@ -2336,6 +2638,7 @@ RoutingResult RoutingEngine::routeMember(
         result.diagnostics.generatedStates - generatedBefore;
     if (latest.solution) {
       rejectedCandidateSafePrefixes.clear();
+      candidateReplayProducedUsefulPrefix = false;
       const std::vector<std::size_t> candidates =
           latest.alternativeSolutions.empty()
               ? std::vector<std::size_t>{*latest.solution}
@@ -2372,7 +2675,7 @@ RoutingResult RoutingEngine::routeMember(
     if (latest.failure == RoutingStatus::Cancelled || latest.resourceLimited)
       break;
     if (requiresExternalConstraintEscalation) break;
-    if (candidateReplayProducedSafePrefix) {
+    if (candidateReplayProducedUsefulPrefix) {
       result.diagnostics.stageStopReasons.push_back(
           "forward candidate replay supplied a safe recovery prefix; "
           "skipping whole-route refinement");
@@ -2380,16 +2683,13 @@ RoutingResult RoutingEngine::routeMember(
     }
     if (latest.convergenceStalled) break;
   }
+  result.diagnostics.forwardGeneratedStates =
+      result.diagnostics.generatedStates;
 
   // Keep the final forward frontier geometry available to inspection clients
   // even when production recovery subsequently replaces SearchArtifacts with
   // graph labels.  This data is never used for route acceptance.
   const std::vector<IsochroneLayer> forwardIsochrones = latest.isochrones;
-  const bool forwardStalledNearDestination =
-      latest.convergenceStalled &&
-      result.diagnostics.closestApproachNm <=
-          std::max(2.0, request.options.destinationToleranceNm * 2.0);
-
   if (!found && !requiresExternalConstraintEscalation &&
       latest.failure != RoutingStatus::Cancelled &&
       request.options.useReverseRecovery && latest.nodes.size() > 1 &&
@@ -2418,55 +2718,79 @@ RoutingResult RoutingEngine::routeMember(
 
   if (!found && !requiresExternalConstraintEscalation &&
       latest.failure != RoutingStatus::Cancelled &&
-      !forwardStalledNearDestination && request.options.useGraphFallback &&
-      request.options.retryStages >= 7) {
-    if (latest.preferredRecoverySeeds.empty() && !latest.retained.empty()) {
-      // Graph recovery should not discard useful forward progress, but nor may
-      // it trust an exploratory lineage merely because each coarse search
-      // chord passed propagation checks. Independently replay a small,
-      // deterministic set of the closest frontier prefixes at full validation
-      // cadence. Only prefixes which pass in their entirety may seed the graph.
-      // The cap prevents the old behaviour of rasterising a complete failed
-      // search fan before graph recovery can begin.
-      std::vector<std::size_t> prefixCandidates = latest.retained;
-      std::stable_sort(
-          prefixCandidates.begin(), prefixCandidates.end(),
-          [&](std::size_t a, std::size_t b) {
-            return std::tuple{distanceNm(latest.nodes[a].position,
-                                         request.destination),
-                              stateCost(request, latest.nodes[a]), a} <
-                   std::tuple{distanceNm(latest.nodes[b].position,
-                                         request.destination),
-                              stateCost(request, latest.nodes[b]), b};
-          });
-      constexpr std::size_t kMaximumPrefixReplays = 16;
-      constexpr std::size_t kMaximumAcceptedPrefixes = 8;
-      if (prefixCandidates.size() > kMaximumPrefixReplays)
-        prefixCandidates.resize(kMaximumPrefixReplays);
-      for (const std::size_t index : prefixCandidates) {
-        auto legs = reconstruct(latest, index);
-        const auto validation = candidateValidator.validatePrefix(
-            request, environment, performance, legs, &result.diagnostics);
-        result.diagnostics.validationSamples += validation.samples;
-        if (validation.passed) latest.preferredRecoverySeeds.push_back(index);
-        if (latest.preferredRecoverySeeds.size() >= kMaximumAcceptedPrefixes)
-          break;
-      }
-      result.diagnostics.stageStopReasons.push_back(
-          "bounded graph-prefix replay accepted " +
-          std::to_string(latest.preferredRecoverySeeds.size()) + " of " +
-          std::to_string(prefixCandidates.size()) + " candidates");
+      request.options.useFrontierRecovery &&
+      frontierRecoveryGeneratedStateBudget > 0 &&
+      frontierRecoveryLabelBudget > 0 && latest.nodes.size() > 1) {
+    constexpr std::size_t kMaximumPrefixReplays = 64;
+    constexpr std::size_t kMaximumAcceptedPrefixes = 24;
+    const std::vector<std::size_t> prefixCandidates =
+        diverseFrontierRecoveryCandidates(request, latest,
+                                          kMaximumPrefixReplays);
+    std::vector<std::size_t> accepted;
+    accepted.reserve(kMaximumAcceptedPrefixes);
+    for (const std::size_t index : prefixCandidates) {
+      if (result.diagnostics.validationSamples >=
+          request.limits.maximumValidationSamples)
+        break;
+      auto legs = reconstruct(latest, index);
+      const auto validation = candidateValidator.validatePrefix(
+          request, environment, performance, legs, &result.diagnostics);
+      result.diagnostics.validationSamples += validation.samples;
+      if (validation.passed) accepted.push_back(index);
+      if (accepted.size() >= kMaximumAcceptedPrefixes) break;
     }
+    latest.preferredRecoverySeeds = std::move(accepted);
+    result.diagnostics.stageStopReasons.push_back(
+        "diverse frontier-prefix replay accepted " +
+        std::to_string(latest.preferredRecoverySeeds.size()) + " of " +
+        std::to_string(prefixCandidates.size()) + " candidates");
+
+    if (!latest.preferredRecoverySeeds.empty()) {
+      reportProgress(request, RoutingProgressStage::FrontierRecovery,
+                     result.diagnostics);
+      result.diagnostics.stagesAttempted.push_back(
+          SolverPath::FrontierRecovery);
+      const std::uint64_t generatedBefore =
+          result.diagnostics.generatedStates;
+      const std::uint64_t labelsBefore = result.diagnostics.graphLabels;
+      latest = graphSearch(
+          request, environment, performance, &latest,
+          frontierRecoveryGeneratedStateBudget, frontierRecoveryLabelBudget,
+          GraphSearchKind::FrontierRecovery, result.diagnostics);
+      result.diagnostics.frontierRecoveryGeneratedStates =
+          result.diagnostics.generatedStates - generatedBefore;
+      result.diagnostics.frontierRecoveryLabels =
+          result.diagnostics.graphLabels - labelsBefore;
+      if (latest.solution) {
+        found = acceptCandidate(latest, *latest.solution,
+                                SolverPath::FrontierRecovery);
+        if (!found) {
+          latest.solution.reset();
+          latest.failure = RoutingStatus::ValidationFailure;
+          latest.reason =
+              "frontier recovery candidate failed independent validation: " +
+              lastValidationFailure;
+        }
+      } else {
+        result.diagnostics.stageStopReasons.push_back(latest.reason);
+      }
+    }
+  }
+
+  if (!found && !requiresExternalConstraintEscalation &&
+      latest.failure != RoutingStatus::Cancelled &&
+      request.options.useGraphFallback && request.options.retryStages >= 7 &&
+      globalGraphGeneratedStateBudget > 0) {
     reportProgress(request, RoutingProgressStage::GraphFallback,
                    result.diagnostics);
     result.diagnostics.stagesAttempted.push_back(SolverPath::GraphFallback);
-    // Test-forced forward failure deliberately exercises graph recovery from
-    // the known-safe departure instead of accidentally seeding it with an
-    // otherwise successful forward fan.
-    const SearchArtifacts* graphSeed =
-        request.options.forceForwardFailureForTesting ? nullptr : &latest;
-    latest = graphSearch(request, environment, performance, graphSeed,
-                         result.diagnostics);
+    const std::uint64_t generatedBefore = result.diagnostics.generatedStates;
+    latest = graphSearch(
+        request, environment, performance, nullptr,
+        globalGraphGeneratedStateBudget, request.limits.maximumGraphLabels,
+        GraphSearchKind::GlobalFallback, result.diagnostics);
+    result.diagnostics.graphGeneratedStates =
+        result.diagnostics.generatedStates - generatedBefore;
     if (latest.solution) {
       found =
           acceptCandidate(latest, *latest.solution, SolverPath::GraphFallback);
@@ -2479,10 +2803,6 @@ RoutingResult RoutingEngine::routeMember(
     } else {
       result.diagnostics.stageStopReasons.push_back(latest.reason);
     }
-  } else if (!found && forwardStalledNearDestination) {
-    result.diagnostics.stageStopReasons.push_back(
-        "graph fallback skipped because forward search reached the local "
-        "destination constraint but could not cross it");
   }
 
   result.diagnostics.xtdCoverageExpansions =
@@ -2520,6 +2840,8 @@ RoutingResult RoutingEngine::routeMember(
   result.environment = result.validation.environment;
   result.status = result.solverPath == SolverPath::ReverseRecovery
                       ? RoutingStatus::CompleteUsingReverseRecovery
+                  : result.solverPath == SolverPath::FrontierRecovery
+                      ? RoutingStatus::CompleteUsingFrontierRecovery
                   : result.solverPath == SolverPath::GraphFallback
                       ? RoutingStatus::CompleteUsingGraphFallback
                       : RoutingStatus::Complete;

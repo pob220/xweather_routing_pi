@@ -271,6 +271,9 @@ void RouteMapOverlay::SetModernNativeProgress(
     case RoutingProgressStage::ReverseRecovery:
       stage = _("Reverse-isocrone recovery");
       break;
+    case RoutingProgressStage::FrontierRecovery:
+      stage = _("Isochrone graph recovery");
+      break;
     case RoutingProgressStage::GraphFallback:
       stage = _("Time-dependent graph fallback");
       break;
@@ -312,6 +315,7 @@ void RouteMapOverlay::InstallModernNativeResult(
   const bool complete =
       result.status == wr::RoutingStatus::Complete ||
       result.status == wr::RoutingStatus::CompleteUsingReverseRecovery ||
+      result.status == wr::RoutingStatus::CompleteUsingFrontierRecovery ||
       result.status == wr::RoutingStatus::CompleteUsingGraphFallback;
   SetFailureReason(complete ? wxString() : wxString::FromUTF8(result.message));
 

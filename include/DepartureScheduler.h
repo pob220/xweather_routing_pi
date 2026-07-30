@@ -43,9 +43,18 @@ inline int AutomaticDepartureWorkerLimit(int logical_cpu_count) {
 inline int EffectiveRouteWorkerLimit(
     int configured_limit, bool departure_candidates_active,
     int requested_departure_workers = kAutomaticParallelDepartureCandidates,
-    int logical_cpu_count = 0) {
+    int logical_cpu_count = 0,
+    bool requires_deterministic_host_service_lane = false) {
   const int valid_limit = std::max(1, configured_limit);
   if (!departure_candidates_active) return valid_limit;
+  // Native candidates consume OpenCPN-owned GRIB, GSHHS and chart-safety
+  // services.  Those services contain process-wide mutable state and are not
+  // an observationally pure parallel environment: two otherwise identical
+  // optimisation sweeps have been shown to retain different native
+  // frontiers.  Keep authoritative candidates in one deterministic lane.
+  // Chart-safety scouts are completed before this scheduler is entered and
+  // may still use their own bounded parallelism.
+  if (requires_deterministic_host_service_lane) return 1;
 
   const int departure_limit =
       requested_departure_workers <= kAutomaticParallelDepartureCandidates

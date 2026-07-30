@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -180,6 +181,42 @@ public:
       const WaveSample& wave) const override {
     return evaluate(mode, role, identity, 0.0, 0.0, wave);
   }
+};
+
+class PulsedCurrentWeather final : public WeatherProvider {
+public:
+  ParameterCoverage windCoverage() const override {
+    return {true, TestTime(), TestTime() + std::chrono::hours{4},
+            {-180.0, -90.0, 180.0, 90.0}, identity()};
+  }
+  ParameterCoverage currentCoverage() const override {
+    return windCoverage();
+  }
+  ParameterCoverage waveCoverage() const override {
+    return windCoverage();
+  }
+  WindSample wind(GeoPoint, TimePoint time) const override {
+    return {true, speedDirectionToVector(14.0, 0.0),
+            {EnvironmentalSource::SyntheticTestField, identity(), identity(),
+             {}, time, {}, {}}};
+  }
+  CurrentSample current(GeoPoint, TimePoint time) const override {
+    const auto seconds =
+        std::chrono::duration_cast<Duration>(time - TestTime()).count();
+    const auto cycleSecond = ((seconds % 300) + 300) % 300;
+    // Five knots for the first minute of every five-minute period. A
+    // one-minute midpoint replay integrates one knot of mean current, while a
+    // five-minute midpoint replay misses every pulse.
+    return {true, {cycleSecond < 60 ? 5.0 : 0.0, 0.0},
+            {EnvironmentalSource::SyntheticTestField, identity(), identity(),
+             {}, time, {}, {}}};
+  }
+  WaveSample waves(GeoPoint, TimePoint time) const override {
+    return {true, 0.5, 0.0, 6.0,
+            {EnvironmentalSource::SyntheticTestField, identity(), identity(),
+             {}, time, {}, {}}};
+  }
+  std::string identity() const override { return "pulsed-current"; }
 };
 
 RoutingEnvironment GraphDetourEnvironment(
@@ -403,6 +440,7 @@ private:
 bool Successful(RoutingStatus status) {
   return status == RoutingStatus::Complete ||
          status == RoutingStatus::CompleteUsingReverseRecovery ||
+         status == RoutingStatus::CompleteUsingFrontierRecovery ||
          status == RoutingStatus::CompleteUsingGraphFallback;
 }
 
@@ -505,6 +543,62 @@ TEST(ModernNativeEngine,
   EXPECT_FALSE(validation.passed);
   EXPECT_NE(validation.failureReason.find("endpoint reconciliation"),
             std::string::npos);
+}
+
+TEST(ModernNativeEngine, ReplayAccountsForSailPlanChangePenalty) {
+  auto request = TestRequest();
+  request.vessel.sailPlanChangePenalty = std::chrono::minutes{5};
+  request.destination = destinationPoint(
+      destinationPoint(request.start, 270.0, 4.0), 270.0, 10.0 / 3.0);
+  std::array<RouteLeg, 2> legs;
+  legs[0].start = request.start;
+  legs[0].end = destinationPoint(request.start, 270.0, 4.0);
+  legs[0].startTime = request.departure;
+  legs[0].endTime = request.departure + std::chrono::minutes{30};
+  legs[0].courseThroughWaterDegrees = 270.0;
+  legs[0].propulsionMode = PropulsionMode::Sail;
+  legs[0].profileRole = ProfileRole::SailOnly;
+  legs[0].profileIdentity = "constant";
+  legs[0].sailPlan = 0;
+  legs[1] = legs[0];
+  legs[1].start = legs[0].end;
+  legs[1].end = request.destination;
+  legs[1].startTime = legs[0].endTime;
+  legs[1].endTime = legs[1].startTime + std::chrono::minutes{30};
+  legs[1].sailPlan = 1;
+
+  const auto validation =
+      RouteValidator{}.validate(request, TestEnvironment(),
+                                ConstantSpeedPerformance{}, legs);
+
+  EXPECT_TRUE(validation.passed) << validation.failureReason;
+}
+
+TEST(ModernNativeEngine, ReplayPreservesSearchIntegrationCadence) {
+  auto request = TestRequest();
+  request.start = {0.0, 0.0};
+  request.destination = destinationPoint(request.start, 90.0, 9.0);
+  request.departure = TestTime();
+  RouteLeg leg;
+  leg.start = request.start;
+  leg.end = request.destination;
+  leg.startTime = request.departure;
+  leg.endTime = request.departure + std::chrono::hours{1};
+  leg.courseThroughWaterDegrees = 90.0;
+  leg.propulsionMode = PropulsionMode::Sail;
+  leg.profileRole = ProfileRole::SailOnly;
+  leg.profileIdentity = "constant";
+  leg.sailPlan = 0;
+  leg.integrationMaximumSlice = std::chrono::minutes{1};
+  RoutingEnvironment environment;
+  environment.grib = std::make_shared<PulsedCurrentWeather>();
+  environment.landAndBoundaries = std::make_shared<OpenWaterProvider>();
+
+  const auto validation = RouteValidator{}.validate(
+      request, environment, ConstantSpeedPerformance{},
+      std::span<const RouteLeg>(&leg, 1));
+
+  EXPECT_TRUE(validation.passed) << validation.failureReason;
 }
 
 TEST(ModernNativeEngine, RejectsAChartBlockedPassage) {
@@ -643,6 +737,78 @@ TEST(ModernNativeEngine, UsesRecoveryCascadeAndIndependentValidation) {
   EXPECT_NE(result.solverPath, SolverPath::AdaptiveIsochrone);
   EXPECT_TRUE(result.validation.passed);
   EXPECT_GT(result.diagnostics.validationSamples, 0U);
+}
+
+TEST(ModernNativeEngine, BoundsReverseRecoveryIndependently) {
+  auto request = TestRequest();
+  request.options.forceForwardFailureForTesting = true;
+  request.options.useFrontierRecovery = false;
+  request.options.useGraphFallback = false;
+  request.limits.maximumForwardGeneratedStates = 50000;
+  request.limits.maximumReverseCandidates = 1;
+  request.limits.maximumReverseBridgeAttempts = 1;
+  const auto result = RoutingEngine{}.route(
+      request, TestEnvironment(std::make_shared<BlockingMeridianProvider>()));
+
+  EXPECT_FALSE(Successful(result.status));
+  EXPECT_EQ(result.diagnostics.reverseNodes, 1U);
+  EXPECT_EQ(result.diagnostics.reverseCandidateBridges, 1U);
+  EXPECT_TRUE(std::any_of(
+      result.diagnostics.stageStopReasons.begin(),
+      result.diagnostics.stageStopReasons.end(), [](const std::string& reason) {
+        return reason.find("reverse bridge integration budget exhausted") !=
+               std::string::npos;
+      }));
+}
+
+TEST(ModernNativeEngine, FrontierRecoveryUsesPreservedForwardLineages) {
+  auto request = TestRequest();
+  request.destination = destinationPoint(request.start, 270.0, 12.0);
+  request.options.forceForwardFailureForTesting = true;
+  request.options.forceReverseFailureForTesting = true;
+  request.options.useGraphFallback = false;
+  request.limits.maximumForwardGeneratedStates = 50000;
+  request.limits.maximumFrontierRecoveryGeneratedStates = 300000;
+  request.limits.maximumFrontierRecoveryLabels = 100000;
+  const auto result = RoutingEngine{}.route(request, TestEnvironment());
+
+  ASSERT_TRUE(Successful(result.status))
+      << result.message << " generated=" << result.diagnostics.generatedStates
+      << " closest=" << result.diagnostics.closestApproachNm;
+  EXPECT_EQ(result.solverPath, SolverPath::FrontierRecovery);
+  EXPECT_GT(result.diagnostics.frontierRecoveryGeneratedStates, 0U);
+  EXPECT_GT(result.diagnostics.frontierRecoveryLabels, 0U);
+  EXPECT_LE(result.diagnostics.frontierRecoveryGeneratedStates,
+            request.limits.maximumFrontierRecoveryGeneratedStates);
+  EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
+}
+
+TEST(ModernNativeEngine, HigherEffortRetainsExactLowerTierSuccess) {
+  const auto baseline =
+      RoutingEngine{}.route(TestRequest(), TestEnvironment());
+  ASSERT_TRUE(Successful(baseline.status)) << baseline.message;
+
+  auto expandedRequest = TestRequest();
+  expandedRequest.options.routingEffortPercent = 400;
+  expandedRequest.limits.maximumGeneratedStates *= 4;
+  expandedRequest.limits.maximumRetainedStates *= 4;
+  expandedRequest.limits.maximumGraphLabels *= 4;
+  const auto expanded =
+      RoutingEngine{}.route(expandedRequest, TestEnvironment());
+
+  ASSERT_TRUE(Successful(expanded.status)) << expanded.message;
+  ASSERT_EQ(expanded.diagnostics.effortTiersAttempted,
+            std::vector<unsigned>({100U}));
+  EXPECT_EQ(expanded.diagnostics.completedEffortPercent, 100U);
+  EXPECT_EQ(expanded.metrics.elapsed, baseline.metrics.elapsed);
+  EXPECT_DOUBLE_EQ(expanded.metrics.distanceNm, baseline.metrics.distanceNm);
+  ASSERT_EQ(expanded.legs.size(), baseline.legs.size());
+  for (std::size_t index = 0; index < baseline.legs.size(); ++index) {
+    EXPECT_EQ(expanded.legs[index].start, baseline.legs[index].start);
+    EXPECT_EQ(expanded.legs[index].end, baseline.legs[index].end);
+    EXPECT_EQ(expanded.legs[index].startTime, baseline.legs[index].startTime);
+    EXPECT_EQ(expanded.legs[index].endTime, baseline.legs[index].endTime);
+  }
 }
 
 TEST(ModernNativeEngine, GraphFallbackStaysInFastCorridorWhenItCanSolve) {

@@ -73,10 +73,41 @@ TEST(RoutingScenarioJson, LoadsRoutingEffortForHardRouteRegression) {
   EXPECT_EQ(400, scenario.route.routingEffortPercent);
 }
 
+TEST(RoutingScenarioJson, PreservesExplicitUtcAcrossLocalTimezone) {
+  const wxString scenarioPath = "/tmp/weather-routing-utc-scenario.json";
+  {
+    std::ofstream output(scenarioPath.mb_str());
+    output << R"({
+      "schemaVersion": 1,
+      "name": "UTC parsing test",
+      "start": {"name": "Start", "lat": 50.0, "lon": -5.0},
+      "end": {"name": "End", "lat": 51.0, "lon": -4.0},
+      "startTime": "2026-08-01T10:00:00Z"
+    })";
+  }
+
+  weather_routing_engine::RoutingScenario scenario;
+  wxString error;
+  ASSERT_TRUE(weather_routing_headless::LoadRoutingScenarioJson(
+      scenarioPath, scenario, error))
+      << error;
+  ASSERT_TRUE(scenario.startTime.IsValid());
+  EXPECT_EQ("2026-08-01T10:00:00",
+            scenario.startTime.ToUTC().FormatISOCombined('T'));
+  std::remove(scenarioPath.mb_str());
+}
+
 TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   weather_routing_engine::RoutingResult result;
   result.scenario = "Stability JSON test";
   result.status = "complete";
+  weather_routing_engine::RoutingCandidateResult candidate;
+  wxDateTime departure;
+  ASSERT_TRUE(departure.ParseISOCombined("2026-08-01T10:00:00", 'T'));
+  departure.MakeFromTimezone(wxDateTime::UTC);
+  candidate.departure = departure;
+  candidate.state = "complete";
+  result.candidates.push_back(candidate);
   result.stabilityCorridor.requested = true;
   result.stabilityCorridor.status = "complete";
   result.stabilityCorridor.validRoutes = 7;
@@ -102,6 +133,10 @@ TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   Json::Reader reader;
   ASSERT_TRUE(reader.parse(input, root, false));
   ASSERT_TRUE(root["stabilityCorridor"].isObject());
+  ASSERT_TRUE(root["candidates"].isArray());
+  ASSERT_EQ(1U, root["candidates"].size());
+  EXPECT_EQ("2026-08-01T10:00:00Z",
+            root["candidates"][0]["departure"].asString());
   EXPECT_EQ(7, root["stabilityCorridor"]["validRoutes"].asInt());
   EXPECT_EQ(2, root["stabilityCorridor"]["routeFamilies"].asInt());
   EXPECT_EQ("candidate-0",

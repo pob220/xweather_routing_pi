@@ -73,8 +73,18 @@ static const int UI_TIMING_ACTIVE_SERVICE_INTERVAL_MS = 2;
 static const long UI_TIMING_LOG_THRESHOLD_MS = 100;
 static bool s_loggedDetectLandGshhsWarning = false;
 static std::set<wxString> s_chartSafetySharedPrewarmScopes;
+static std::set<wxString> s_chartSafetyPreparedScoutScopes;
 
 namespace {
+
+wxString NewDepartureOptimizationGroupId() {
+  // FormatISOCombined() has only one-second resolution. A second optimisation
+  // started quickly enough could otherwise reuse the retained weather cache
+  // from its predecessor, including after the selected GRIB changed.
+  static unsigned long long sequence = 0;
+  return wxString::Format("departure-%lld-%llu",
+                          wxGetUTCTimeMillis().GetValue(), ++sequence);
+}
 
 bool InitializeHeadlessGribFromEnv(wxString* error) {
   const char* configuredFile = getenv("WR_HEADLESS_GRIB_FILE");
@@ -509,21 +519,23 @@ static wxString ChartSafetySharedPrewarmScopeKey(
                           configuration.UseChartSafetyForPropagation ? 1 : 0);
   if (configuration.DepartureTimeOptimizationCandidate &&
       !configuration.DepartureTimeOptimizationGroupId.IsEmpty()) {
+    // Tile payloads are still shared by the host cache, but a scout is part
+    // of route semantics: it derives the narrowly bounded start/destination
+    // margin reach from that departure's own weather-driven lineage. Reusing
+    // the nominal scout for every offset made a hard 08:00 candidate differ
+    // from the same route calculated alone.
     key += ":optimization=" + configuration.DepartureTimeOptimizationGroupId;
+    key += wxString::Format(
+        ":candidate=%+d:departure=%s",
+        configuration.DepartureTimeOptimizationOffsetMinutes,
+        configuration.StartTime.IsValid()
+            ? configuration.StartTime.FormatISOCombined()
+            : wxString("invalid"));
   } else if (configuration.StartTime.IsValid()) {
     key += ":departure=" + configuration.StartTime.FormatISOCombined();
   }
-  // First-leg optimisation candidates are available together and share one
-  // union.  Later-leg start times are discovered sequentially, so retain a
-  // scope per candidate: each candidate then contributes its own scout while
-  // reusing the base/mask tiles already published by earlier candidates.
-  if (configuration.IsMultiLegGenerated &&
-      configuration.DepartureTimeOptimizationCandidate &&
-      configuration.MultiLegLegIndex > 1) {
-    key += wxString::Format(
-        ":later-leg-%d:candidate-%+d", configuration.MultiLegLegIndex,
-        configuration.DepartureTimeOptimizationOffsetMinutes);
-  }
+  if (configuration.IsMultiLegGenerated)
+    key += wxString::Format(":leg-%d", configuration.MultiLegLegIndex);
   return key;
 }
 
@@ -5962,9 +5974,12 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   DeleteRouteMaps(oldOptimizationRoutes);
   m_DepartureOptimizationRoutes.clear();
 
-  wxString groupId = wxDateTime::UNow().FormatISOCombined();
+  wxString groupId = NewDepartureOptimizationGroupId();
   wxDateTime nominalStartTime = base.StartTime;
   std::vector<RouteMapOverlay*> candidate_routes;
+  bool use_chart_safety = false;
+  bool enforce_chart_safety = false;
+  ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
   for (auto offset : offsets) {
     RouteMapConfiguration candidate = base;
     candidate.DepartureTimeOptimizationEnabled = false;
@@ -5973,8 +5988,11 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
     candidate.DepartureTimeOptimizationOffsetMinutes = offset;
     candidate.DepartureTimeOptimizationGroupId = groupId;
     candidate.StartTime = nominalStartTime + wxTimeSpan::Minutes(offset);
-    candidate.UseChartSafetyForPropagation = false;
-    candidate.ChartSafetyPropagationFallbackTried = false;
+    const bool authoritative_chart_search =
+        candidate.DetectLand && use_chart_safety && enforce_chart_safety;
+    candidate.UseChartSafetyForPropagation = authoritative_chart_search;
+    candidate.ChartSafetyPropagationFallbackTried =
+        authoritative_chart_search;
     candidate.chart_safety_missing_tile_retry_count = 0;
     candidate.chart_safety_missing_tile_rejections = 0;
     candidate.chart_safety_missing_tile_first_lat_tile = 0;
@@ -5994,21 +6012,25 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
     candidate_routes.push_back(candidateRoute);
   }
 
-  // Run representative route-family scouts before chart-enforced workers.
-  // Candidates in one departure group reuse that scout; any weather-driven
-  // path divergence is handled by the authoritative on-demand tile service.
   const int logical_cpu_count = wxThread::GetCPUCount();
+  const bool deterministic_host_service_lane =
+      ModernNativeRouteEnabled(base);
   const int effective_workers = weather_routing::EffectiveRouteWorkerLimit(
       m_SettingsDialog.m_sConcurrentThreads->GetValue(), true,
-      base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count);
+      base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count,
+      deterministic_host_service_lane);
   wxLogMessage(
       "WR_DEPARTURE_SCHEDULER group=%s candidates=%lu requested=%d "
-      "logical_cpus=%d global_limit=%d effective=%d",
+      "logical_cpus=%d global_limit=%d effective=%d "
+      "deterministic_host_service_lane=%d",
       groupId, static_cast<unsigned long>(candidate_routes.size()),
       base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count,
-      m_SettingsDialog.m_sConcurrentThreads->GetValue(), effective_workers);
-  PrepareChartSafetyScoutEnvelopes(candidate_routes,
-                                   _("departure optimisation scouts"));
+      m_SettingsDialog.m_sConcurrentThreads->GetValue(), effective_workers,
+      deterministic_host_service_lane ? 1 : 0);
+  // Start() performs each candidate-specific scout and chart prewarm
+  // synchronously before putting the route on the waiting queue. Calling the
+  // group scout pass here as well duplicated every partial scout under the
+  // fast and authoritative propagation scopes.
   for (std::vector<RouteMapOverlay*>::iterator route = candidate_routes.begin();
        route != candidate_routes.end(); ++route)
     Start(*route);
@@ -6994,11 +7016,14 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   advanceMs += sectionTimer.Time();
 
   bool departure_candidates_active = false;
+  bool deterministic_host_service_lane = false;
   int requested_departure_workers =
       weather_routing::kAutomaticParallelDepartureCandidates;
   for (RouteMapOverlay* route : m_RunningRouteMaps)
     if (route && route->GetConfiguration().DepartureTimeOptimizationCandidate) {
       departure_candidates_active = true;
+      deterministic_host_service_lane =
+          ModernNativeRouteEnabled(route->GetConfiguration());
       requested_departure_workers =
           route->GetConfiguration()
               .DepartureTimeOptimizationConcurrentRoutes;
@@ -7009,6 +7034,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
       if (route &&
           route->GetConfiguration().DepartureTimeOptimizationCandidate) {
         departure_candidates_active = true;
+        deterministic_host_service_lane =
+            ModernNativeRouteEnabled(route->GetConfiguration());
         requested_departure_workers =
             route->GetConfiguration()
                 .DepartureTimeOptimizationConcurrentRoutes;
@@ -7017,7 +7044,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   const int route_worker_limit = weather_routing::EffectiveRouteWorkerLimit(
       m_SettingsDialog.m_sConcurrentThreads->GetValue(),
       departure_candidates_active, requested_departure_workers,
-      wxThread::GetCPUCount());
+      wxThread::GetCPUCount(), deterministic_host_service_lane);
   if ((int)m_RunningRouteMaps.size() < route_worker_limit &&
       m_WaitingRouteMaps.size()) {
     sectionTimer.Start();
@@ -8659,6 +8686,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
           scope, configuration.Start, configuration.End,
           configuration.chart_safety_start_endpoint_reach_nm,
           configuration.chart_safety_end_endpoint_reach_nm);
+      s_chartSafetyPreparedScoutScopes.insert(scope);
       continue;
     }
 
@@ -8684,6 +8712,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
                                      envelope.complete);
     (*route)->SetConfiguration(envelope.configuration);
     (*route)->Reset();
+    s_chartSafetyPreparedScoutScopes.insert(scope);
     wxLogMessage(
         "WR_SCOUT_ENDPOINT_REACH route=\"%s to %s\" complete=%d "
         "start_reach_nm=%.3f end_reach_nm=%.3f source=scout-frontier",
@@ -9862,7 +9891,9 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   if (configuration.DetectLand && use_chart_safety && enforce_chart_safety &&
       configuration.chart_safety_missing_tile_retry_count == 0 &&
       s_chartSafetySharedPrewarmScopes.find(ChartSafetySharedPrewarmScopeKey(
-          configuration)) == s_chartSafetySharedPrewarmScopes.end()) {
+          configuration)) == s_chartSafetySharedPrewarmScopes.end() &&
+      s_chartSafetyPreparedScoutScopes.find(ChartSafetySharedPrewarmScopeKey(
+          configuration)) == s_chartSafetyPreparedScoutScopes.end()) {
     const bool use_chart_safety_for_propagation =
         configuration.UseChartSafetyForPropagation;
     const bool use_reverse_reachability_recovery =
@@ -10102,6 +10133,7 @@ void WeatherRouting::StopAll() {
   m_WaitingRouteMaps.clear();
 
   s_chartSafetySharedPrewarmScopes.clear();
+  s_chartSafetyPreparedScoutScopes.clear();
   weather_routing::chart_safety_host::ReleaseRouteMaskPins();
 
   UpdateStates();

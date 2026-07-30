@@ -35,3 +35,17 @@ TEST(DepartureScheduler, ExplicitModeHonoursRouteGlobalAndSafetyBounds) {
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 99, 20), 12);
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, false, 6, 20), 20);
 }
+
+TEST(DepartureScheduler,
+     NativeAuthoritativeCandidatesUseDeterministicHostServiceLane) {
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 0, 20, true),
+            1);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true, 12, 20, true),
+            1);
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(2, true, 2, 4, true),
+            1);
+  // The isolation flag is scoped to a departure-candidate batch and must not
+  // throttle unrelated route calculations.
+  EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(7, false, 0, 20, true),
+            7);
+}

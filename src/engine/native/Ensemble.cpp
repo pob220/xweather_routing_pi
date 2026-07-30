@@ -197,7 +197,10 @@ RoutingResult RoutingEngine::routeEnsemble(
   std::vector<RoutingResult> routes;
   routes.reserve(members.size());
   for (const auto& member : members)
-    routes.push_back(routeMember(request, member));
+    // Apply the same cumulative effort tiers as a deterministic member route.
+    // A higher ensemble effort must not discard a member solution already
+    // found at a lower tier merely because wider pruning changes its lineage.
+    routes.push_back(route(request, member));
 
   std::vector<std::vector<RoutingResult>> evaluations(
       routes.size(), std::vector<RoutingResult>(members.size()));

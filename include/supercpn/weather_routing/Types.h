@@ -245,6 +245,7 @@ struct RoutingOptions {
   bool adaptiveHeadings{true};
   bool adaptiveFrontierDensity{true};
   bool useReverseRecovery{true};
+  bool useFrontierRecovery{true};
   bool useGraphFallback{true};
   // Permit a bounded stationary hold only when a retained state cannot make
   // any feasible progress. This is a recovery action for tidal/weather gates,
@@ -266,12 +267,27 @@ struct RoutingOptions {
   double dominanceHeadingToleranceDegrees{15.0};
   double epsilonDominance{0.01};
   bool preserveRouteFamilies{true};
+  // Effort levels are executed cumulatively (100, 150, 200, 400). A route
+  // found at a lower level is therefore retained instead of being lost when
+  // a larger search changes pruning decisions.
+  unsigned routingEffortPercent{100};
   bool forceForwardFailureForTesting{};
   bool forceReverseFailureForTesting{};
 };
 
 struct ResourceLimits {
   Duration maximumRouteDuration{std::chrono::hours{24 * 30}};
+  // Stage-specific limits are preferred by production callers. Zero retains
+  // the legacy split of maximumGeneratedStates for API compatibility.
+  std::uint64_t maximumForwardGeneratedStates{};
+  // Reverse bridge recovery does not generate ordinary isochrone states, so
+  // bound both the number of retained lineages inspected and the more
+  // expensive chronological bridge integrations independently.
+  std::uint64_t maximumReverseCandidates{};
+  std::uint64_t maximumReverseBridgeAttempts{};
+  std::uint64_t maximumFrontierRecoveryGeneratedStates{};
+  std::uint64_t maximumFrontierRecoveryLabels{};
+  std::uint64_t maximumGraphGeneratedStates{};
   std::uint64_t maximumGeneratedStates{2000000};
   std::uint64_t maximumRetainedStates{100000};
   std::uint64_t maximumGraphLabels{250000};
@@ -300,6 +316,7 @@ enum class RoutingProgressStage {
   CurrentCoverage,
   ForwardIsochrone,
   ReverseRecovery,
+  FrontierRecovery,
   GraphFallback,
   Validation,
   Complete
@@ -399,6 +416,7 @@ struct RoutingPreflightResult {
 enum class RoutingStatus {
   Complete,
   CompleteUsingReverseRecovery,
+  CompleteUsingFrontierRecovery,
   CompleteUsingGraphFallback,
   NoFeasibleRoute,
   SearchIncomplete,
@@ -420,6 +438,7 @@ enum class SolverPath {
   None,
   AdaptiveIsochrone,
   ReverseRecovery,
+  FrontierRecovery,
   GraphFallback
 };
 
@@ -460,6 +479,11 @@ struct RouteLeg {
   bool gybeTransition{};
   bool propulsionTransition{};
   bool stationaryWait{};
+  // Maximum motion-integration slice used by the solver for this leg. The
+  // independent validator repeats the same numerical integration partition
+  // so a time- or position-varying current cannot create a false endpoint
+  // mismatch merely by choosing a different cadence.
+  Duration integrationMaximumSlice{};
   double estimatedFuelLitres{};
   ConstraintMargins margins;
   std::vector<RoutingWarning> warnings;
@@ -531,6 +555,9 @@ struct RoutingDiagnostics {
   std::vector<SolverPath> stagesAttempted;
   std::vector<std::string> stageStopReasons;
   std::uint64_t generatedStates{};
+  std::uint64_t forwardGeneratedStates{};
+  std::uint64_t frontierRecoveryGeneratedStates{};
+  std::uint64_t graphGeneratedStates{};
   std::uint64_t retainedStates{};
   PruningDiagnostics pruned;
   std::uint64_t weatherSamples{};
@@ -546,11 +573,15 @@ struct RoutingDiagnostics {
   std::uint64_t reverseRejectedBridges{};
   std::vector<std::string> reverseRejectionReasons;
   std::uint64_t graphLabels{};
+  std::uint64_t frontierRecoveryLabels{};
   std::vector<double> graphCorridorWidthsNm;
   std::uint64_t waitStates{};
   std::uint64_t validationSamples{};
   double closestApproachNm{std::numeric_limits<double>::infinity()};
   std::vector<std::string> resourceLimitEvents;
+  std::vector<unsigned> effortTiersAttempted;
+  unsigned completedEffortPercent{};
+  std::uint64_t cumulativeGeneratedStates{};
 };
 
 struct EnsembleMemberResult {

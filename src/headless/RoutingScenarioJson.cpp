@@ -48,7 +48,7 @@ bool JsonBool(const Json::Value& value, const char* key, bool& out) {
 
 wxString TimeToJson(const wxDateTime& time) {
   if (!time.IsValid()) return wxEmptyString;
-  return time.FormatISOCombined('T') + "Z";
+  return time.ToUTC().FormatISOCombined('T') + "Z";
 }
 
 void AddOptionalLong(Json::Value& parent, const char* key, long value) {
@@ -104,11 +104,17 @@ bool LoadRoutingScenarioJson(const wxString& path,
   wxString start_time = JsonString(root, "startTime");
   if (!start_time.IsEmpty()) {
     wxString normalized = start_time;
-    if (normalized.EndsWith("Z")) normalized.RemoveLast();
+    const bool is_utc = normalized.EndsWith("Z");
+    if (is_utc) normalized.RemoveLast();
     if (!scenario.startTime.ParseISOCombined(normalized, 'T')) {
       error = wxString::Format("invalid scenario startTime: %s", start_time);
       return false;
     }
+    // ParseISOCombined interprets a timezone-less value in the process-local
+    // timezone. A trailing Z is an explicit UTC contract, so convert the
+    // parsed wall-clock fields from UTC instead of silently treating them as
+    // local time (which shifted summer scenarios by one hour under BST).
+    if (is_utc) scenario.startTime.MakeFromTimezone(wxDateTime::UTC);
   }
 
   const Json::Value& opt = root["departureOptimization"];

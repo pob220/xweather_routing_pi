@@ -10,7 +10,6 @@
 #include <cmath>
 #include <condition_variable>
 #include <limits>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -122,33 +121,15 @@ struct OpenCpnSharedWeatherCache {
 };
 
 std::shared_ptr<OpenCpnSharedWeatherCache> SharedWeatherCacheFor(
-    const RouteMapConfiguration& configuration) {
-  if (!configuration.DepartureTimeOptimizationCandidate ||
-      configuration.DepartureTimeOptimizationGroupId.IsEmpty())
-    return std::make_shared<OpenCpnSharedWeatherCache>();
-
-  const std::string key =
-      (configuration.DepartureTimeOptimizationGroupId +
-       wxString::Format(
-           ":grib%d:currents%d:climatology%d", configuration.UseGrib ? 1 : 0,
-           configuration.Currents ? 1 : 0, configuration.ClimatologyType))
-          .ToStdString();
-  static std::mutex registryMutex;
-  static std::map<std::string, std::shared_ptr<OpenCpnSharedWeatherCache> >
-      registry;
-  std::lock_guard<std::mutex> lock(registryMutex);
-  const auto found = registry.find(key);
-  if (found != registry.end()) return found->second;
-
-  // Keep completed slices alive across bounded candidate batches.  A weak
-  // registry loses the cache if one batch finishes before the next begins.
-  constexpr std::size_t kRetainedDepartureGroups = 2;
-  if (registry.size() >= kRetainedDepartureGroups)
-    registry.erase(registry.begin());
-  std::shared_ptr<OpenCpnSharedWeatherCache> cache =
-      std::make_shared<OpenCpnSharedWeatherCache>();
-  registry[key] = cache;
-  return cache;
+    const RouteMapConfiguration&) {
+  // A canonical bucket is deterministic only within one route's immutable
+  // service context. Reusing populated samples between departure candidates
+  // was observed to change the retained native frontier: an 08:00 candidate
+  // failed after a 09:00 candidate warmed the family cache but succeeded with
+  // an identical state budget in isolation. Each authoritative candidate now
+  // owns this bounded cache. The departure scheduler runs native candidates
+  // one at a time, so isolation does not multiply the peak working set.
+  return std::make_shared<OpenCpnSharedWeatherCache>();
 }
 
 class OpenCpnWeatherProvider final : public wr::WeatherProvider {
@@ -299,9 +280,9 @@ private:
     }
     // Search frontiers revisit nearby canonical weather buckets frequently.
     // Keep a small route-local direct-mapped cache in front of the shared
-    // departure-family cache so parallel candidates do not serialize millions
-    // of read-only hits on the shared mutex. A collision only loses a cache
-    // entry; it cannot change the canonical value returned.
+    // route cache so repeated search visits do not serialize millions of
+    // read-only hits on its mutex. A collision only loses a cache entry; it
+    // cannot change the canonical value returned.
     const std::size_t localIndex =
         OpenCpnWeatherCacheKeyHash{}(key) & (localCache_.size() - 1U);
     LocalCacheSlot& local = localCache_[localIndex];
@@ -813,6 +794,7 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   request.options.adaptiveFrontierDensity = true;
   request.options.useReverseRecovery =
       configuration.UseReverseReachabilityRecovery;
+  request.options.useFrontierRecovery = true;
   request.options.useGraphFallback = true;
   request.options.retryStages = quality.retry_stages;
   request.options.reverseLayers = static_cast<unsigned>(
@@ -835,16 +817,33 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   // so zero deliberately selects Dijkstra instead of an inadmissible A* bound.
   request.options.heuristicMaximumSpeedKnots = 0.0;
   request.options.preserveRouteFamilies = quality.preserve_route_families;
+  request.options.routingEffortPercent = static_cast<unsigned>(
+      weather_routing::NormalizeRoutingEffortPercent(
+          configuration.RoutingEffortPercent));
 
   const weather_routing::RoutingResourcePolicy resources =
       weather_routing::SelectRoutingResourcePolicy(
           routeDistance, configuration.RoutingEffortPercent,
           configuration.chart_safety_scout_preview);
   request.limits.maximumGeneratedStates = resources.maximum_generated_states;
+  request.limits.maximumForwardGeneratedStates =
+      resources.maximum_forward_generated_states;
+  request.limits.maximumReverseCandidates =
+      resources.maximum_reverse_candidates;
+  request.limits.maximumReverseBridgeAttempts =
+      resources.maximum_reverse_bridge_attempts;
+  request.limits.maximumFrontierRecoveryGeneratedStates =
+      resources.maximum_frontier_recovery_generated_states;
+  request.limits.maximumFrontierRecoveryLabels =
+      resources.maximum_frontier_recovery_labels;
+  request.limits.maximumGraphGeneratedStates =
+      resources.maximum_graph_generated_states;
   request.limits.maximumRetainedStates = resources.maximum_retained_states;
   request.limits.maximumGraphLabels = resources.maximum_graph_labels;
   if (configuration.chart_safety_scout_preview) {
+    request.options.routingEffortPercent = 100;
     request.options.useReverseRecovery = false;
+    request.options.useFrontierRecovery = false;
     request.options.useGraphFallback = false;
     request.options.retryStages = 1;
   }
@@ -915,6 +914,7 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       "graph_labels=%llu wait_states=%llu land_checks=%llu "
       "land_rejections=%llu constraint_rejections=%llu "
       "validation_samples=%llu closest_nm=%.3f effort=%d "
+      "completed_effort=%u cumulative_generated=%llu "
       "generated_limit=%llu retained_limit=%llu graph_label_limit=%llu "
       "scout=%d route_fingerprint=%016llx",
       configuration.Start, configuration.End, status, solver,
@@ -935,11 +935,44 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       result.diagnostics.closestApproachNm,
       weather_routing::NormalizeRoutingEffortPercent(
           configuration.RoutingEffortPercent),
+      result.diagnostics.completedEffortPercent,
+      static_cast<unsigned long long>(
+          result.diagnostics.cumulativeGeneratedStates),
       static_cast<unsigned long long>(request.limits.maximumGeneratedStates),
       static_cast<unsigned long long>(request.limits.maximumRetainedStates),
       static_cast<unsigned long long>(request.limits.maximumGraphLabels),
       configuration.chart_safety_scout_preview ? 1 : 0,
       static_cast<unsigned long long>(RouteFingerprint(result.legs)));
+  wxLogMessage(
+      "WR_MODERN_NATIVE_RESOURCES route=\"%s -> %s\" "
+      "forward_generated=%llu reverse_nodes=%llu reverse_bridges=%llu "
+      "frontier_generated=%llu frontier_labels=%llu "
+      "global_graph_generated=%llu forward_limit=%llu "
+      "reverse_candidate_limit=%llu reverse_bridge_limit=%llu "
+      "frontier_limit=%llu frontier_label_limit=%llu "
+      "global_graph_limit=%llu",
+      configuration.Start, configuration.End,
+      static_cast<unsigned long long>(
+          result.diagnostics.forwardGeneratedStates),
+      static_cast<unsigned long long>(result.diagnostics.reverseNodes),
+      static_cast<unsigned long long>(
+          result.diagnostics.reverseCandidateBridges),
+      static_cast<unsigned long long>(
+          result.diagnostics.frontierRecoveryGeneratedStates),
+      static_cast<unsigned long long>(
+          result.diagnostics.frontierRecoveryLabels),
+      static_cast<unsigned long long>(result.diagnostics.graphGeneratedStates),
+      static_cast<unsigned long long>(
+          request.limits.maximumForwardGeneratedStates),
+      static_cast<unsigned long long>(request.limits.maximumReverseCandidates),
+      static_cast<unsigned long long>(
+          request.limits.maximumReverseBridgeAttempts),
+      static_cast<unsigned long long>(
+          request.limits.maximumFrontierRecoveryGeneratedStates),
+      static_cast<unsigned long long>(
+          request.limits.maximumFrontierRecoveryLabels),
+      static_cast<unsigned long long>(
+          request.limits.maximumGraphGeneratedStates));
   wxLogMessage(
       "WR_MODERN_WEATHER_CACHE route=\"%s -> %s\" calls=%llu "
       "immediate_hits=%llu local_hits=%llu shared_hits=%llu misses=%llu "

@@ -1971,10 +1971,11 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxSize(140, -1), wxSP_ARROW_KEYS, 0, 64, 0);
   m_sDepartureTimeOptimizationConcurrentRoutes->SetToolTip(_(
       "Maximum number of optimised departure-time candidate routes to "
-      "calculate concurrently. Each worker calculates one complete route. "
-      "Use 0 for Auto (up to 4, based on available CPUs). The global "
-      "concurrent thread setting and available logical CPUs remain hard "
-      "limits."));
+      "calculate concurrently. Use 0 for Auto. Native authoritative routes "
+      "are deliberately calculated one at a time because OpenCPN's shared "
+      "GRIB, shoreline and chart services are not isolated between route "
+      "workers; this setting remains available for legacy calculations. "
+      "Chart-safety scouts still use bounded parallel work."));
   fgSizerDepartureConcurrency->Add(
       m_sDepartureTimeOptimizationConcurrentRoutes, 0,
       wxALIGN_CENTER_VERTICAL | wxALL, 5);

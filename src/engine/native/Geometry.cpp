@@ -109,6 +109,8 @@ std::string toString(RoutingStatus status) {
       return "complete";
     case RoutingStatus::CompleteUsingReverseRecovery:
       return "complete_using_reverse_recovery";
+    case RoutingStatus::CompleteUsingFrontierRecovery:
+      return "complete_using_frontier_recovery";
     case RoutingStatus::CompleteUsingGraphFallback:
       return "complete_using_graph_fallback";
     case RoutingStatus::NoFeasibleRoute:
@@ -151,6 +153,8 @@ std::string toString(SolverPath path) {
       return "adaptive_isochrone";
     case SolverPath::ReverseRecovery:
       return "reverse_recovery";
+    case SolverPath::FrontierRecovery:
+      return "frontier_recovery";
     case SolverPath::GraphFallback:
       return "graph_fallback";
   }

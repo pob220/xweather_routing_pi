@@ -221,21 +221,36 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       samples = std::max<unsigned>(
           samples,
           static_cast<unsigned>(std::ceil(std::max(1.0, legDistance) / 0.25)));
-    if (result.samples + static_cast<std::uint64_t>(samples) * 2U + 1U >
-        request.limits.maximumValidationSamples)
-      return fail(std::move(result),
-                  "validation sample resource limit reached");
-
     Duration transition{};
     if (leg.propulsionTransition)
       transition += request.vessel.propulsion.modeChangePenalty;
     if (leg.tackTransition) transition += request.vessel.tackPenalty;
     if (leg.gybeTransition) transition += request.vessel.gybePenalty;
+    if (legIndex > 0) {
+      const RouteLeg& prior = legs[legIndex - 1];
+      if (prior.sailPlan >= 0 && leg.sailPlan >= 0 &&
+          prior.sailPlan != leg.sailPlan)
+        transition += request.vessel.sailPlanChangePenalty;
+    }
     if (transition >= duration)
       return fail(std::move(result),
                   "route leg leaves no time for forward motion after "
                   "transition penalties");
     const Duration moving = duration - transition;
+    const bool replaySearchCadence =
+        leg.integrationMaximumSlice > Duration::zero();
+    const Duration replaySlice = replaySearchCadence
+                                     ? std::clamp(leg.integrationMaximumSlice,
+                                                  Duration{1},
+                                                  Duration{std::chrono::minutes{5}})
+                                     : Duration{};
+    if (replaySearchCadence)
+      samples = static_cast<unsigned>(
+          (moving.count() + replaySlice.count() - 1) / replaySlice.count());
+    if (result.samples + static_cast<std::uint64_t>(samples) * 2U + 1U >
+        request.limits.maximumValidationSamples)
+      return fail(std::move(result),
+                  "validation sample resource limit reached");
 
     GeoPoint replayPoint = leg.start;
     Duration elapsed{};
@@ -245,9 +260,12 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
         distanceNm(replayPoint, request.destination);
     for (unsigned sampleIndex = 0; sampleIndex < samples; ++sampleIndex) {
       const Duration slice =
-          sampleIndex + 1 == samples
-              ? moving - elapsed
-              : Duration{moving.count() / static_cast<std::int64_t>(samples)};
+          replaySearchCadence
+              ? std::min(replaySlice, moving - elapsed)
+              : (sampleIndex + 1 == samples
+                     ? moving - elapsed
+                     : Duration{moving.count() /
+                                static_cast<std::int64_t>(samples)});
       if (slice <= Duration::zero()) continue;
       const TimePoint sliceStartTime = leg.startTime + transition + elapsed;
       const auto predictorEnvironment = internal::resolveEnvironment(
