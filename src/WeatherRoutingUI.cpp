@@ -4254,7 +4254,7 @@ AboutDialogBase::AboutDialogBase(wxWindow* parent, wxWindowID id,
   fgSizer109->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
 
   m_staticText135 =
-      new wxStaticText(this, wxID_ANY, _("Weather Routing Plugin Version"),
+      new wxStaticText(this, wxID_ANY, _("xWeatherRouting Plugin Version"),
                        wxDefaultPosition, wxDefaultSize, 0);
   m_staticText135->Wrap(-1);
   fgSizer109->Add(m_staticText135, 0, wxALL, 5);
@@ -4268,12 +4268,14 @@ AboutDialogBase::AboutDialogBase(wxWindow* parent, wxWindowID id,
 
   m_staticText110 = new wxStaticText(
       this, wxID_ANY,
-      _("The weather routing plugin for opencpn is intended to calculate "
+      _("xWeatherRouting is derived from the OpenCPN Weather Routing plugin "
+        "and is intended to calculate "
         "sailing routes based on computerized weather data and boat sailing "
         "ability.\n\nLicense: GPLv3+\n\nSource "
-        "Code:\nhttps://github.com/seandepagnier/"
-        "weather_routing_pi\n\nAuthor:\nSean D'Epagnier\n\nMany thanks to all "
-        "of the translators and testers."),
+        "Code:\nhttps://github.com/pob220/"
+        "weather_routing_pi\n\nOriginal author:\nSean D'Epagnier\n\nMany "
+        "thanks to all Weather Routing contributors, translators and "
+        "testers."),
       wxDefaultPosition, wxDefaultSize, 0);
   m_staticText110->Wrap(400);
   fgSizer90->Add(m_staticText110, 0, wxALL, 5);

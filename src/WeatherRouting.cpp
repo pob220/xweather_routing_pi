@@ -351,6 +351,15 @@ static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
   if (!enforce_override.IsEmpty())
     enforce_chart_safety = enforce_override.IsSameAs("1") ||
                            enforce_override.IsSameAs("true", false);
+
+  // Persisted preferences may have been written while the same profile was
+  // used with an enhanced OpenCPN build.  They must not make the stock-host
+  // plugin unusable: without the optional dynamically resolved service the
+  // effective runtime mode is the standard GSHHS land checker.
+  if (!weather_routing::chart_safety_host::Available()) {
+    use_chart_safety = false;
+    enforce_chart_safety = false;
+  }
 }
 
 static void ApplyHeadlessRouteSafetyOverrides(
@@ -898,7 +907,7 @@ int wxCALLBACK SortWeatherRoutes(long item1, long item2, long list)
 }
 
 WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
-    : WeatherRoutingBase(parent),
+    : WeatherRoutingBase(parent, wxID_ANY, _("xWeatherRouting")),
       m_panel(NULL),
       m_ConfigurationDialog(*this),
       m_ConfigurationBatchDialog(this),
@@ -985,7 +994,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   m_default_configuration_path = weather_routing_pi::StandardPath() +
                                  _T("WeatherRoutingConfiguration.xml");
-  const wxString bundledConfiguration = GetPluginDataDir("weather_routing_pi") +
+  const wxString bundledConfiguration = GetPluginDataDir(PLUGIN_PACKAGE_NAME) +
                                         _T("/data/") +
                                         _T("WeatherRoutingConfiguration.xml");
   if (!wxFileName::FileExists(m_default_configuration_path) &&
@@ -1011,10 +1020,10 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   /* if the boats or polars directories did not previously exist, populate them
    */
   if (forceCopyBoats)
-    CopyDataFiles(GetPluginDataDir("weather_routing_pi") + _T("/data/boats"),
+    CopyDataFiles(GetPluginDataDir(PLUGIN_PACKAGE_NAME) + _T("/data/boats"),
                   boatsdir);
   if (forceCopyPolars)
-    CopyDataFiles(GetPluginDataDir("weather_routing_pi") + _T("/data/polars"),
+    CopyDataFiles(GetPluginDataDir(PLUGIN_PACKAGE_NAME) + _T("/data/polars"),
                   polarsdir);
 
   int confVersion;
@@ -1024,7 +1033,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   if (confVersion < PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR) {
     wxString title = _("New or updated data available");
     wxString message =
-        _("A new version of the Weather Route plugin has been installed.\n\n"
+        _("A new version of xWeatherRouting has been installed.\n\n"
           "\"Import new boats and polars\" will overwrite the standard boats\n"
           "and polars with newer data. If you have modified this data and not\n"
           "changed the names, your modifications will be overwritten, so be\n"
@@ -1054,13 +1063,13 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       for (size_t i = 0; i < result.GetCount(); i++) {
         if (result[i] == 0) {
           CopyDataFiles(
-              GetPluginDataDir("weather_routing_pi") + _T("/data/boats"),
+              GetPluginDataDir(PLUGIN_PACKAGE_NAME) + _T("/data/boats"),
               boatsdir);
           CopyDataFiles(
-              GetPluginDataDir("weather_routing_pi") + _T("/data/polars"),
+              GetPluginDataDir(PLUGIN_PACKAGE_NAME) + _T("/data/polars"),
               polarsdir);
         } else if (result[i] == 1) {
-          wxString cfg = GetPluginDataDir("weather_routing_pi") + _T("/data/") +
+          wxString cfg = GetPluginDataDir(PLUGIN_PACKAGE_NAME) + _T("/data/") +
                          _T("WeatherRoutingConfiguration.xml");
           if (wxFileName::FileExists(cfg))
             wxCopyFile(cfg, m_default_configuration_path);
@@ -6819,6 +6828,10 @@ int WeatherRouting::EffectiveChartSafetyRamCacheMiB() const {
   return m_weather_routing_pi.EffectiveChartSafetyRamCacheMiB();
 }
 
+bool WeatherRouting::HasEnhancedChartSafety() const {
+  return m_weather_routing_pi.HasEnhancedChartSafety();
+}
+
 void WeatherRouting::SetChartSafetyRamCacheMiB(int ramMiB) {
   m_weather_routing_pi.SetChartSafetyRamCacheMiB(ramMiB);
 }
@@ -6916,7 +6929,7 @@ void WeatherRouting::OnManual(wxCommandEvent& event) {
 }
 
 void WeatherRouting::OnInformation(wxCommandEvent& event) {
-  wxString infolocation = GetPluginDataDir("weather_routing_pi") +
+  wxString infolocation = GetPluginDataDir(PLUGIN_PACKAGE_NAME) +
                           _T("/data/") + _("WeatherRoutingInformation.html");
   wxLaunchDefaultBrowser(_T("file://") + infolocation);
 }
@@ -7296,7 +7309,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
   wxString error;
 
   wxFileName fn(filename);
-  SetTitle(_("Weather Routing") + wxString(_T(" - ")) + fn.GetFullName());
+  SetTitle(_("xWeatherRouting") + wxString(_T(" - ")) + fn.GetFullName());
   m_FileName = fn;
 
   wxProgressDialog* progressdialog = NULL;
@@ -7597,7 +7610,7 @@ failed:
 
 void WeatherRouting::SaveXML(wxString filename) {
   wxFileName fn(filename);
-  SetTitle(_("Weather Routing") + wxString(_T(" - ")) + fn.GetFullName());
+  SetTitle(_("xWeatherRouting") + wxString(_T(" - ")) + fn.GetFullName());
   m_FileName = fn;
 
   TiXmlDocument doc;

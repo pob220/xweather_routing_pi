@@ -1,73 +1,80 @@
-Weather Routing Plugin for OpenCPN
-===========================================
+# xWeatherRouting
 
-Perform weather routing, see "data/WeatherRoutingInformation.html"
+xWeatherRouting is an experimental, standalone OpenCPN weather-routing
+plugin derived from the established Weather Routing plugin. It retains the
+existing configuration, polar and GRIB integrations while adding the modern
+deterministic routing engine developed on this branch.
 
-Compiling
-=========
+The plugin currently provides:
 
-* git clone git://github.com/seandepagnier/weather_routing_pi.git
+- deterministic adaptive forward isochrones, reverse recovery and
+  time-dependent graph fallback;
+- preservation of useful suboptimal lineages for difficult coastal routes;
+- departure-time optimisation with independently isolated workers;
+- planned-arrival routing, including determination of the required departure
+  time;
+- UTC routing internally with optional IANA local-time display in the UI;
+- dense independent route validation and standard GSHHS land checks;
+- optional enhanced chart-backed hazard checks when the OpenCPN host exposes
+  the dynamically detected experimental service.
 
-Under windows, you must find the file "opencpn.lib" (Visual Studio) or "libopencpn.dll.a" (mingw) which is built in the build directory after compiling opencpn.  This file must be copied to the plugin directory.
+The same binary loads on an unmodified stock OpenCPN host. Stock OpenCPN does
+not expose the optional chart-backed service, so xWeatherRouting disables
+those two controls and continues to use the standard plugin GSHHS checks.
+There is no direct enhanced-core symbol dependency.
 
-Build as normally:
+Do not enable the standard Weather Routing plugin and xWeatherRouting at the
+same time. xWeatherRouting deliberately retains the established
+`/PlugIns/WeatherRouting` settings and user-data layout so existing routes,
+boats, polars and preferences migrate without conversion.
 
-* cd ..
-* cd build
-* cmake ..
-* make
-* make install
+## Building
 
-For OSX standalone build in weather_routing_pi directory:
+For a clean standalone build against the vendored stock OpenCPN 1.21 API:
 
-* mkdir build
-* cd build
-* cmake ..
-* make
-* make create-pkg
-
-Unit Testing
-============
-
-The unit tests are disabled by default. To run the tests, define the relevant environment variable and run the tests as follows (from the build directory, as usual):
-
+```sh
+cmake -S . -B build-release -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DXWEATHER_ROUTING_STANDALONE_API=ON \
+  -DOCPN_BUILD_TEST=OFF
+cmake --build build-release --parallel
+cmake --build build-release --target package
 ```
-cmake -DOCPN_BUILD_TEST=ON ..
-make
-make test
+
+Keep release packaging in a build directory where tests are disabled. This
+prevents test-only GoogleTest libraries from being included by older
+packaging infrastructure.
+
+## Testing
+
+```sh
+cmake -S . -B build-test -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DXWEATHER_ROUTING_STANDALONE_API=ON \
+  -DOCPN_BUILD_TEST=ON
+cmake --build build-test --parallel
+ctest --test-dir build-test --output-on-failure --parallel
 ```
 
-You should see something like this:
+The native engine, deterministic resource policies, planned-arrival planner,
+timezone lifecycle, route validation, chart-cache data structures and
+supporting geometry are covered by the test suite. Stock-host compatibility
+must also be checked by loading the clean package in an unmodified OpenCPN
+5.14 or later installation.
 
-```
-Running tests...
-/opt/homebrew/Cellar/cmake/3.30.5/bin/ctest --force-new-ctest-process
-Test project weather_routing_pi/build
-      Start  1: PolarTests.AssertionsBasic
- 1/53 Test  #1: PolarTests.AssertionsBasic .....................   Passed    0.07 sec
-      Start  2: PolarTests.ConstructorBasic
- 2/53 Test  #2: PolarTests.ConstructorBasic ....................   Passed    0.01 sec
-      Start  3: PolarTests.OpenFailed
- 3/53 Test  #3: PolarTests.OpenFailed ..........................   Passed    0.01 sec
-      Start  4: PolarTests.OpenSuccess
- 4/53 Test  #4: PolarTests.OpenSuccess .........................   Passed    0.03 sec
- ...
- ```
+Further architecture and validation details are in
+[`docs/modern_native_engine.md`](docs/modern_native_engine.md) and
+[`docs/chart_safety_cache.md`](docs/chart_safety_cache.md).
 
-All tests are intended to pass.  If any tests fail, please report an issue, providing enough context 
-for a developer to reproduce and fix the problem.
+## Status
 
-Modern native routing engine
-============================
+The package name, library, catalogue and UI identity are distinct from the
+standard plugin: `xweather_routing_pi` / xWeatherRouting. Cross-platform
+artifacts may be built for validation, but publishing to an OpenCPN catalogue
+is a separate release decision.
 
-Normal deterministic routes use the modern native C++20 engine with adaptive
-forward isochrones, reverse recovery, time-dependent graph fallback and dense
-independent validation. Architecture, safety integration, rollback and
-benchmarking are documented in
-[`docs/modern_native_engine.md`](docs/modern_native_engine.md).
+## Licence and acknowledgement
 
-License
-=======
-The plugin code is licensed under the terms of the GPL v3+ 
-
-Part of the icons made by Smashicons (https://www.flaticon.com/authors/smashicons) from Flaticon (https://www.flaticon.com/) and is licensed under CC BY 3.0 (http://creativecommons.org/licenses/by/3.0)
+The plugin is GPL v3 or later. The original Weather Routing plugin was written
+by Sean D'Epagnier and has benefited from many OpenCPN contributors,
+translators and testers. xWeatherRouting preserves that lineage and licence.

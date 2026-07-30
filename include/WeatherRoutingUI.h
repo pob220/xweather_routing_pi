@@ -217,7 +217,7 @@ public:
   wxMenu* m_mContextMenu;
 
   WeatherRoutingBase(wxWindow* parent, wxWindowID id = wxID_ANY,
-                     const wxString& title = _("Weather Routing"),
+                     const wxString& title = _("xWeatherRouting"),
                      const wxPoint& pos = wxDefaultPosition,
                      const wxSize& size = wxSize(-1, -1),
                      long style = wxCAPTION | wxCLOSE_BOX | wxMAXIMIZE_BOX |
@@ -549,7 +549,7 @@ public:
 
   ConfigurationDialogBase(
       wxWindow* parent, wxWindowID id = wxID_ANY,
-      const wxString& title = _("Weather Routing Configuration"),
+      const wxString& title = _("xWeatherRouting Configuration"),
       const wxPoint& pos = wxDefaultPosition,
       const wxSize& size = wxSize(-1, -1),
       long style = wxDEFAULT_DIALOG_STYLE | wxMAXIMIZE_BOX | wxMINIMIZE_BOX);
@@ -765,7 +765,7 @@ protected:
 
 public:
   AboutDialogBase(wxWindow* parent, wxWindowID id = wxID_ANY,
-                  const wxString& title = _("About Weather Routing"),
+                  const wxString& title = _("About xWeatherRouting"),
                   const wxPoint& pos = wxDefaultPosition,
                   const wxSize& size = wxDefaultSize,
                   long style = wxDEFAULT_DIALOG_STYLE);

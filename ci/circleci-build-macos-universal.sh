@@ -64,6 +64,8 @@ cmake \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} \
   -DOCPN_TARGET_TUPLE="darwin-wx32;10;universal" \
   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+  -DXWEATHER_ROUTING_STANDALONE_API=ON \
+  -DOCPN_BUILD_TEST=OFF \
   ..
 
 if [[ -z "$CI" ]]; then
@@ -75,6 +77,11 @@ fi
 # non-reproducible error on first invocation, seemingly tarball-conf-stamp
 # is not created as required.
 make package || make package
+
+mkdir -p ../artifacts/macos-universal/package
+find . -maxdepth 1 -type f \
+  \( -name '*.tar.gz' -o -name '*.pkg' -o -name '*.xml' -o -name '*.log' \) \
+  -exec cp -f '{}' ../artifacts/macos-universal/package/ \;
 
 # Create the cached /usr/local archive
 if [ -n "$CI"  ]; then

@@ -738,6 +738,7 @@ public:
   }
   int ChartSafetyRamCacheMiB() const;
   int EffectiveChartSafetyRamCacheMiB() const;
+  bool HasEnhancedChartSafety() const;
   void SetChartSafetyRamCacheMiB(int ramMiB);
   void CloseMultiLegDepartureOptimizationResults() {
     CancelMultiLegDepartureOptimization(true);

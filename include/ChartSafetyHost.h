@@ -13,6 +13,7 @@
 #include <string>
 
 #include "ocpn_plugin.h"
+#include "OptionalChartSafetyApi.h"
 
 namespace weather_routing {
 

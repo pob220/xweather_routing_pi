@@ -58,6 +58,7 @@ include/AppendOnlyCache.h
 include/ChartSafetyCache.h
 include/ChartHazardEvaluator.h
 include/ChartSafetyHost.h
+include/OptionalChartSafetyApi.h
 include/OceanPrewarmPolicy.h
 include/ClimatologyThreadGuard.h
 include/weather_routing_pi.h

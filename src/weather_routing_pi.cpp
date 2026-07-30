@@ -94,7 +94,7 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
   // Create the PlugIn icons  -from shipdriver
   // loads png file for the listing panel icon
   wxFileName fn;
-  auto path = GetPluginDataDir("weather_routing_pi");
+  auto path = GetPluginDataDir(PLUGIN_PACKAGE_NAME);
   fn.SetPath(path);
   fn.AppendDir("data");
   fn.SetFullName("weather_routing_panel.png");
@@ -127,7 +127,7 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
 weather_routing_pi::~weather_routing_pi() { delete _img_WeatherRouting; }
 
 int weather_routing_pi::Init() {
-  AddLocaleCatalog(_T("opencpn-weather_routing_pi"));
+  AddLocaleCatalog(PLUGIN_CATALOG_NAME);
 
   //    Get a pointer to the opencpn configuration object
   m_pconfig = GetOCPNConfigObject();
@@ -142,14 +142,14 @@ int weather_routing_pi::Init() {
 
 #ifdef PLUGIN_USE_SVG
   m_leftclick_tool_id = InsertPlugInToolSVG(
-      _T( "WeatherRouting" ), _svg_weather_routing,
+      _T("xWeatherRouting"), _svg_weather_routing,
       _svg_weather_routing_rollover, _svg_weather_routing_toggled, wxITEM_CHECK,
-      _("Weather Routing"), _T( "" ), NULL, WEATHER_ROUTING_TOOL_POSITION, 0,
+      _("xWeatherRouting"), _T(""), NULL, WEATHER_ROUTING_TOOL_POSITION, 0,
       this);
 #else
   m_leftclick_tool_id =
       InsertPlugInTool(_T(""), _img_WeatherRouting, _img_WeatherRouting,
-                       wxITEM_CHECK, _("Weather Routing"), _T(""), NULL,
+                       wxITEM_CHECK, _("xWeatherRouting"), _T(""), NULL,
                        WEATHER_ROUTING_TOOL_POSITION, 0, this);
 #endif
   wxMenu dummy_menu;

@@ -12,9 +12,13 @@ format, invalidation and recovery.
   service.
 - On stock OpenCPN, the same plugin binary loads without unresolved enhanced
   API symbols and retains standard GSHHS land checking.
-- If enhanced chart safety is explicitly enforced but the capability is
-  absent, routing fails closed. It never silently substitutes GSHHS for an
-  enforced chart-safety request.
+- On a stock host, saved enhanced-safety preferences are inactive and both
+  enhanced controls are disabled in the UI. This prevents a profile last used
+  with an enhanced host from making the stock plugin unusable; ordinary
+  `Detect Land` routing continues with GSHHS.
+- When an enhanced host is present and an authoritative enhanced-safety
+  request cannot be completed, that request fails closed. It never silently
+  substitutes GSHHS for an active enhanced-safety check.
 - On a new enhanced-host installation, chart safety and enforcement default
   on. Existing explicit user choices remain unchanged.
 

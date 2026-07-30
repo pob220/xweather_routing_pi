@@ -34,7 +34,7 @@ services as the GUI path. It assumes:
 - the selected/default polar and boat settings are usable;
 - chart-backed safety tests require the configured OpenCPN chart database;
 - OpenCPN's host seam extracts immutable raw chart-classification tiles, while
-  Weather Routing owns their RAM/disk lifetime, margin/depth masks, cache
+  xWeatherRouting owns their RAM/disk lifetime, margin/depth masks, cache
   invalidation and segment evaluation. Route workers therefore never call
   mutable chart objects;
 - raw tile extraction intentionally remains a host responsibility so every
@@ -99,13 +99,15 @@ The log should show the Weather Routing plugin loaded from the build tree, for
 example:
 
 ```text
-PluginLoader: Loading PlugIn: ~/src/OpenCPN/build/plugins/weather_routing_pi/libweather_routing_pi.so
+PluginLoader: Loading PlugIn: ~/src/OpenCPN/build/plugins/weather_routing_pi/libxweather_routing_pi.so
 WR_HEADLESS_ROUTE_TEST timer_scheduled ...
 WR_HEADLESS_SCENARIO loaded ...
 ```
 
-If the log shows only `/usr/lib/opencpn/libweather_routing_pi.so`, the test is
-not using the just-built plugin. Check `OPENCPN_PLUGIN_DIRS`.
+If the log shows only the standard
+`/usr/lib/opencpn/libweather_routing_pi.so`, the test is not using the
+just-built xWeatherRouting plugin. Check `OPENCPN_PLUGIN_DIRS` and disable the
+standard plugin for the test profile.
 
 If the process exits immediately with an IPC warning, another OpenCPN instance
 or stale IPC socket is probably blocking startup.

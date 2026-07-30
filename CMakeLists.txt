@@ -64,20 +64,22 @@ endif (COMMAND cmake_policy)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 
 # define plugin name, owner and versions
-set(VERBOSE_NAME "WeatherRouting")
-set(COMMON_NAME "WeatherRouting")  # Search "getcommonname"in <plugin_pi>.cpp
-set(TITLE_NAME "weatherrouting")
-set(PACKAGE_CONTACT "Sean d'Epagnier")
-set(PACKAGE "weather_routing_pi")
-set(SHORT_DESCRIPTION "Compute optimal routes based on weather and constraints.")
-set(LONG_DESCRIPTION "WR features include: optimal routing subject to various constraints based on weather data, automatic boat polar computation.")
+set(VERBOSE_NAME "xWeatherRouting")
+set(COMMON_NAME "xWeatherRouting")  # Search "getcommonname"in <plugin_pi>.cpp
+set(TITLE_NAME "xweatherrouting")
+set(PACKAGE_CONTACT "Paul (pob220)")
+set(PACKAGE "xweather_routing_pi")
+set(SHORT_DESCRIPTION
+    "Advanced deterministic weather routing with departure and arrival planning.")
+set(LONG_DESCRIPTION
+    "xWeatherRouting computes land-aware sailing routes using deterministic forward isochrones, reverse recovery, graph fallback, concurrent departure optimisation, and planned-arrival routing. Standard OpenCPN uses GSHHS land checks; optional chart-backed safety is enabled only when the host provides it.")
 
-set(VERSION_MAJOR "1")
-set(VERSION_MINOR "16")
+set(VERSION_MAJOR "0")
+set(VERSION_MINOR "1")
 set(VERSION_PATCH "0")
 set(VERSION_TWEAK "0")
-set(VERSION_DATE  "05/05/2025") # DD/MM/YYYY format
-set(OCPN_MIN_VERSION "ov58")
+set(VERSION_DATE  "30/07/2026") # DD/MM/YYYY format
+set(OCPN_MIN_VERSION "ov511")
 
 set(OCPN_API_VERSION_MAJOR "1")
 set(OCPN_API_VERSION_MINOR "21")
@@ -97,14 +99,15 @@ set(ALPHA "alpha") #Standard Repos
 # Set if  Cloudsmith Base Repository name does not match your Git Repository name.
 #set (CLOUDSMITH_BASE_REPOSITORY "${GIT_REPOSITORY_NAME}")
 #set (CLOUDSMITH_BASE_REPOSITORY "opencpn-plugins")  # Ricks's customization
-set (CLOUDSMITH_BASE_REPOSITORY "weather-routing")  # without the _pi
+set(CLOUDSMITH_BASE_REPOSITORY "xweather-routing")
+set(PLUGIN_GIT_REPOSITORY "pob220/weather_routing_pi")
 
-# Set the following to use OpenCPN cloudsmith repositories instead of own repositories
-set(CLOUDSMITH_USER "opencpn")
-# set (CLOUDSMITH_USER "rick-gleason")
+# Keep validation independent of the OpenCPN publishing repositories.  Alpha
+# publication remains a separate, explicitly approved later step.
+set(CLOUDSMITH_USER "pob220")
 
 set(XML_INFO_URL
-    "https://opencpn.org/OpenCPN/plugins/weatherroute.html"
+    "https://github.com/pob220/weather_routing_pi"
 )
 set(XML_SUMMARY ${SHORT_DESCRIPTION})
 set(XML_DESCRIPTION ${LONG_DESCRIPTION})
@@ -113,6 +116,9 @@ set(XML_DESCRIPTION ${LONG_DESCRIPTION})
 ## ----- Modify section below if there are special requirements for the plugin --##
 
 option(PLUGIN_USE_SVG "Use SVG graphics" ON)
+option(XWEATHER_ROUTING_STANDALONE_API
+       "Build against the vendored stock OpenCPN API even inside an OpenCPN source tree"
+       OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -235,6 +241,7 @@ SET (HDRS
             include/ChartSafetyCache.h
             include/ChartHazardEvaluator.h
             include/ChartSafetyHost.h
+            include/OptionalChartSafetyApi.h
             include/OceanPrewarmPolicy.h
             include/ClimatologyThreadGuard.h
             include/weather_routing_pi.h
@@ -339,13 +346,20 @@ if (NOT OCPN_FLATPAK_CONFIG)
 
   get_filename_component(OCPN_IN_TREE_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
-  if (EXISTS "${OCPN_IN_TREE_SOURCE_DIR}/include/ocpn_plugin.h")
+  if (NOT XWEATHER_ROUTING_STANDALONE_API
+      AND EXISTS "${OCPN_IN_TREE_SOURCE_DIR}/include/ocpn_plugin.h")
     add_library(OCPN_API_LOCAL INTERFACE)
     add_library(ocpn::api ALIAS OCPN_API_LOCAL)
     target_include_directories(OCPN_API_LOCAL INTERFACE
       "${OCPN_IN_TREE_SOURCE_DIR}/include")
   elseif (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_API_VERSION_MINOR}/CMakeLists.txt")
     add_subdirectory(opencpn-libs/api-${OCPN_API_VERSION_MINOR})
+    # The enhanced chart-safety service is optional and resolved dynamically.
+    # Stock API headers intentionally do not declare its ABI-only structures,
+    # so make the plugin-local declarations available to every target in this
+    # directory, including the standalone regression tests.
+    add_compile_definitions(
+      XWEATHER_ROUTING_DECLARE_OPTIONAL_CHART_SAFETY_ABI=1)
   elseif (EXISTS "${CMAKE_SOURCE_DIR}/include/ocpn_plugin.h")
     add_library(OCPN_API_LOCAL INTERFACE)
     add_library(ocpn::api ALIAS OCPN_API_LOCAL)

@@ -54,6 +54,8 @@ if "%MSVC_VERSION%" == "2019" (
 cmake -T v141_xp -G "Visual Studio 16 2019" ^
     -DCMAKE_GENERATOR_PLATFORM=Win32 ^
     -DCMAKE_BUILD_TYPE=%CONFIGURATION% ^
+    -DXWEATHER_ROUTING_STANDALONE_API=ON ^
+    -DOCPN_BUILD_TEST=OFF ^
     -DwxWidgets_LIB_DIR=%wxWidgets_LIB_DIR% ^
     -DwxWidgets_ROOT_DIR=%wxWidgets_ROOT_DIR% ^
     ..
@@ -61,6 +63,8 @@ cmake -T v141_xp -G "Visual Studio 16 2019" ^
 cmake -A Win32 -G "Visual Studio 17 2022" ^
     -DCMAKE_GENERATOR_PLATFORM=Win32 ^
     -DCMAKE_BUILD_TYPE=%CONFIGURATION% ^
+    -DXWEATHER_ROUTING_STANDALONE_API=ON ^
+    -DOCPN_BUILD_TEST=OFF ^
     -DwxWidgets_LIB_DIR=%wxWidgets_LIB_DIR% ^
     -DwxWidgets_ROOT_DIR=%wxWidgets_ROOT_DIR% ^
     ..

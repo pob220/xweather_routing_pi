@@ -113,17 +113,17 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
     : ConfigurationDialogBase(&weatherrouting),
 #else
     : ConfigurationDialogBase(&weatherrouting, wxID_ANY,
-                              _("Weather Routing Configuration"),
+                              _("xWeatherRouting Configuration"),
                               wxDefaultPosition, wxDefaultSize,
                               wxDEFAULT_DIALOG_STYLE | wxSTAY_ON_TOP),
 #endif
       m_WeatherRouting(weatherrouting),
       m_bBlockUpdate(false) {
   const wxString detect_land_note =
-      _("Detect Land uses OpenCPN chart land checks where vector or CM93 "
-        "chart geometry is available, with GSHHS background shoreline data "
-        "as a fallback. Accuracy depends on chart coverage and installed "
-        "GSHHS quality.");
+      _("Detect Land uses the standard GSHHS background shoreline data. "
+        "Accuracy depends on the installed GSHHS quality. On a compatible "
+        "enhanced host, the separate chart-aware controls can additionally "
+        "use vector or CM93 chart geometry.");
   m_cbDetectLand->SetToolTip(detect_land_note);
   m_sSafetyMarginLand->SetToolTip(
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
@@ -143,6 +143,18 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       (bool)pConf->Read(_T("UseExperimentalChartSafety"), 0L));
   m_cbEnforceExperimentalChartSafety->SetValue(
       (bool)pConf->Read(_T("EnforceExperimentalChartSafety"), 0L));
+  if (!m_WeatherRouting.HasEnhancedChartSafety()) {
+    const wxString unavailable =
+        _("The optional chart-backed safety service is not available in this "
+          "stock OpenCPN build. Detect Land continues to use standard GSHHS "
+          "shoreline checks.");
+    m_cbUseExperimentalChartSafety->SetValue(false);
+    m_cbEnforceExperimentalChartSafety->SetValue(false);
+    m_cbUseExperimentalChartSafety->Enable(false);
+    m_cbEnforceExperimentalChartSafety->Enable(false);
+    m_cbUseExperimentalChartSafety->SetToolTip(unavailable);
+    m_cbEnforceExperimentalChartSafety->SetToolTip(unavailable);
+  }
   for (const wxString& zone : marine_time::AvailableTimeZones())
     m_cTimeZone->Append(zone);
   wxString displayZone = marine_time::SystemTimeZone();
@@ -1081,10 +1093,15 @@ void ConfigurationDialog::Update() {
 
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
-  pConf->Write(_T("UseExperimentalChartSafety"),
-               m_cbUseExperimentalChartSafety->GetValue());
-  pConf->Write(_T("EnforceExperimentalChartSafety"),
-               m_cbEnforceExperimentalChartSafety->GetValue());
+  // Disabled stock-host controls show the effective state (off), but must not
+  // erase preferences saved for a compatible enhanced host using the same
+  // profile.
+  if (m_WeatherRouting.HasEnhancedChartSafety()) {
+    pConf->Write(_T("UseExperimentalChartSafety"),
+                 m_cbUseExperimentalChartSafety->GetValue());
+    pConf->Write(_T("EnforceExperimentalChartSafety"),
+                 m_cbEnforceExperimentalChartSafety->GetValue());
+  }
 
   if (refresh) m_WeatherRouting.GetParent()->Refresh();
 
