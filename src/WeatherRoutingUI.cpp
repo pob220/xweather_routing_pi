@@ -998,12 +998,6 @@ SettingsDialogBase::SettingsDialogBase(wxWindow* parent, wxWindowID id,
                                    wxDefaultSize, m_cblFieldsChoices, 0);
   fgSizer101->Add(m_cblFields, 1, wxALL | wxEXPAND, 5);
 
-  m_cbUseLocalTime = new wxCheckBox(this, wxID_ANY, _("Use Local Time"),
-                                    wxDefaultPosition, wxDefaultSize, 0);
-  m_cbUseLocalTime->SetToolTip(
-      _("Display times in local time zone instead of UTC"));
-  fgSizer101->Add(m_cbUseLocalTime, 1, wxALL | wxEXPAND, 5);
-
   fgSizer100->Add(fgSizer101, 1, wxEXPAND | wxALL, 5);
 
   fgSizer92->Add(fgSizer100, 1, wxEXPAND, 5);
@@ -1068,9 +1062,6 @@ SettingsDialogBase::SettingsDialogBase(wxWindow* parent, wxWindowID id,
   m_cblFields->Connect(
       wxEVT_COMMAND_CHECKLISTBOX_TOGGLED,
       wxCommandEventHandler(SettingsDialogBase::OnUpdateColumns), NULL, this);
-  m_cbUseLocalTime->Connect(
-      wxEVT_COMMAND_CHECKBOX_CLICKED,
-      wxCommandEventHandler(SettingsDialogBase::OnUpdateColumns), NULL, this);
   m_sdbSizer1Help->Connect(wxEVT_COMMAND_BUTTON_CLICKED,
                            wxCommandEventHandler(SettingsDialogBase::OnHelp),
                            NULL, this);
@@ -1121,9 +1112,6 @@ SettingsDialogBase::~SettingsDialogBase() {
       wxCommandEventHandler(SettingsDialogBase::OnUpdate), NULL, this);
   m_cblFields->Disconnect(
       wxEVT_COMMAND_CHECKLISTBOX_TOGGLED,
-      wxCommandEventHandler(SettingsDialogBase::OnUpdateColumns), NULL, this);
-  m_cbUseLocalTime->Disconnect(
-      wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(SettingsDialogBase::OnUpdateColumns), NULL, this);
   m_sdbSizer1Help->Disconnect(wxEVT_COMMAND_BUTTON_CLICKED,
                               wxCommandEventHandler(SettingsDialogBase::OnHelp),
@@ -1235,13 +1223,30 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_staticTextPlannedTime->SetFont(plannedTimeFont);
   fgSizer60->Add(m_staticTextPlannedTime, 0, wxLEFT | wxRIGHT | wxTOP, 5);
 
+  wxBoxSizer* displayTimeZoneSizer = new wxBoxSizer(wxHORIZONTAL);
   m_cbUseCurrentTime =
       new wxCheckBox(sbStart->GetStaticBox(), wxID_ANY, _("Use current time"),
                      wxDefaultPosition, wxDefaultSize, 0);
   m_cbUseCurrentTime->SetToolTip(
       _("When enabled, uses the actual time at the moment the routing "
         "computation starts"));
-  fgSizer60->Add(m_cbUseCurrentTime, 0, wxALL, 5);
+  displayTimeZoneSizer->Add(m_cbUseCurrentTime, 0,
+                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  m_cbUseLocalTimeZone = new wxCheckBox(
+      sbStart->GetStaticBox(), wxID_ANY, _("Use local time zone"));
+  m_cbUseLocalTimeZone->SetToolTip(
+      _("Display and enter times in the selected local time zone. Routing and "
+        "weather data remain UTC internally."));
+  displayTimeZoneSizer->Add(m_cbUseLocalTimeZone, 0,
+                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  m_cTimeZone = new wxChoice(sbStart->GetStaticBox(), wxID_ANY);
+  m_cTimeZone->SetMinSize(wxSize(190, -1));
+  m_cTimeZone->SetToolTip(
+      _("IANA time zone. Daylight-saving changes are applied for the selected "
+        "date."));
+  displayTimeZoneSizer->Add(m_cTimeZone, 1,
+                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  fgSizer60->Add(displayTimeZoneSizer, 0, wxEXPAND, 5);
 
   wxFlexGridSizer* fgSizer111;
   fgSizer111 = new wxFlexGridSizer(0, 3, 0, 0);
@@ -2503,6 +2508,14 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUseCurrentTime), NULL,
       this);
+  m_cbUseLocalTimeZone->Connect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnTimeZoneDisplay), NULL,
+      this);
+  m_cTimeZone->Connect(
+      wxEVT_COMMAND_CHOICE_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnTimeZoneDisplay), NULL,
+      this);
   m_bGribTime->Connect(
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnGribTime), NULL, this);
@@ -3166,6 +3179,14 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_cbUseCurrentTime->Disconnect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUseCurrentTime), NULL,
+      this);
+  m_cbUseLocalTimeZone->Disconnect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnTimeZoneDisplay), NULL,
+      this);
+  m_cTimeZone->Disconnect(
+      wxEVT_COMMAND_CHOICE_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnTimeZoneDisplay), NULL,
       this);
   m_bGribTime->Disconnect(
       wxEVT_COMMAND_BUTTON_CLICKED,

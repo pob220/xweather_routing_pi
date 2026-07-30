@@ -2038,9 +2038,7 @@ void WeatherRouting::ShowRoutingStatus(RouteMapOverlay* selectedRoute) {
       wxDateTime plannedArrival = configuration.PlannedArrivalTime;
       const wxString plannedArrivalText =
           plannedArrival.IsValid()
-              ? plannedArrival.Format(
-                    _T("%x %H:%M"),
-                    m_SettingsDialog.GetTimeZone())
+              ? m_SettingsDialog.FormatTime(plannedArrival, _T("%x %H:%M"))
               : _("N/A");
       text += wxString::Format(_("Planned arrival: %s\n"),
                                plannedArrivalText);
@@ -4305,12 +4303,11 @@ void WeatherRouting::UpdateColumns() {
       wxString name = _(column_names[i]);
 
       if (i == STARTTIME || i == ENDTIME) {
-        name += _T(" (");
-        if (m_SettingsDialog.m_cbUseLocalTime->GetValue())
-          name += _("local");
-        else
-          name += _T("UTC");
-        name += _T(")");
+        name += _T(" (") +
+                (m_SettingsDialog.UseLocalTimeZone()
+                     ? m_SettingsDialog.DisplayTimeZone()
+                     : wxString("UTC")) +
+                _T(")");
       } else if (i == DISTANCE) {
         name += _T(" (") + getUsrDistanceUnit_Plugin() + _T(")");
       } else if (i == AVGSPEED || i == MAXSPEED || i == AVGSPEEDGROUND ||
@@ -4382,8 +4379,8 @@ void WeatherRouting::UpdateCursorPositionDialog() {
     CursorPositionDialogMessage(dlg, _("Cursor outside computed route map"));
     return;
   }
-  dlg.m_stTime->SetLabel(rmo->GetLastCursorTime().Format(
-      _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()));
+  dlg.m_stTime->SetLabel(m_SettingsDialog.FormatTime(
+      rmo->GetLastCursorTime(), _T("%x %H:%M")));
 
   RouteMapConfiguration configuration = rmo->GetConfiguration();
   auto latStr = toSDMM_PlugIn(NEflag::LAT, p->lat, Precision::HI);
@@ -4471,7 +4468,7 @@ void WeatherRouting::UpdateRoutePositionDialog() {
   // TRIP DURATION
   wxDateTime cursorTime = data.time;
   dlg.m_stTime->SetLabel(
-      cursorTime.Format(_T("%x %H:%M"), m_SettingsDialog.GetTimeZone()));
+      m_SettingsDialog.FormatTime(cursorTime, _T("%x %H:%M")));
 
   wxString duration = calculateTimeDelta(configuration.StartTime, cursorTime);
   dlg.m_stDuration->SetLabel(duration);
@@ -5904,9 +5901,9 @@ private:
   wxString FormatTime(wxDateTime time) const {
     if (!time.IsValid()) return _("N/A");
     return m_WeatherRouting
-               ? time.Format(_T("%x %H:%M"),
-                             m_WeatherRouting->m_SettingsDialog.GetTimeZone())
-               : time.Format(_T("%x %H:%M"), wxDateTime::UTC);
+               ? m_WeatherRouting->m_SettingsDialog.FormatTime(
+                     time, _T("%x %H:%M"))
+               : marine_time::FormatInTimeZone(time, _T("%x %H:%M"), "UTC");
   }
 
   void SetCell(long row, int col, const wxString& value) {
@@ -8056,20 +8053,18 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
     if (arrivalPlanning)
       StartTime = _("Calculating...");
     else
-      StartTime =
-          starttime.Format(_T("%x %H:%M"),
-                           wr->m_SettingsDialog.GetTimeZone());
+      StartTime = wr->m_SettingsDialog.FormatTime(starttime,
+                                                  _T("%x %H:%M"));
 
     End = configuration.End;
 
     wxDateTime endtime = routemapoverlay->EndTime();
     if (arrivalPlanning && configuration.PlannedArrivalTime.IsValid()) {
-      const wxString plannedArrival = configuration.PlannedArrivalTime.Format(
-          _T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
+      const wxString plannedArrival = wr->m_SettingsDialog.FormatTime(
+          configuration.PlannedArrivalTime, _T("%x %H:%M"));
       EndTime = wxString::Format(_("Target %s"), plannedArrival);
     } else if (endtime.IsValid()) {
-      EndTime =
-          endtime.Format(_T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
+      EndTime = wr->m_SettingsDialog.FormatTime(endtime, _T("%x %H:%M"));
     } else {
       EndTime = _T("N/A");
     }
@@ -9507,8 +9502,8 @@ void WeatherRouting::SaveCombinedRoute(
   const RouteMapConfiguration last = routes.back()->GetConfiguration();
   PlugIn_Route_Ex* route = new PlugIn_Route_Ex();
   route->m_NameString = _("Weather Route") + " (" +
-                        routes.front()->StartTime().Format(
-                            _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                        m_SettingsDialog.FormatTime(
+                            routes.front()->StartTime(), _T("%x %H:%M")) +
                         ")";
   route->m_StartString = first.Start;
   route->m_EndString = last.End;
@@ -9569,8 +9564,8 @@ void WeatherRouting::ExportCombinedRoute(
   route.m_GUID = GetNewGUID();
   route.m_RouteNameString =
       "WXRoute_" +
-      routes.front()->StartTime().Format(_T("%m-%d-%y_%H-%M"),
-                                         m_SettingsDialog.GetTimeZone()) +
+      m_SettingsDialog.FormatTime(routes.front()->StartTime(),
+                                  _T("%m-%d-%y_%H-%M"), false) +
       "_" + first.Start + "_" + last.End;
   route.m_RouteStartString = first.Start;
   route.m_RouteEndString = last.End;
@@ -9638,8 +9633,8 @@ void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {
 
   PlugIn_Track* newPath = new PlugIn_Track;
   newPath->m_NameString = _("Weather Route ") + " (" +
-                          routemapoverlay.StartTime().Format(
-                              _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                          m_SettingsDialog.FormatTime(
+                              routemapoverlay.StartTime(), _T("%x %H:%M")) +
                           ")";
 
   // XXX double check time is really end time, not start time off by one.
@@ -9711,8 +9706,8 @@ void WeatherRouting::SaveAsRoute(RouteMapOverlay& routemapoverlay) {
 
   PlugIn_Route_Ex* newRoute = new PlugIn_Route_Ex();
   newRoute->m_NameString = _("Weather Route ") + " (" +
-                           routemapoverlay.StartTime().Format(
-                               _T("%x %H:%M"), m_SettingsDialog.GetTimeZone()) +
+                           m_SettingsDialog.FormatTime(
+                               routemapoverlay.StartTime(), _T("%x %H:%M")) +
                            ")";
 
   RouteMapConfiguration c = routemapoverlay.GetConfiguration();
@@ -9790,8 +9785,9 @@ void WeatherRouting::ExportRoute(RouteMapOverlay& routemapoverlay) {
   new_route.m_GUID = GetNewGUID();
 
   new_route.m_RouteNameString =
-      "WXRoute_" + routemapoverlay.StartTime().Format(
-                       _T("%m-%d-%y_%H-%M"), m_SettingsDialog.GetTimeZone());
+      "WXRoute_" + m_SettingsDialog.FormatTime(
+                       routemapoverlay.StartTime(), _T("%m-%d-%y_%H-%M"),
+                       false);
   new_route.m_RouteNameString += "_" + c.Start + "_" + c.End;
 
   new_route.m_RouteStartString = c.Start;

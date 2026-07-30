@@ -52,6 +52,7 @@ set(TEST_SRC
     RoutingFootprint_tests.cpp
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp
+    TimeZoneDisplay_tests.cpp
     ModernNativeEngine_tests.cpp
     ArrivalPlanner_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/AppendOnlyCache.cpp
@@ -67,6 +68,7 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/headless/RoutingScenarioJson.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyThreadGuard.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/SunCalculator.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/TimeZoneDisplay.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Geometry.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Providers.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Polar.cpp

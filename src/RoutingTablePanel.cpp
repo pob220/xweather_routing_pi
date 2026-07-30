@@ -598,8 +598,11 @@ void RoutingTablePanel::UpdateSummary(const std::list<PlotData>& plotData) {
   m_summaryText->SetLabel(wxString::Format(
       _("Depart %s   Arrive %s   Duration %ldd %02ld:%02ld   Distance %s   "
         "Motor %ld:%02ld   Max wind %s   Max wave %.1f m"),
-      toUsrDateTimeFormat_Plugin(first.time),
-      toUsrDateTimeFormat_Plugin(last.time), totalMinutes / (24 * 60),
+      m_WeatherRouting.m_SettingsDialog.FormatTime(
+          first.time, _T("%Y-%m-%d %H:%M")),
+      m_WeatherRouting.m_SettingsDialog.FormatTime(
+          last.time, _T("%Y-%m-%d %H:%M")),
+      totalMinutes / (24 * 60),
       (totalMinutes / 60) % 24, totalMinutes % 60, FormatDistance(distance),
       motorMinutes / 60, motorMinutes % 60, FormatSpeed(maxWind), maxWave));
   m_summaryText->Wrap(1100);
@@ -721,8 +724,6 @@ void RoutingTablePanel::PopulateTable() {
 
   // Get configuration for formatting
   RouteMapConfiguration configuration = m_RouteMap->GetConfiguration();
-  bool useLocalTime =
-      m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->GetValue();
 
   // Fill the grid with data
   int row = 0;
@@ -738,15 +739,9 @@ void RoutingTablePanel::PopulateTable() {
                                      wxString::Format("%d", row + 1));
 
     // ETA column - actual date/time of arrival at this point
-    // Check for API 1.20 which has toUsrDateTimeFormat_Plugin function
-    wxString timeString;
-#if OCPN_API_VERSION_MAJOR > 1 || \
-    (OCPN_API_VERSION_MAJOR == 1 && OCPN_API_VERSION_MINOR >= 20)
-    timeString = toUsrDateTimeFormat_Plugin(data.time);
-#else
-    // Fallback for earlier API versions - format time in UTC
-    timeString = data.time.Format(_T("%Y-%m-%d %H:%M UTC"));
-#endif
+    const wxString timeString =
+        m_WeatherRouting.m_SettingsDialog.FormatTime(
+            data.time, _T("%Y-%m-%d %H:%M"));
     const double sunElevation =
         SunCalculator::GetSunElevation(data.lat, data.lon, data.time);
     if (std::isfinite(sunElevation)) {

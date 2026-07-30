@@ -161,7 +161,19 @@ void SettingsDialog::LoadSettings() {
     m_cblFields->Check(i, columns[i]);
   }
 
-  m_cbUseLocalTime->SetValue((bool)pConf->Read(_T("UseLocalTime"), 0L));
+  const bool legacyUseLocalTime =
+      (bool)pConf->Read(_T("UseLocalTime"), 0L);
+  m_useLocalTimeZone =
+      (bool)pConf->Read(_T("UseLocalTimeZone"), legacyUseLocalTime);
+  pConf->Read(_T("DisplayTimeZone"), &m_displayTimeZone,
+              marine_time::SystemTimeZone());
+  if (!marine_time::IsTimeZoneAvailable(m_displayTimeZone)) {
+    m_displayTimeZone = marine_time::SystemTimeZone();
+  }
+  if (!marine_time::IsTimeZoneAvailable(m_displayTimeZone)) {
+    m_displayTimeZone = "UTC";
+    m_useLocalTimeZone = false;
+  }
 
   Fit();
 
@@ -205,7 +217,10 @@ void SettingsDialog::SaveSettings() {
     pConf->Write(wxString::Format(_T("Column_") + _(column_names[i]), i),
                  m_cblFields->IsChecked(i));
 
-  pConf->Write(_T("UseLocalTime"), m_cbUseLocalTime->GetValue());
+  // Keep the legacy key synchronized so downgrades retain the user's choice.
+  pConf->Write(_T("UseLocalTime"), m_useLocalTimeZone);
+  pConf->Write(_T("UseLocalTimeZone"), m_useLocalTimeZone);
+  pConf->Write(_T("DisplayTimeZone"), m_displayTimeZone);
 
   wxPoint p = GetPosition();
   pConf->Write(_T ( "SettingsDialogX" ), p.x);
@@ -222,8 +237,34 @@ void SettingsDialog::OnUpdateColumns(wxCommandEvent& event) {
   if (weather_routing) weather_routing->UpdateColumns();
 }
 
-wxDateTime::TimeZone SettingsDialog::GetTimeZone() const {
-  return m_cbUseLocalTime->IsChecked() ? wxDateTime::Local : wxDateTime::UTC;
+void SettingsDialog::SetDisplayTimeZone(bool enabled,
+                                        const wxString& zoneName) {
+  m_useLocalTimeZone = enabled;
+  if (marine_time::IsTimeZoneAvailable(zoneName))
+    m_displayTimeZone = zoneName;
+  else if (!marine_time::IsTimeZoneAvailable(m_displayTimeZone))
+    m_displayTimeZone = "UTC";
+  SaveSettings();
+}
+
+wxString SettingsDialog::FormatTime(const wxDateTime& utc,
+                                    const wxString& format,
+                                    bool appendAbbreviation) const {
+  const wxString zone = m_useLocalTimeZone ? m_displayTimeZone : "UTC";
+  return marine_time::FormatInTimeZone(utc, format, zone,
+                                       appendAbbreviation);
+}
+
+wxDateTime SettingsDialog::ToDisplayWallClock(const wxDateTime& utc) const {
+  return marine_time::ToWallClock(
+      utc, m_useLocalTimeZone ? m_displayTimeZone : "UTC");
+}
+
+marine_time::WallClockConversion SettingsDialog::DisplayWallClockToUtc(
+    int year, int month, int day, int hour, int minute, int second) const {
+  return marine_time::FromWallClock(
+      year, month, day, hour, minute, second,
+      m_useLocalTimeZone ? m_displayTimeZone : "UTC");
 }
 
 void SettingsDialog::OnHelp(wxCommandEvent& event) {

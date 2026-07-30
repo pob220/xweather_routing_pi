@@ -143,6 +143,18 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       (bool)pConf->Read(_T("UseExperimentalChartSafety"), 0L));
   m_cbEnforceExperimentalChartSafety->SetValue(
       (bool)pConf->Read(_T("EnforceExperimentalChartSafety"), 0L));
+  for (const wxString& zone : marine_time::AvailableTimeZones())
+    m_cTimeZone->Append(zone);
+  wxString displayZone =
+      m_WeatherRouting.m_SettingsDialog.DisplayTimeZone();
+  if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) {
+    displayZone = marine_time::SystemTimeZone();
+  }
+  if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) displayZone = "UTC";
+  m_cTimeZone->SetStringSelection(displayZone);
+  m_cbUseLocalTimeZone->SetValue(
+      m_WeatherRouting.m_SettingsDialog.UseLocalTimeZone());
+  m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
   UpdateRoutingTimeModeControls();
 
 #ifdef __OCPN__ANDROID__
@@ -190,6 +202,40 @@ void ConfigurationDialog::OnUseCurrentTime(wxCommandEvent& event) {
       m_rbRouteByDepartureTime->GetValue())
     SetStartDateTime(wxDateTime::Now());
   UpdateRoutingTimeModeControls();
+  Update();
+}
+
+void ConfigurationDialog::OnTimeZoneDisplay(wxCommandEvent& event) {
+  const std::list<RouteMapOverlay*> routes =
+      m_WeatherRouting.CurrentRouteMaps();
+  wxDateTime selectedTime;
+  if (!routes.empty()) {
+    const RouteMapConfiguration configuration =
+        routes.front()->GetConfiguration();
+    selectedTime = m_rbRouteByArrivalTime->GetValue()
+                       ? configuration.PlannedArrivalTime
+                       : configuration.StartTime;
+  }
+  if (m_rbRouteByDepartureTime->GetValue() &&
+      m_cbUseCurrentTime->IsChecked())
+    selectedTime = wxDateTime::Now();
+  if (!selectedTime.IsValid()) selectedTime = wxDateTime::Now();
+
+  wxString zone = m_cTimeZone->GetStringSelection();
+  if (!marine_time::IsTimeZoneAvailable(zone)) {
+    zone = marine_time::SystemTimeZone();
+    if (!marine_time::IsTimeZoneAvailable(zone)) zone = "UTC";
+    m_cTimeZone->SetStringSelection(zone);
+  }
+  m_WeatherRouting.m_SettingsDialog.SetDisplayTimeZone(
+      m_cbUseLocalTimeZone->GetValue(), zone);
+  m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
+
+  m_bBlockUpdate = true;
+  SetStartDateTime(selectedTime);
+  m_bBlockUpdate = false;
+  m_WeatherRouting.UpdateColumns();
+  m_WeatherRouting.UpdateDisplaySettings();
   Update();
 }
 
@@ -417,8 +463,6 @@ void ConfigurationDialog::SetConfigurations(
 
   std::list<RouteMapConfiguration>::iterator it = configurations.begin();
 
-  const bool useLocalTime =
-      m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked();
   const bool routeByArrival =
       it->TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
   wxDateTime displayedTime =
@@ -426,20 +470,24 @@ void ConfigurationDialog::SetConfigurations(
   if (!routeByArrival && it->UseCurrentTime)
     displayedTime = wxDateTime::Now();
   if (!displayedTime.IsValid()) displayedTime = it->StartTime;
-  wxDateTime dateValue = displayedTime.GetDateOnly();
-  wxDateTime timeValue = displayedTime;
-  // The native picker controls interpret their wxDateTime input as UTC and
-  // convert it for display. Undo that conversion when the UI is showing UTC.
-  if (!useLocalTime) {
-    dateValue = dateValue.ToUTC();
-    timeValue = timeValue.ToUTC();
-  }
+  const wxDateTime wall =
+      m_WeatherRouting.m_SettingsDialog.ToDisplayWallClock(displayedTime);
+  wxDateTime timeValue(
+      wall.GetDay(wxDateTime::UTC), wall.GetMonth(wxDateTime::UTC),
+      wall.GetYear(wxDateTime::UTC), wall.GetHour(wxDateTime::UTC),
+      wall.GetMinute(wxDateTime::UTC), wall.GetSecond(wxDateTime::UTC));
+  wxDateTime dateValue = timeValue.GetDateOnly();
   SET_CONTROL_VALUE(dateValue, m_dpStartDate, SetValue, wxDateTime,
                     wxDateTime());
   SET_CONTROL_VALUE(timeValue, m_tpTime, SetValue, wxDateTime, wxDateTime());
 
   m_rbRouteByDepartureTime->SetValue(!routeByArrival);
   m_rbRouteByArrivalTime->SetValue(routeByArrival);
+  m_cbUseLocalTimeZone->SetValue(
+      m_WeatherRouting.m_SettingsDialog.UseLocalTimeZone());
+  m_cTimeZone->SetStringSelection(
+      m_WeatherRouting.m_SettingsDialog.DisplayTimeZone());
+  m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
   SET_CHECKBOX(UseCurrentTime);
   SET_CHECKBOX(DepartureTimeOptimizationEnabled);
   if (routeByArrival) {
@@ -720,11 +768,14 @@ void ConfigurationDialog::UpdateChartSafetyRamLabel() {
 
 void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
   if (datetime.IsValid()) {
-    if (!m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked())
-      datetime = datetime.ToUTC();
-
-    m_dpStartDate->SetValue(datetime);
-    m_tpTime->SetValue(datetime);
+    const wxDateTime wall =
+        m_WeatherRouting.m_SettingsDialog.ToDisplayWallClock(datetime);
+    wxDateTime pickerValue(
+        wall.GetDay(wxDateTime::UTC), wall.GetMonth(wxDateTime::UTC),
+        wall.GetYear(wxDateTime::UTC), wall.GetHour(wxDateTime::UTC),
+        wall.GetMinute(wxDateTime::UTC), wall.GetSecond(wxDateTime::UTC));
+    m_dpStartDate->SetValue(pickerValue);
+    m_tpTime->SetValue(pickerValue);
     m_edited_controls.push_back(m_tpTime);
     m_edited_controls.push_back(m_dpStartDate);
   } else {
@@ -853,13 +904,25 @@ void ConfigurationDialog::Update() {
 
       wxDateTime controlDate = m_dpStartDate->GetDateCtrlValue();
       wxDateTime controlTime = m_tpTime->GetTimeCtrlValue();
-      wxDateTime time(controlDate.GetDay(), controlDate.GetMonth(),
-                      controlDate.GetYear(), controlTime.GetHour(),
-                      controlTime.GetMinute(), controlTime.GetSecond());
-      if (!time.IsValid())
-        time = wxDateTime::Now();
-      else if (!m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked())
-        time = time.FromUTC();
+      const marine_time::WallClockConversion conversion =
+          m_WeatherRouting.m_SettingsDialog.DisplayWallClockToUtc(
+              controlDate.GetYear(),
+              static_cast<int>(controlDate.GetMonth()) + 1,
+              controlDate.GetDay(), controlTime.GetHour(),
+              controlTime.GetMinute(), controlTime.GetSecond());
+      if (!conversion.utc.IsValid()) {
+        const wxString error =
+            conversion.status == marine_time::WallClockStatus::Nonexistent
+                ? _("This local time does not exist because the clocks move "
+                    "forward. Select another time.")
+                : _("This date and time is invalid for the selected time "
+                    "zone.");
+        m_dpStartDate->SetForegroundColour(*wxRED);
+        m_tpTime->SetForegroundColour(*wxRED);
+        m_tpTime->SetToolTip(error);
+        continue;
+      }
+      const wxDateTime time = conversion.utc;
 
       if (routeByArrival)
         configuration.PlannedArrivalTime = time;
@@ -871,6 +934,14 @@ void ConfigurationDialog::Update() {
       if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
                     (wxObject*)m_tpTime) != m_edited_controls.end())
         m_tpTime->SetForegroundColour(wxColour(0, 0, 0));
+      if (conversion.status == marine_time::WallClockStatus::Ambiguous) {
+        m_tpTime->SetToolTip(
+            _("This time occurs twice when the clocks move back. The earlier "
+              "occurrence is used."));
+      } else {
+        m_tpTime->SetToolTip(
+            _("Select the starting time for weather routing"));
+      }
     }
 
     if (!m_tBoat->GetValue().empty()) {

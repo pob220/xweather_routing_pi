@@ -180,6 +180,7 @@ SET(SRCS
             src/weather_routing_pi.cpp
             src/WeatherRouting.cpp
             src/SunCalculator.cpp
+            src/TimeZoneDisplay.cpp
             src/ConfigurationDialog.cpp
             src/SettingsDialog.cpp
             src/PlotDialog.cpp

@@ -24,6 +24,7 @@
 #include <wx/fileconf.h>
 
 #include "WeatherRoutingUI.h"
+#include "TimeZoneDisplay.h"
 
 class SettingsDialog : public SettingsDialogBase {
 public:
@@ -38,8 +39,19 @@ public:
   void OnUpdate();
   void OnUpdateColumns(wxCommandEvent& event);
   void OnHelp(wxCommandEvent& event);
-  wxDateTime::TimeZone GetTimeZone() const;
+  bool UseLocalTimeZone() const { return m_useLocalTimeZone; }
+  const wxString& DisplayTimeZone() const { return m_displayTimeZone; }
+  void SetDisplayTimeZone(bool enabled, const wxString& zoneName);
+  wxString FormatTime(const wxDateTime& utc, const wxString& format,
+                      bool appendAbbreviation = true) const;
+  wxDateTime ToDisplayWallClock(const wxDateTime& utc) const;
+  marine_time::WallClockConversion DisplayWallClockToUtc(
+      int year, int month, int day, int hour, int minute, int second) const;
   static const wxString column_names[];
+
+private:
+  bool m_useLocalTimeZone = false;
+  wxString m_displayTimeZone = "UTC";
 };
 
 #endif

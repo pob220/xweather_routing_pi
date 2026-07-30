@@ -1864,6 +1864,12 @@ RouteMapOverlay::GetRetainedFrontierSegments() {
 void RouteMapOverlay::RequestGrib(wxDateTime time,
                                   const wxString& requestToken) {
   Json::Value v;
+  // This epoch value is authoritative.  Split fields remain for compatibility
+  // with GRIB plugins predating the timezone-independent protocol extension.
+  v["EpochSeconds"] =
+      wxString::Format("%lld", static_cast<long long>(time.GetTicks()))
+          .ToStdString();
+  v["TimeZone"] = "UTC";
   v["Day"] = time.GetDay();
   v["Month"] = time.GetMonth();
   v["Year"] = time.GetYear();

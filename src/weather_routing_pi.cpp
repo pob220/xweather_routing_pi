@@ -257,12 +257,18 @@ void weather_routing_pi::SetPluginMessage(wxString& message_id,
     Json::Value v;
     r.parse(static_cast<std::string>(message_body), v);
 
-    if (v["Day"].asInt() != -1) {
+    if (v.isMember("EpochSeconds") || v["Day"].asInt() != -1) {
       wxDateTime time;
-
-      time.Set(v["Day"].asInt(), (wxDateTime::Month)v["Month"].asInt(),
-               v["Year"].asInt(), v["Hour"].asInt(), v["Minute"].asInt(),
-               v["Second"].asInt());
+      if (v.isMember("EpochSeconds") && v["EpochSeconds"].isString()) {
+        wxLongLong_t epochSeconds = 0;
+        if (wxString::FromUTF8(v["EpochSeconds"].asCString())
+                .ToLongLong(&epochSeconds))
+          time = wxDateTime(static_cast<time_t>(epochSeconds));
+      }
+      if (!time.IsValid())
+        time.Set(v["Day"].asInt(), (wxDateTime::Month)v["Month"].asInt(),
+                 v["Year"].asInt(), v["Hour"].asInt(), v["Minute"].asInt(),
+                 v["Second"].asInt());
 
       if (m_pWeather_Routing && time.IsValid()) {
         m_pWeather_Routing->m_ConfigurationDialog.m_GribTimelineTime = time;

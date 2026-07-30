@@ -105,6 +105,7 @@ protected:
     Update();
   }
   void OnUseCurrentTime(wxCommandEvent& event);
+  void OnTimeZoneDisplay(wxCommandEvent& event);
   void OnGribTime(wxCommandEvent& event);
   void OnCurrentTime(wxCommandEvent& event);
   void OnUpdateSpin(wxSpinEvent& event) {

@@ -41,7 +41,6 @@ protected:
   void OnClose(wxCommandEvent& event) { Hide(); }
 
 private:
-  wxDateTime::TimeZone DisplayedTimeZone() const;
   wxString FormatTime(wxDateTime t);
   WeatherRouting& m_WeatherRouting;
 };

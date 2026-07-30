@@ -342,7 +342,6 @@ public:
   wxCheckBox* m_cbDisplayComfort;
   wxSpinCtrl* m_sConcurrentThreads;
   wxCheckListBox* m_cblFields;
-  wxCheckBox* m_cbUseLocalTime;
 
   SettingsDialogBase(wxWindow* parent, wxWindowID id = wxID_ANY,
                      const wxString& title = _("Weather Routing Settings"),
@@ -399,6 +398,8 @@ protected:
    * user.
    */
   wxCheckBox* m_cbUseCurrentTime;
+  wxCheckBox* m_cbUseLocalTimeZone;
+  wxChoice* m_cTimeZone;
   wxStaticText* m_staticText30;
   wxTimePickerCtrl* m_tpTime;
   /**
@@ -512,6 +513,7 @@ protected:
   virtual void OnUpdate(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUpdateDate(wxDateEvent& event) { event.Skip(); }
   virtual void OnUseCurrentTime(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnTimeZoneDisplay(wxCommandEvent& event) { event.Skip(); }
   virtual void OnGribTime(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUpdateTime(wxDateEvent& event) { event.Skip(); }
   virtual void OnCurrentTime(wxCommandEvent& event) { event.Skip(); }
