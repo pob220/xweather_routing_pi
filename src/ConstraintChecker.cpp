@@ -30,64 +30,69 @@
 
 namespace {
 
-bool s_loggedChartSegmentSafety = false;
-bool s_loggedGshhsSegmentSafetyFallback = false;
-bool s_loggedSegmentSafetyNoData = false;
-bool s_loggedGshhsDefault = false;
-bool s_loggedExperimentalForcedFallback = false;
-bool s_useExperimentalChartSafety = false;
-bool s_enforceExperimentalChartSafety = false;
-bool s_forceGshhsForPerformance = false;
-wxString s_segmentSafetyDiagnosticContext;
-long s_chartWouldRejectLogs = 0;
-long s_unexpectedTileBuildLogs = 0;
-long s_segmentSafetyApiCalls = 0;
-long s_finalChartHitLogs = 0;
-long s_finalChartHitLogsSuppressed = 0;
-long s_endpointMarginRelaxedLogs = 0;
-long s_endpointMarginRelaxedLogsSuppressed = 0;
-long s_chartAvailableChecks = 0;
-long s_chartUnavailableFallbacks = 0;
-long s_gshhsSafetyCalls = 0;
-long s_chartSelectMs = 0;
-long s_cacheBuildMs = 0;
-long s_geometryCheckMs = 0;
-long s_pointCacheHits = 0;
-long s_pointCacheMisses = 0;
-long s_gridCacheHits = 0;
-long s_gridCacheMisses = 0;
-long s_gridBuildMs = 0;
-long s_gridCellsTotal = 0;
-long s_gridCellsLand = 0;
-long s_gridCellsWater = 0;
-long s_gridCellsDrying = 0;
-long s_gridCellsUnknown = 0;
-long s_gridLookups = 0;
-long s_gridLookupMs = 0;
-long s_segmentSampleCount = 0;
-long s_waterTileShortcuts = 0;
-long s_segmentCacheHits = 0;
-long s_segmentCacheMisses = 0;
-long s_segmentCacheStores = 0;
-long s_gridCacheSize = 0;
-long s_gridCacheEvictions = 0;
-long s_unexpectedTileBuilds = 0;
-long s_chartLandRejections = 0;
-long s_chartAcceptedSegments = 0;
-long s_finalRouteValidationChecks = 0;
-long s_landRingTotal = 0;
-long s_bboxRingTests = 0;
-long s_edgeTests = 0;
-long s_maxBBoxRingTests = 0;
-long s_maxEdgeTests = 0;
-long s_noChartDatabase = 0;
-long s_noCandidateChart = 0;
-long s_rasterOnly = 0;
-long s_unsupportedChartType = 0;
-long s_chartLoadFailed = 0;
-long s_noLandareGeometry = 0;
-long s_chartGeometryClear = 0;
-long s_chartGeometryHit = 0;
+// Constraint checks run on route workers.  Policy, performance guards and
+// diagnostics are deliberately worker-local so one departure candidate can
+// never change another candidate's acceptance decisions.  Every worker resets
+// this state at the start of a route; the UI thread has its own independent
+// state for scout preparation and output validation.
+thread_local bool s_loggedChartSegmentSafety = false;
+thread_local bool s_loggedGshhsSegmentSafetyFallback = false;
+thread_local bool s_loggedSegmentSafetyNoData = false;
+thread_local bool s_loggedGshhsDefault = false;
+thread_local bool s_loggedExperimentalForcedFallback = false;
+thread_local bool s_useExperimentalChartSafety = false;
+thread_local bool s_enforceExperimentalChartSafety = false;
+thread_local bool s_forceGshhsForPerformance = false;
+thread_local wxString s_segmentSafetyDiagnosticContext;
+thread_local long s_chartWouldRejectLogs = 0;
+thread_local long s_unexpectedTileBuildLogs = 0;
+thread_local long s_segmentSafetyApiCalls = 0;
+thread_local long s_finalChartHitLogs = 0;
+thread_local long s_finalChartHitLogsSuppressed = 0;
+thread_local long s_endpointMarginRelaxedLogs = 0;
+thread_local long s_endpointMarginRelaxedLogsSuppressed = 0;
+thread_local long s_chartAvailableChecks = 0;
+thread_local long s_chartUnavailableFallbacks = 0;
+thread_local long s_gshhsSafetyCalls = 0;
+thread_local long s_chartSelectMs = 0;
+thread_local long s_cacheBuildMs = 0;
+thread_local long s_geometryCheckMs = 0;
+thread_local long s_pointCacheHits = 0;
+thread_local long s_pointCacheMisses = 0;
+thread_local long s_gridCacheHits = 0;
+thread_local long s_gridCacheMisses = 0;
+thread_local long s_gridBuildMs = 0;
+thread_local long s_gridCellsTotal = 0;
+thread_local long s_gridCellsLand = 0;
+thread_local long s_gridCellsWater = 0;
+thread_local long s_gridCellsDrying = 0;
+thread_local long s_gridCellsUnknown = 0;
+thread_local long s_gridLookups = 0;
+thread_local long s_gridLookupMs = 0;
+thread_local long s_segmentSampleCount = 0;
+thread_local long s_waterTileShortcuts = 0;
+thread_local long s_segmentCacheHits = 0;
+thread_local long s_segmentCacheMisses = 0;
+thread_local long s_segmentCacheStores = 0;
+thread_local long s_gridCacheSize = 0;
+thread_local long s_gridCacheEvictions = 0;
+thread_local long s_unexpectedTileBuilds = 0;
+thread_local long s_chartLandRejections = 0;
+thread_local long s_chartAcceptedSegments = 0;
+thread_local long s_finalRouteValidationChecks = 0;
+thread_local long s_landRingTotal = 0;
+thread_local long s_bboxRingTests = 0;
+thread_local long s_edgeTests = 0;
+thread_local long s_maxBBoxRingTests = 0;
+thread_local long s_maxEdgeTests = 0;
+thread_local long s_noChartDatabase = 0;
+thread_local long s_noCandidateChart = 0;
+thread_local long s_rasterOnly = 0;
+thread_local long s_unsupportedChartType = 0;
+thread_local long s_chartLoadFailed = 0;
+thread_local long s_noLandareGeometry = 0;
+thread_local long s_chartGeometryClear = 0;
+thread_local long s_chartGeometryHit = 0;
 
 const long kMaxSegmentSafetyApiCallsPerRun = 500;
 const long kMaxChartSafetyMsPerRun = 250;
@@ -821,6 +826,8 @@ bool ConstraintChecker::CheckCycloneTrackConstraint(
       RouteMap::ClimatologyCycloneTrackCrossings &&
       WeatherDataProvider::CanInvokeClimatology(
           ClimatologyService::CycloneTracks)) {
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     int crossings = RouteMap::ClimatologyCycloneTrackCrossings(
         lat, lon, dlat, dlon, configuration.time,
         configuration.CycloneMonths * 30 + configuration.CycloneDays);

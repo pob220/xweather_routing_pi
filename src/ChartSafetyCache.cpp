@@ -492,6 +492,51 @@ bool ChartSafetyCache::Lookup(long lat_tile, long lon_tile,
                            tile);
 }
 
+bool ChartSafetyCache::LookupSnapshot(
+    long lat_tile, long lon_tile, bool require_depth,
+    std::shared_ptr<const ChartHazardTile>* snapshot) {
+  if (!snapshot) return false;
+  // The authoritative contract currently uses a 41x41 grid.  Keep generous
+  // capacity here so a future finer host tile can be consumed without changing
+  // the worker-facing ownership API.
+  constexpr int kMaximumSnapshotCells = 256 * 256;
+  auto tile = std::make_shared<ChartHazardTile>();
+  tile->hazard_flags.resize(kMaximumSnapshotCells);
+  tile->has_depth.resize(kMaximumSnapshotCells);
+  tile->min_depth_m.resize(kMaximumSnapshotCells);
+
+  PlugInSegmentSafetyTile external = {};
+  external.struct_size = sizeof(external);
+  external.lat_tile = lat_tile;
+  external.lon_tile = lon_tile;
+  external.hazard_flags = tile->hazard_flags.data();
+  external.has_depth = tile->has_depth.data();
+  external.min_depth_m = tile->min_depth_m.data();
+  external.cell_capacity = kMaximumSnapshotCells;
+  if (!Lookup(lat_tile, lon_tile, require_depth, &external)) return false;
+
+  const std::size_t cells =
+      static_cast<std::size_t>(external.rows) * external.cols;
+  if (!cells || cells > kMaximumSnapshotCells) return false;
+  tile->group_index = external.group_index;
+  tile->lat_tile = external.lat_tile;
+  tile->lon_tile = external.lon_tile;
+  tile->resolution = external.resolution;
+  tile->rows = external.rows;
+  tile->cols = external.cols;
+  tile->chart_db_index = external.chart_db_index;
+  tile->chart_scale = external.chart_scale;
+  tile->source = external.source;
+  tile->hazard_summary_flags = external.hazard_summary_flags;
+  tile->depth_complete = external.depth_complete != 0;
+  tile->chart_path = external.chart_path;
+  tile->hazard_flags.resize(cells);
+  tile->has_depth.resize(cells);
+  tile->min_depth_m.resize(cells);
+  *snapshot = std::move(tile);
+  return true;
+}
+
 void ChartSafetyCache::Store(const PlugInSegmentSafetyTile* tile) {
   TileData incoming;
   if (!ReadExternalTile(tile, &incoming)) return;

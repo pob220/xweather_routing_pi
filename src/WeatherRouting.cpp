@@ -695,22 +695,15 @@ static void PrewarmExperimentalChartSafetyForConfiguration(
   wxString prewarm_mode = _("corridor");
   PlugInSegmentSafetyOptions options =
       ChartSafetyRouteMaskOptions(configuration);
-  const bool snapshot_ready = PrewarmChartSafetyHazardSnapshot(
-      std::vector<RouteMapConfiguration>(1, configuration), context, true);
-  if (ModernNativeRouteEnabled(configuration) && snapshot_ready) {
-    wxLogMessage(
-        "WR_ROUTE_MASK_PREWARM_DEFERRED context=%s route=\"%s to %s\" "
-        "snapshot_ready=%d engine=modern-native "
-        "policy=short-edge-on-demand-authoritative",
-        context, configuration.Start, configuration.End,
-        snapshot_ready ? 1 : 0);
-    return;
-  }
-  if (ModernNativeRouteEnabled(configuration))
+  const bool modern_native = ModernNativeRouteEnabled(configuration);
+  if (!modern_native)
+    PrewarmChartSafetyHazardSnapshot(
+        std::vector<RouteMapConfiguration>(1, configuration), context, true);
+  if (modern_native)
     wxLogMessage(
         "WR_ROUTE_MASK_PREWARM_REQUIRED context=%s route=\"%s to %s\" "
-        "snapshot_ready=0 engine=modern-native "
-        "policy=authoritative-corridor-then-on-demand",
+        "engine=modern-native "
+        "policy=plugin-owned-raw-tiles-and-derived-masks",
         context, configuration.Start, configuration.End);
   if (corridor_point_counts.empty()) {
     wxLogMessage(
@@ -1373,6 +1366,70 @@ WeatherRouting::~WeatherRouting() {
     m_RoutingTablePanel->Destroy();
     m_RoutingTablePanel = nullptr;
   }
+}
+
+void WeatherRouting::RequestGribTimelineFrame(
+    RouteMapOverlay* routeMapOverlay, const wxDateTime& time) {
+  if (!routeMapOverlay || !time.IsValid()) return;
+
+  const wxString requestToken = wxString::Format(
+      "wr-%llu", static_cast<unsigned long long>(m_NextGribRequestToken++));
+  {
+    std::lock_guard<std::mutex> lock(m_GribRequestMutex);
+    m_PendingGribRequests.emplace(
+        requestToken,
+        PendingGribRequest{routeMapOverlay,
+                           static_cast<std::int64_t>(time.GetTicks())});
+  }
+
+  /*
+   * OpenCPN currently delivers plugin messages synchronously.  The token makes
+   * the ownership explicit and prevents a nested or unrelated timeline reply
+   * from being published to the wrong departure worker.  If a provider does
+   * not answer in this call, fail the request closed rather than retaining a
+   * raw route pointer beyond its guaranteed lifetime.
+   */
+  routeMapOverlay->RequestGrib(time, requestToken);
+
+  bool unanswered = false;
+  {
+    std::lock_guard<std::mutex> lock(m_GribRequestMutex);
+    unanswered = m_PendingGribRequests.erase(requestToken) != 0;
+  }
+  if (unanswered) {
+    routeMapOverlay->Lock();
+    routeMapOverlay->SetNewGrib(static_cast<GribRecordSet*>(nullptr));
+    routeMapOverlay->Unlock();
+    wxLogWarning(
+        "WR_GRIB_BROKER no synchronous response token=%s timeline=%s",
+        requestToken, time.FormatISOCombined());
+  }
+}
+
+void WeatherRouting::HandleGribTimelineFrame(const wxString& requestToken,
+                                             GribRecordSet* frame) {
+  RouteMapOverlay* routeMapOverlay = nullptr;
+  std::int64_t expectedTimelineKey = -1;
+  {
+    std::lock_guard<std::mutex> lock(m_GribRequestMutex);
+    const auto found = m_PendingGribRequests.find(requestToken);
+    if (found == m_PendingGribRequests.end()) {
+      wxLogWarning("WR_GRIB_BROKER ignored unmatched response token=%s",
+                   requestToken);
+      return;
+    }
+    routeMapOverlay = found->second.route_map_overlay;
+    expectedTimelineKey = found->second.timeline_key;
+    m_PendingGribRequests.erase(found);
+  }
+
+  routeMapOverlay->Lock();
+  routeMapOverlay->SetNewGrib(frame);
+  routeMapOverlay->Unlock();
+  wxLogMessage(
+      "WR_GRIB_BROKER delivered token=%s timeline_key=%lld valid=%d",
+      requestToken, static_cast<long long>(expectedTimelineKey),
+      frame != nullptr ? 1 : 0);
 }
 
 #ifdef __OCPN__ANDROID__
@@ -6014,7 +6071,7 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
 
   const int logical_cpu_count = wxThread::GetCPUCount();
   const bool deterministic_host_service_lane =
-      ModernNativeRouteEnabled(base);
+      ModernNativeRouteRequiresSerialHostServices(base);
   const int effective_workers = weather_routing::EffectiveRouteWorkerLimit(
       m_SettingsDialog.m_sConcurrentThreads->GetValue(), true,
       base.DepartureTimeOptimizationConcurrentRoutes, logical_cpu_count,
@@ -6999,9 +7056,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     /* get a new grib for the route map if needed */
     if (routemapoverlay->NeedsGrib() && !routemapoverlay->Finished()) {
       wxStopWatch sectionTimer;
-      m_RouteMapOverlayNeedingGrib = routemapoverlay;
-      routemapoverlay->RequestGrib(routemapoverlay->NewTime());
-      m_RouteMapOverlayNeedingGrib = NULL;
+      RequestGribTimelineFrame(routemapoverlay, routemapoverlay->NewTime());
       gribRequestMs += sectionTimer.Time();
       gribRequests++;
     }
@@ -7023,7 +7078,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     if (route && route->GetConfiguration().DepartureTimeOptimizationCandidate) {
       departure_candidates_active = true;
       deterministic_host_service_lane =
-          ModernNativeRouteEnabled(route->GetConfiguration());
+          ModernNativeRouteRequiresSerialHostServices(
+              route->GetConfiguration());
       requested_departure_workers =
           route->GetConfiguration()
               .DepartureTimeOptimizationConcurrentRoutes;
@@ -7035,7 +7091,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
           route->GetConfiguration().DepartureTimeOptimizationCandidate) {
         departure_candidates_active = true;
         deterministic_host_service_lane =
-            ModernNativeRouteEnabled(route->GetConfiguration());
+            ModernNativeRouteRequiresSerialHostServices(
+                route->GetConfiguration());
         requested_departure_workers =
             route->GetConfiguration()
                 .DepartureTimeOptimizationConcurrentRoutes;
@@ -8435,9 +8492,7 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
   bool watchdog_expired = false;
   while (routemapoverlay->Running()) {
     if (routemapoverlay->NeedsGrib() && !routemapoverlay->Finished()) {
-      m_RouteMapOverlayNeedingGrib = routemapoverlay;
-      routemapoverlay->RequestGrib(routemapoverlay->NewTime());
-      m_RouteMapOverlayNeedingGrib = NULL;
+      RequestGribTimelineFrame(routemapoverlay, routemapoverlay->NewTime());
     }
 
     if (timer.Time() > kChartSafetyScoutWatchdogMs) {
@@ -8636,17 +8691,19 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
   if (!use_chart_safety || !enforce_chart_safety) return;
 
   std::vector<RouteMapConfiguration> snapshot_configurations;
-  bool full_chart_propagation = false;
+  bool legacy_full_chart_propagation = false;
   for (std::vector<RouteMapOverlay*>::const_iterator route =
            routemapoverlays.begin();
        route != routemapoverlays.end(); ++route)
     if (*route && (*route)->GetConfiguration().DetectLand) {
       const RouteMapConfiguration configuration = (*route)->GetConfiguration();
       snapshot_configurations.push_back(configuration);
-      full_chart_propagation =
-          full_chart_propagation || configuration.UseChartSafetyForPropagation;
+      legacy_full_chart_propagation =
+          legacy_full_chart_propagation ||
+          (configuration.UseChartSafetyForPropagation &&
+           !ModernNativeRouteEnabled(configuration));
     }
-  if (full_chart_propagation)
+  if (legacy_full_chart_propagation)
     PrewarmChartSafetyHazardSnapshot(snapshot_configurations, context, true);
 
   struct ScoutEnvelope {

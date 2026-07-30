@@ -1861,7 +1861,8 @@ RouteMapOverlay::GetRetainedFrontierSegments() {
   return weather_routing_engine::DeduplicateRoutingFootprint(segments);
 }
 
-void RouteMapOverlay::RequestGrib(wxDateTime time) {
+void RouteMapOverlay::RequestGrib(wxDateTime time,
+                                  const wxString& requestToken) {
   Json::Value v;
   v["Day"] = time.GetDay();
   v["Month"] = time.GetMonth();
@@ -1869,6 +1870,8 @@ void RouteMapOverlay::RequestGrib(wxDateTime time) {
   v["Hour"] = time.GetHour();
   v["Minute"] = time.GetMinute();
   v["Second"] = time.GetSecond();
+  v["WeatherRoutingRequestToken"] =
+      static_cast<std::string>(requestToken.ToUTF8());
 
   Json::FastWriter w;
 
@@ -2107,6 +2110,8 @@ int RouteMapOverlay::Cyclones(int* months) {
       Position* start = m_ModernRoutePositions[index - 1];
       Position* end = m_ModernRoutePositions[index];
       const wxDateTime ptime = data->time;
+      std::lock_guard<std::recursive_mutex> invocationLock(
+          ClimatologyThreadGuard::InvocationMutex());
       if (RouteMap::ClimatologyCycloneTrackCrossings(
               start->lat, start->lon, end->lat, end->lon, ptime, days)) {
         if (months && ptime.IsValid()) months[ptime.GetMonth()]++;
@@ -2120,6 +2125,8 @@ int RouteMapOverlay::Cyclones(int* months) {
   IsoChronList::iterator it = origin.end();
 
   for (Position* p = destination_position; p && p->parent; p = p->parent) {
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     if (RouteMap::ClimatologyCycloneTrackCrossings(
             p->parent->lat, p->parent->lon, p->lat, p->lon, ptime, days)) {
       if (months) months[ptime.GetMonth()]++;

@@ -3,8 +3,10 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "supercpn/weather_routing/Engine.h"
@@ -444,6 +446,50 @@ bool Successful(RoutingStatus status) {
          status == RoutingStatus::CompleteUsingGraphFallback;
 }
 
+void ExpectExactlyEquivalent(const RoutingResult& expected,
+                             const RoutingResult& actual) {
+  EXPECT_EQ(expected.status, actual.status);
+  EXPECT_EQ(expected.solverPath, actual.solverPath);
+  EXPECT_EQ(expected.message, actual.message);
+  EXPECT_EQ(expected.metrics.elapsed, actual.metrics.elapsed);
+  EXPECT_DOUBLE_EQ(expected.metrics.distanceNm, actual.metrics.distanceNm);
+  EXPECT_EQ(expected.metrics.sailingTime, actual.metrics.sailingTime);
+  EXPECT_EQ(expected.metrics.motorSailingTime,
+            actual.metrics.motorSailingTime);
+  EXPECT_EQ(expected.metrics.motorOnlyTime, actual.metrics.motorOnlyTime);
+  EXPECT_EQ(expected.metrics.waitingTime, actual.metrics.waitingTime);
+  EXPECT_EQ(expected.diagnostics.generatedStates,
+            actual.diagnostics.generatedStates);
+  EXPECT_EQ(expected.diagnostics.retainedStates,
+            actual.diagnostics.retainedStates);
+  EXPECT_EQ(expected.diagnostics.graphLabels, actual.diagnostics.graphLabels);
+  EXPECT_EQ(expected.diagnostics.waitStates, actual.diagnostics.waitStates);
+  EXPECT_EQ(expected.validation.passed, actual.validation.passed);
+  EXPECT_EQ(expected.validation.failureReason,
+            actual.validation.failureReason);
+  ASSERT_EQ(expected.legs.size(), actual.legs.size());
+  for (std::size_t index = 0; index < expected.legs.size(); ++index) {
+    EXPECT_EQ(expected.legs[index].start, actual.legs[index].start);
+    EXPECT_EQ(expected.legs[index].end, actual.legs[index].end);
+    EXPECT_EQ(expected.legs[index].startTime, actual.legs[index].startTime);
+    EXPECT_EQ(expected.legs[index].endTime, actual.legs[index].endTime);
+    EXPECT_DOUBLE_EQ(expected.legs[index].headingDegrees,
+                     actual.legs[index].headingDegrees);
+    EXPECT_DOUBLE_EQ(expected.legs[index].courseThroughWaterDegrees,
+                     actual.legs[index].courseThroughWaterDegrees);
+    EXPECT_DOUBLE_EQ(expected.legs[index].courseOverGroundDegrees,
+                     actual.legs[index].courseOverGroundDegrees);
+    EXPECT_DOUBLE_EQ(expected.legs[index].speedThroughWaterKnots,
+                     actual.legs[index].speedThroughWaterKnots);
+    EXPECT_DOUBLE_EQ(expected.legs[index].speedOverGroundKnots,
+                     actual.legs[index].speedOverGroundKnots);
+    EXPECT_EQ(expected.legs[index].propulsionMode,
+              actual.legs[index].propulsionMode);
+    EXPECT_EQ(expected.legs[index].profileIdentity,
+              actual.legs[index].profileIdentity);
+  }
+}
+
 TEST(ModernNativeEngine, RoutesIrishSeaDeterministically) {
   RoutingEngine engine;
   const auto first = engine.route(TestRequest(), TestEnvironment());
@@ -466,6 +512,44 @@ TEST(ModernNativeEngine, RoutesIrishSeaDeterministically) {
   }
   ASSERT_FALSE(first.legs.empty());
   EXPECT_EQ(first.legs.back().end, TestRequest().destination);
+}
+
+TEST(ModernNativeEngine,
+     EightConcurrentCandidatesExactlyMatchTheirSerialReferences) {
+  constexpr int kCandidateCount = 8;
+  std::array<RoutingRequest, kCandidateCount> requests;
+  for (int index = 0; index < kCandidateCount; ++index) {
+    requests[index] = TestRequest();
+    requests[index].destination =
+        destinationPoint(requests[index].start, 260.0 + index, 18.0);
+    requests[index].departure =
+        TestTime() + std::chrono::minutes{index * 15};
+    requests[index].options.retryStages = 1;
+    requests[index].options.useReverseRecovery = false;
+    requests[index].options.useGraphFallback = false;
+    requests[index].limits.maximumRouteDuration = std::chrono::hours{12};
+    requests[index].limits.maximumGeneratedStates = 100000;
+    requests[index].limits.maximumRetainedStates = 30000;
+  }
+
+  std::array<RoutingResult, kCandidateCount> serial;
+  for (int index = 0; index < kCandidateCount; ++index)
+    serial[index] =
+        RoutingEngine{}.route(requests[index], TestEnvironment());
+
+  std::array<std::future<RoutingResult>, kCandidateCount> futures;
+  for (int index = 0; index < kCandidateCount; ++index) {
+    futures[index] = std::async(
+        std::launch::async, [request = requests[index]] {
+          return RoutingEngine{}.route(request, TestEnvironment());
+        });
+  }
+
+  for (int index = 0; index < kCandidateCount; ++index) {
+    const RoutingResult concurrent = futures[index].get();
+    ASSERT_TRUE(Successful(serial[index].status)) << serial[index].message;
+    ExpectExactlyEquivalent(serial[index], concurrent);
+  }
 }
 
 TEST(ModernNativeEngine, IndependentlyValidatesIncompleteRecoveryPrefixes) {

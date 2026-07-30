@@ -15,6 +15,7 @@ namespace {
 
 std::atomic<unsigned> s_prepared{0};
 std::atomic<unsigned> s_blockedLogged{0};
+std::recursive_mutex s_invocationMutex;
 
 unsigned ServiceBit(ClimatologyService service) {
   switch (service) {
@@ -56,4 +57,8 @@ bool ClimatologyThreadGuard::ShouldLogBlocked(ClimatologyService service) {
   const unsigned previous =
       s_blockedLogged.fetch_or(bit, std::memory_order_acq_rel);
   return (previous & bit) == 0;
+}
+
+std::recursive_mutex& ClimatologyThreadGuard::InvocationMutex() {
+  return s_invocationMutex;
 }

@@ -1543,8 +1543,7 @@ bool Merge(IsoRouteList& rl, IsoRoute* route1, IsoRoute* route2, int level,
   return false;
 }
 
-typedef wxWeakRef<Shared_GribRecordSet> Shared_GribRecordSetRef;
-extern std::map<time_t, Shared_GribRecordSetRef> grib_key;
+extern std::map<time_t, std::weak_ptr<WR_GribRecordSet>> grib_key;
 extern wxMutex s_key_mutex;
 
 IsoChron::IsoChron(IsoRouteList r, wxDateTime t, double d,
@@ -1558,6 +1557,7 @@ IsoChron::IsoChron(IsoRouteList r, wxDateTime t, double d,
   m_Grib = m_SharedGrib.GetGribRecordSet();
   if (m_Grib) {
     wxMutexLocker lock(s_key_mutex);
-    grib_key[m_Grib->m_Reference_Time] = &m_SharedGrib;
+    grib_key[m_Grib->m_Reference_Time] =
+        m_SharedGrib.GetSharedGribRecordSet();
   }
 }

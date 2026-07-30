@@ -93,6 +93,8 @@ bool WeatherDataProvider::PrepareClimatologyForWorkers(
       RouteMap::ClimatologyData) {
     double direction = 0.0;
     double speed = 0.0;
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     RouteMap::ClimatologyData(CURRENT, queryTime, queryLat, queryLon,
                               direction, speed);
     ClimatologyThreadGuard::MarkPrepared(ClimatologyService::Current);
@@ -102,6 +104,8 @@ bool WeatherDataProvider::PrepareClimatologyForWorkers(
       RouteMap::ClimatologyData) {
     double direction = 0.0;
     double speed = 0.0;
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     RouteMap::ClimatologyData(WIND, queryTime, queryLat, queryLon, direction,
                               speed);
     ClimatologyThreadGuard::MarkPrepared(ClimatologyService::Wind);
@@ -115,6 +119,8 @@ bool WeatherDataProvider::PrepareClimatologyForWorkers(
     double speeds[8] = {};
     double storm = 0.0;
     double calm = 0.0;
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     RouteMap::ClimatologyWindAtlasData(queryTime, queryLat, queryLon, count,
                                        directions, speeds, storm, calm);
     ClimatologyThreadGuard::MarkPrepared(ClimatologyService::WindAtlas);
@@ -122,6 +128,8 @@ bool WeatherDataProvider::PrepareClimatologyForWorkers(
 
   if (configuration.AvoidCycloneTracks &&
       RouteMap::ClimatologyCycloneTrackCrossings) {
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
     RouteMap::ClimatologyCycloneTrackCrossings(
         queryLat, queryLon, queryLat, queryLon, queryTime,
         configuration.CycloneMonths * 30 + configuration.CycloneDays);
@@ -252,11 +260,14 @@ bool WeatherDataProvider::GetCurrent(RouteMapConfiguration& configuration,
 
   if (configuration.ClimatologyType != RouteMapConfiguration::DISABLED &&
       RouteMap::ClimatologyData &&
-      CanInvokeClimatology(ClimatologyService::Current) &&
-      RouteMap::ClimatologyData(CURRENT, configuration.time, lat, lon,
-                                currentDir, currentSpeed)) {
-    data_mask |= Position::CLIMATOLOGY_CURRENT;
-    return true;
+      CanInvokeClimatology(ClimatologyService::Current)) {
+    std::lock_guard<std::recursive_mutex> invocationLock(
+        ClimatologyThreadGuard::InvocationMutex());
+    if (RouteMap::ClimatologyData(CURRENT, configuration.time, lat, lon,
+                                  currentDir, currentSpeed)) {
+      data_mask |= Position::CLIMATOLOGY_CURRENT;
+      return true;
+    }
   }
 
 #if 0  // for now disable deficient current data as it's usefulness is not known
@@ -418,22 +429,28 @@ bool WeatherDataProvider::ReadWindAndCurrents(
 
     if (configuration.ClimatologyType == RouteMapConfiguration::AVERAGE &&
         RouteMap::ClimatologyData &&
-        CanInvokeClimatology(ClimatologyService::Wind) &&
-        RouteMap::ClimatologyData(WIND, configuration.time, position->lat,
-                                  position->lon, twdOverGround,
-                                  twsOverGround)) {
-      twdOverGround = heading_resolve(twdOverGround);
-      data_mask |= Position::CLIMATOLOGY_WIND;
-      break;
+        CanInvokeClimatology(ClimatologyService::Wind)) {
+      std::lock_guard<std::recursive_mutex> invocationLock(
+          ClimatologyThreadGuard::InvocationMutex());
+      if (RouteMap::ClimatologyData(WIND, configuration.time, position->lat,
+                                    position->lon, twdOverGround,
+                                    twsOverGround)) {
+        twdOverGround = heading_resolve(twdOverGround);
+        data_mask |= Position::CLIMATOLOGY_WIND;
+        break;
+      }
     } else if (configuration.ClimatologyType >
-               RouteMapConfiguration::CURRENTS_ONLY &&
+                   RouteMapConfiguration::CURRENTS_ONLY &&
                RouteMap::ClimatologyWindAtlasData &&
                CanInvokeClimatology(ClimatologyService::WindAtlas)) {
       int windatlas_count = 8;
       double speeds[8];
+      std::lock_guard<std::recursive_mutex> invocationLock(
+          ClimatologyThreadGuard::InvocationMutex());
       if (RouteMap::ClimatologyWindAtlasData(
-              configuration.time, position->lat, position->lon, windatlas_count,
-              atlas.directions, speeds, atlas.storm, atlas.calm)) {
+              configuration.time, position->lat, position->lon,
+              windatlas_count, atlas.directions, speeds, atlas.storm,
+              atlas.calm)) {
         /* compute wind speeds over water with the given current */
         for (int i = 0; i < windatlas_count; i++) {
           double twd = i * 360 / windatlas_count;

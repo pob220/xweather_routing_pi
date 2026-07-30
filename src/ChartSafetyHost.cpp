@@ -9,11 +9,20 @@
 
 #include "ChartSafetyHost.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <memory>
+#include <set>
+#include <utility>
+#include <vector>
 
 #include <wx/log.h>
 
+#include "ChartHazardEvaluator.h"
 #include "ChartSafetyCache.h"
+#include "georef.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -44,15 +53,11 @@ using IdentityFn = bool (*)(char*, int);
 using CheckFn = bool (*)(double, double, double, double,
                          const PlugInSegmentSafetyOptions*,
                          PlugInSegmentSafetyResult*);
+using RawTilesFn = bool (*)(const long*, const long*, int, int,
+                            PlugInSegmentSafetyResult*);
 using SnapshotFn = bool (*)(double, double, double, double, int, int,
                             const PlugInSegmentSafetyOptions*,
                             PlugInSegmentSafetyResult*);
-using SegmentMaskFn = bool (*)(double, double, double, double, double,
-                               const PlugInSegmentSafetyOptions*,
-                               PlugInSegmentSafetyResult*);
-using PolylineMaskFn = bool (*)(
-    const double*, const double*, const int*, int, double, int,
-    const PlugInSegmentSafetyOptions*, PlugInSegmentSafetyResult*);
 using ServiceFn = bool (*)(int, int,
                            PlugInSegmentSafetyRequestServiceResult*);
 using ReleaseFn = void (*)();
@@ -61,9 +66,8 @@ struct HostFunctions {
   RegisterFn register_cache{nullptr};
   IdentityFn get_identity{nullptr};
   CheckFn check{nullptr};
+  RawTilesFn raw_tiles{nullptr};
   SnapshotFn snapshot{nullptr};
-  SegmentMaskFn segment_mask{nullptr};
-  PolylineMaskFn polyline_mask{nullptr};
   ServiceFn service{nullptr};
   ReleaseFn release{nullptr};
   bool available{false};
@@ -72,6 +76,190 @@ struct HostFunctions {
 
 HostFunctions g_host;
 weather_routing::ChartSafetyCache* g_cache = nullptr;
+std::unique_ptr<weather_routing::ChartHazardEvaluator> g_evaluator;
+
+constexpr double kRawTileDegrees = 0.05;
+constexpr double kRawResolutionDegrees = 0.00125;
+constexpr int kRawCellsPerTile = 40;
+constexpr double kPi = 3.14159265358979323846;
+
+double NormalizeBearing(double bearing) {
+  bearing = std::fmod(bearing, 360.0);
+  return bearing < 0.0 ? bearing + 360.0 : bearing;
+}
+
+std::pair<long, long> TileAt(double lat, double lon) {
+  return {static_cast<long>(std::floor(lat / kRawTileDegrees)),
+          static_cast<long>(std::floor(lon / kRawTileDegrees))};
+}
+
+void AddTileHalo(long lat_tile, long lon_tile, int radius,
+                 std::set<std::pair<long, long>>* tiles) {
+  for (int dlat = -radius; dlat <= radius; ++dlat)
+    for (int dlon = -radius; dlon <= radius; ++dlon)
+      tiles->insert({lat_tile + dlat, lon_tile + dlon});
+}
+
+void AddCorridorTiles(double lat1, double lon1, double lat2, double lon2,
+                      double corridor_margin_nm,
+                      std::set<std::pair<long, long>>* tiles) {
+  if (!tiles || !std::isfinite(lat1) || !std::isfinite(lon1) ||
+      !std::isfinite(lat2) || !std::isfinite(lon2))
+    return;
+
+  double bearing = 0.0;
+  double distance_nm = 0.0;
+  ll_gc_ll_reverse(lat1, lon1, lat2, lon2, &bearing, &distance_nm);
+  if (!std::isfinite(distance_nm) || distance_nm < 0.0) return;
+
+  if (corridor_margin_nm <= 0.0) {
+    long y = std::lround(lat1 / kRawResolutionDegrees);
+    long x = std::lround(lon1 / kRawResolutionDegrees);
+    const long y1 = std::lround(lat2 / kRawResolutionDegrees);
+    const long x1 = std::lround(lon2 / kRawResolutionDegrees);
+    const long dx = std::labs(x1 - x);
+    const long dy = std::labs(y1 - y);
+    const long sx = x < x1 ? 1 : -1;
+    const long sy = y < y1 ? 1 : -1;
+    long error = dx - dy;
+    for (;;) {
+      tiles->insert(TileAt(y * kRawResolutionDegrees,
+                           x * kRawResolutionDegrees));
+      if (x == x1 && y == y1) break;
+      const long twice_error = 2 * error;
+      if (twice_error > -dy) {
+        error -= dy;
+        x += sx;
+      }
+      if (twice_error < dx) {
+        error += dx;
+        y += sy;
+      }
+    }
+    return;
+  }
+
+  const int samples = std::max(
+      2, std::min(1024, static_cast<int>(std::ceil(distance_nm / 1.5)) + 1));
+  const int offset_count =
+      static_cast<int>(std::ceil(2.0 * corridor_margin_nm / 2.0));
+  for (int offset_index = 0; offset_index <= offset_count; ++offset_index) {
+    const double offset_nm =
+        offset_count == 0
+            ? 0.0
+            : -corridor_margin_nm +
+                  2.0 * corridor_margin_nm * offset_index / offset_count;
+    for (int sample = 0; sample < samples; ++sample) {
+      const double sample_distance =
+          distance_nm * sample / static_cast<double>(samples - 1);
+      double lat = lat1;
+      double lon = lon1;
+      if (sample_distance > 0.0)
+        ll_gc_ll(lat1, lon1, bearing, sample_distance, &lat, &lon);
+      if (std::abs(offset_nm) > 0.0) {
+        double offset_lat = lat;
+        double offset_lon = lon;
+        ll_gc_ll(lat, lon,
+                 NormalizeBearing(
+                     bearing + (offset_nm < 0.0 ? -90.0 : 90.0)),
+                 std::abs(offset_nm), &offset_lat, &offset_lon);
+        lat = offset_lat;
+        lon = offset_lon;
+      }
+      tiles->insert(TileAt(lat, lon));
+    }
+  }
+
+  constexpr int kRadialBearings = 24;
+  const int radial_steps =
+      std::max(1, static_cast<int>(std::ceil(corridor_margin_nm / 2.0)));
+  const double endpoint_lats[2] = {lat1, lat2};
+  const double endpoint_lons[2] = {lon1, lon2};
+  for (int endpoint = 0; endpoint < 2; ++endpoint) {
+    for (int radial_step = 0; radial_step <= radial_steps; ++radial_step) {
+      const double radius_nm =
+          corridor_margin_nm * radial_step / radial_steps;
+      for (int direction = 0; direction < kRadialBearings; ++direction) {
+        double lat = endpoint_lats[endpoint];
+        double lon = endpoint_lons[endpoint];
+        if (radius_nm > 0.0)
+          ll_gc_ll(endpoint_lats[endpoint], endpoint_lons[endpoint],
+                   360.0 * direction / kRadialBearings, radius_nm, &lat,
+                   &lon);
+        tiles->insert(TileAt(lat, lon));
+      }
+    }
+  }
+}
+
+bool PrewarmRawTiles(
+    const double* latitudes, const double* longitudes,
+    const int* point_counts, int polyline_count, double corridor_margin_nm,
+    int fine_tile_halo, const PlugInSegmentSafetyOptions* options,
+    PlugInSegmentSafetyResult* result) {
+  if (!g_host.available || !g_host.raw_tiles || !latitudes || !longitudes ||
+      !point_counts || polyline_count <= 0 || !options)
+    return false;
+
+  std::set<std::pair<long, long>> route_tiles;
+  int point_offset = 0;
+  for (int polyline = 0; polyline < polyline_count; ++polyline) {
+    const int count = point_counts[polyline];
+    if (count < 0 || count > 1000000 - point_offset) return false;
+    if (count == 1) {
+      AddCorridorTiles(latitudes[point_offset], longitudes[point_offset],
+                       latitudes[point_offset], longitudes[point_offset],
+                       std::max(0.0, corridor_margin_nm), &route_tiles);
+    } else {
+      for (int point = 1; point < count; ++point)
+        AddCorridorTiles(latitudes[point_offset + point - 1],
+                         longitudes[point_offset + point - 1],
+                         latitudes[point_offset + point],
+                         longitudes[point_offset + point],
+                         std::max(0.0, corridor_margin_nm), &route_tiles);
+    }
+    point_offset += count;
+  }
+  if (route_tiles.empty()) return false;
+
+  fine_tile_halo = std::clamp(fine_tile_halo, 0, 8);
+  if (fine_tile_halo > 0) {
+    const auto exact = route_tiles;
+    for (const auto& tile : exact)
+      AddTileHalo(tile.first, tile.second, fine_tile_halo, &route_tiles);
+  }
+
+  std::set<std::pair<long, long>> raw_tiles;
+  for (const auto& tile : route_tiles) {
+    const double mid_lat =
+        tile.first * kRawTileDegrees + kRawTileDegrees / 2.0;
+    const double cell_nm =
+        std::min(kRawResolutionDegrees * 60.0,
+                 kRawResolutionDegrees * 60.0 *
+                     std::max(0.1, std::abs(std::cos(mid_lat * kPi / 180.0))));
+    int cell_halo =
+        options->safety_margin_nm > 0.0
+            ? static_cast<int>(std::ceil(options->safety_margin_nm /
+                                         std::max(0.01, cell_nm)))
+            : 0;
+    cell_halo = std::min(cell_halo, 128);
+    const int margin_tile_halo =
+        (cell_halo + kRawCellsPerTile - 1) / kRawCellsPerTile;
+    AddTileHalo(tile.first, tile.second, margin_tile_halo, &raw_tiles);
+  }
+
+  std::vector<long> lat_tiles;
+  std::vector<long> lon_tiles;
+  lat_tiles.reserve(raw_tiles.size());
+  lon_tiles.reserve(raw_tiles.size());
+  for (const auto& tile : raw_tiles) {
+    lat_tiles.push_back(tile.first);
+    lon_tiles.push_back(tile.second);
+  }
+  return g_host.raw_tiles(lat_tiles.data(), lon_tiles.data(),
+                          static_cast<int>(lat_tiles.size()),
+                          options->check_depth != 0 ? 1 : 0, result);
+}
 
 }  // namespace
 
@@ -86,12 +274,10 @@ bool Initialize(ChartSafetyCache* cache) {
   g_host.get_identity = Resolve<IdentityFn>(
       "PlugIn_GetSegmentSafetyChartIdentity");
   g_host.check = Resolve<CheckFn>("PlugIn_CheckSegmentSafety");
+  g_host.raw_tiles = Resolve<RawTilesFn>(
+      "PlugIn_PrewarmSegmentSafetyRawTiles");
   g_host.snapshot = Resolve<SnapshotFn>(
       "PlugIn_PrewarmSegmentSafetyHazardSnapshot");
-  g_host.segment_mask = Resolve<SegmentMaskFn>(
-      "PlugIn_PrewarmSegmentSafetyRouteMaskForSegment");
-  g_host.polyline_mask = Resolve<PolylineMaskFn>(
-      "PlugIn_PrewarmSegmentSafetyRouteMaskForPolylinesWithTileHalo");
   g_host.service = Resolve<ServiceFn>(
       "PlugIn_ServicePendingSegmentSafetyRequests");
   g_host.release = Resolve<ReleaseFn>(
@@ -99,8 +285,7 @@ bool Initialize(ChartSafetyCache* cache) {
 
   g_host.available =
       cache && g_host.register_cache && g_host.get_identity && g_host.check &&
-      g_host.snapshot && g_host.segment_mask && g_host.polyline_mask &&
-      g_host.service && g_host.release;
+      g_host.raw_tiles && g_host.snapshot && g_host.service && g_host.release;
   if (!g_host.available) return false;
 
   PlugInSegmentSafetyTileCacheCallbacks callbacks = {};
@@ -121,10 +306,13 @@ bool Initialize(ChartSafetyCache* cache) {
     return false;
   }
   cache->SetIdentity(identity);
+  g_evaluator =
+      std::make_unique<weather_routing::ChartHazardEvaluator>(*cache);
   return true;
 }
 
 void Shutdown() {
+  g_evaluator.reset();
   if (g_host.registered && g_host.register_cache)
     g_host.register_cache(nullptr);
   g_host = HostFunctions();
@@ -167,9 +355,16 @@ bool FlushCache() {
   return result;
 }
 
+void InvalidateDerivedMasks() {
+  if (g_evaluator) g_evaluator->ClearDerivedMasks();
+}
+
 bool CheckSegment(double lat1, double lon1, double lat2, double lon2,
                   const PlugInSegmentSafetyOptions* options,
                   PlugInSegmentSafetyResult* result) {
+  if (g_evaluator && options && result &&
+      g_evaluator->CheckSegment(lat1, lon1, lat2, lon2, *options, result))
+    return true;
   return g_host.available &&
          g_host.check(lat1, lon1, lat2, lon2, options, result);
 }
@@ -188,9 +383,11 @@ bool PrewarmRouteMaskForSegment(
     double lat1, double lon1, double lat2, double lon2,
     double corridor_margin_nm, const PlugInSegmentSafetyOptions* options,
     PlugInSegmentSafetyResult* result) {
-  return g_host.available &&
-         g_host.segment_mask(lat1, lon1, lat2, lon2, corridor_margin_nm,
-                             options, result);
+  const double latitudes[2] = {lat1, lat2};
+  const double longitudes[2] = {lon1, lon2};
+  const int point_count = 2;
+  return PrewarmRawTiles(latitudes, longitudes, &point_count, 1,
+                         corridor_margin_nm, 0, options, result);
 }
 
 bool PrewarmRouteMaskForPolylinesWithTileHalo(
@@ -198,10 +395,8 @@ bool PrewarmRouteMaskForPolylinesWithTileHalo(
     const int* point_counts, int polyline_count, double corridor_margin_nm,
     int fine_tile_halo, const PlugInSegmentSafetyOptions* options,
     PlugInSegmentSafetyResult* result) {
-  return g_host.available &&
-         g_host.polyline_mask(latitudes, longitudes, point_counts,
-                              polyline_count, corridor_margin_nm,
-                              fine_tile_halo, options, result);
+  return PrewarmRawTiles(latitudes, longitudes, point_counts, polyline_count,
+                         corridor_margin_nm, fine_tile_halo, options, result);
 }
 
 bool ServicePendingRequests(

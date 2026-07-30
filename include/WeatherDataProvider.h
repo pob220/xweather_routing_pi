@@ -23,6 +23,7 @@
 #include <wx/wx.h>
 
 #include <functional>
+#include <memory>
 
 #include "GribRecord.h"
 #include "GribRecordSet.h"
@@ -159,61 +160,37 @@ private:
 };
 
 // ------
-class Shared_GribRecordSetData : public wxRefCounter {
+class Shared_GribRecordSet {
 public:
-  Shared_GribRecordSetData(WR_GribRecordSet* gribset = 0)
-      : m_GribRecordSet(gribset) {}
-  Shared_GribRecordSetData(const Shared_GribRecordSetData& data)
-      : m_GribRecordSet(data.m_GribRecordSet) {}
-
-  void SetGribRecordSet(WR_GribRecordSet* gribset) {
-    m_GribRecordSet = gribset;
-  }
-  WR_GribRecordSet* GetGribRecordSet() const { return m_GribRecordSet; }
-
-  ~Shared_GribRecordSetData();
-
-protected:
-  WR_GribRecordSet* m_GribRecordSet;
-};
-
-class Shared_GribRecordSet : public wxTrackable {
-public:
-  // initializes this, assigning to the
-  // internal data pointer a new instance of Shared_GribRecordSetData
   Shared_GribRecordSet(WR_GribRecordSet* ptr = 0)
-      : m_data(new Shared_GribRecordSetData(ptr)) {}
-  Shared_GribRecordSet& operator=(const Shared_GribRecordSet& tocopy) {
-    // shallow copy: this is just a fast copy of pointers; the real
-    // memory-consuming data which typically is stored inside
-    m_data = tocopy.m_data;
-    return *this;
-  }
+      : m_data(ptr) {}
+  explicit Shared_GribRecordSet(
+      std::shared_ptr<WR_GribRecordSet> ptr)
+      : m_data(std::move(ptr)) {}
 
   void SetGribRecordSet(WR_GribRecordSet* ptr) {
-    // make sure changes to this class do not affect other instances
-    // currently sharing our same refcounted data:
-    UnShare();
-    m_data->SetGribRecordSet(ptr);
+    m_data.reset(ptr);
+  }
+  void SetSharedGribRecordSet(std::shared_ptr<WR_GribRecordSet> ptr) {
+    m_data = std::move(ptr);
   }
 
   WR_GribRecordSet* GetGribRecordSet() const {
-    return m_data->GetGribRecordSet();
+    return m_data.get();
+  }
+  std::shared_ptr<WR_GribRecordSet> GetSharedGribRecordSet() const {
+    return m_data;
   }
 
   bool operator==(const Shared_GribRecordSet& other) const {
-    if (m_data.get() == other.m_data.get())
-      return true;  // this instance and the 'other' one share the same data...
-    return (m_data->GetGribRecordSet() == other.m_data->GetGribRecordSet());
+    return m_data == other.m_data;
   }
 
-  wxObjectDataPtr<Shared_GribRecordSetData> m_data;
-
-protected:
-  void UnShare() {
-    if (m_data->GetRefCount() == 1) return;
-    m_data.reset(new Shared_GribRecordSetData(*m_data));
-  }
+private:
+  // std::shared_ptr has thread-safe ownership accounting.  Published GRIB
+  // frames are immutable, so UI-thread cache eviction and worker reads may
+  // safely overlap without wxRefCounter races.
+  std::shared_ptr<WR_GribRecordSet> m_data;
 };
 
 #endif

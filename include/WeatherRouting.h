@@ -27,6 +27,7 @@
 
 #include <map>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 #ifdef __OCPN__ANDROID__
@@ -302,7 +303,10 @@ public:
    */
   std::list<RouteMapOverlay*> CurrentRouteMaps(bool messagedialog = false);
   RouteMapOverlay* FirstCurrentRouteMap();
-  RouteMapOverlay* m_RouteMapOverlayNeedingGrib;
+  void RequestGribTimelineFrame(RouteMapOverlay* routeMapOverlay,
+                                const wxDateTime& time);
+  void HandleGribTimelineFrame(const wxString& requestToken,
+                               GribRecordSet* frame);
 
   void RebuildList();
   /**
@@ -744,6 +748,15 @@ public:
   bool HasCompleteMultiLegOptimizationCandidate() const;
 
 private:
+
+  struct PendingGribRequest {
+    RouteMapOverlay* route_map_overlay;
+    std::int64_t timeline_key;
+  };
+
+  std::mutex m_GribRequestMutex;
+  std::map<wxString, PendingGribRequest> m_PendingGribRequests;
+  std::uint64_t m_NextGribRequestToken{1};
 
   struct SimplifiedRouteState {
     uint64_t original_fingerprint;

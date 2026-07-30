@@ -303,17 +303,17 @@ void weather_routing_pi::SetPluginMessage(wxString& message_id,
     wxCharBuffer bptr = sptr.To8BitData();
     const char* ptr = bptr.data();
 
-    GribRecordSet* gptr;
-    sscanf(ptr, "%p", &gptr);
+    GribRecordSet* gptr = nullptr;
+    if (sscanf(ptr, "%p", &gptr) != 1) gptr = nullptr;
 
     if (m_pWeather_Routing) {
-      RouteMapOverlay* routemapoverlay =
-          m_pWeather_Routing->m_RouteMapOverlayNeedingGrib;
-      if (routemapoverlay) {
-        routemapoverlay->Lock();
-        routemapoverlay->SetNewGrib(gptr);
-        routemapoverlay->Unlock();
-      }
+      const wxString requestToken =
+          wxString::FromUTF8(v["WeatherRoutingRequestToken"].asCString());
+      if (!requestToken.IsEmpty())
+        m_pWeather_Routing->HandleGribTimelineFrame(requestToken, gptr);
+      else
+        wxLogWarning(
+            "WR_GRIB_BROKER ignored timeline response without request token");
     }
   } else if (message_id == _T("CLIMATOLOGY")) {
     if (!m_pWeather_Routing) return; /* not ready */
@@ -711,6 +711,7 @@ void weather_routing_pi::SetChartSafetyRamCacheMiB(int ram_mib) {
 }
 
 bool weather_routing_pi::ClearChartSafetyCache() {
+  weather_routing::chart_safety_host::InvalidateDerivedMasks();
   return m_chart_safety_cache.Clear();
 }
 

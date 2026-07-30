@@ -10,6 +10,8 @@
 #ifndef _WEATHER_ROUTING_CLIMATOLOGY_THREAD_GUARD_H_
 #define _WEATHER_ROUTING_CLIMATOLOGY_THREAD_GUARD_H_
 
+#include <mutex>
+
 enum class ClimatologyService {
   Wind,
   Current,
@@ -24,6 +26,13 @@ public:
   static bool IsPrepared(ClimatologyService service);
   static bool CanInvoke(ClimatologyService service, bool isMainThread);
   static bool ShouldLogBlocked(ClimatologyService service);
+  /**
+   * Serialize calls into the legacy climatology callback table.  Preparation
+   * makes worker calls legal; this lock makes concurrent calls deterministic
+   * even when an installed climatology provider still uses shared scratch
+   * storage internally.
+   */
+  static std::recursive_mutex& InvocationMutex();
 };
 
 #endif

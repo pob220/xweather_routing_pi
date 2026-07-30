@@ -26,6 +26,7 @@ void Shutdown();
 bool Available();
 std::string Status();
 bool FlushCache();
+void InvalidateDerivedMasks();
 
 bool CheckSegment(double lat1, double lon1, double lat2, double lon2,
                   const PlugInSegmentSafetyOptions* options,

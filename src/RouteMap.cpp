@@ -85,10 +85,6 @@
 
 long RouteMapPosition::s_ID = 0;
 
-Shared_GribRecordSetData::~Shared_GribRecordSetData() {
-  delete m_GribRecordSet;
-}
-
 weather_routing_pi* RouteMapConfiguration::s_plugin_instance = nullptr;
 
 namespace {
@@ -1158,8 +1154,7 @@ bool RouteMap::AwaitChartSafetyData(long timeoutMilliseconds) {
   return true;
 }
 
-typedef wxWeakRef<Shared_GribRecordSet> Shared_GribRecordSetRef;
-std::map<time_t, Shared_GribRecordSetRef> grib_key;
+std::map<time_t, std::weak_ptr<WR_GribRecordSet>> grib_key;
 wxMutex s_key_mutex;
 
 void RouteMap::SetNewGrib(GribRecordSet* grib) {
@@ -1179,11 +1174,13 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
              (tmp->getNi() << 16);
 
   {
-    std::map<time_t, Shared_GribRecordSetRef>::iterator it;
+    std::map<time_t, std::weak_ptr<WR_GribRecordSet>>::iterator it;
     wxMutexLocker lock(s_key_mutex);
     it = grib_key.find(grib->m_Reference_Time);
-    if (it != grib_key.end() && it->second != 0) {
-      m_SharedNewGrib = *it->second;
+    const std::shared_ptr<WR_GribRecordSet> existing =
+        it == grib_key.end() ? nullptr : it->second.lock();
+    if (existing) {
+      m_SharedNewGrib.SetSharedGribRecordSet(existing);
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       // compute fake generation grib->m_ID
       if (m_NewGrib->m_ID == bogus_ID) {
@@ -1223,6 +1220,11 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
     }
   }
   m_SharedNewGrib.SetGribRecordSet(m_NewGrib);
+  {
+    wxMutexLocker lock(s_key_mutex);
+    grib_key[m_NewGrib->m_Reference_Time] =
+        m_SharedNewGrib.GetSharedGribRecordSet();
+  }
   PublishTimelineFrame(m_SharedNewGrib);
 }
 
@@ -1234,11 +1236,13 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
   }
 
   {
-    std::map<time_t, Shared_GribRecordSetRef>::iterator it;
+    std::map<time_t, std::weak_ptr<WR_GribRecordSet>>::iterator it;
     wxMutexLocker lock(s_key_mutex);
     it = grib_key.find(grib->m_Reference_Time);
-    if (it != grib_key.end() && it->second != 0) {
-      m_SharedNewGrib = *it->second;
+    const std::shared_ptr<WR_GribRecordSet> existing =
+        it == grib_key.end() ? nullptr : it->second.lock();
+    if (existing) {
+      m_SharedNewGrib.SetSharedGribRecordSet(existing);
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       if (m_NewGrib->m_ID == grib->m_ID) {
         PublishTimelineFrame(m_SharedNewGrib);
@@ -1269,6 +1273,11 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
     }
   }
   m_SharedNewGrib.SetGribRecordSet(m_NewGrib);
+  {
+    wxMutexLocker lock(s_key_mutex);
+    grib_key[m_NewGrib->m_Reference_Time] =
+        m_SharedNewGrib.GetSharedGribRecordSet();
+  }
   PublishTimelineFrame(m_SharedNewGrib);
 }
 

@@ -33,8 +33,13 @@ services as the GUI path. It assumes:
 - the requested time range is covered by the loaded GRIB data;
 - the selected/default polar and boat settings are usable;
 - chart-backed safety tests require the configured OpenCPN chart database;
-- chart-backed safety uses OpenCPN core/plugin APIs, not plugin-side chart
-  parsing.
+- OpenCPN's host seam extracts immutable raw chart-classification tiles, while
+  Weather Routing owns their RAM/disk lifetime, margin/depth masks, cache
+  invalidation and segment evaluation. Route workers therefore never call
+  mutable chart objects;
+- raw tile extraction intentionally remains a host responsibility so every
+  chart format supported by OpenCPN, including formats a plugin cannot parse,
+  has the same authoritative classification.
 
 The scenario can name a boat/polar file through `route.boatFile`. GRIB data is
 still supplied by the existing OpenCPN/Weather Routing configuration or the

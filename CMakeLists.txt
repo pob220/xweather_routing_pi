@@ -174,6 +174,7 @@ add_definitions(-DUSE_S57)
 SET(SRCS
             src/AppendOnlyCache.cpp
             src/ChartSafetyCache.cpp
+            src/ChartHazardEvaluator.cpp
             src/ChartSafetyHost.cpp
             src/OceanPrewarmPolicy.cpp
             src/weather_routing_pi.cpp
@@ -230,6 +231,7 @@ SET(SRCS
 SET (HDRS
             include/AppendOnlyCache.h
             include/ChartSafetyCache.h
+            include/ChartHazardEvaluator.h
             include/ChartSafetyHost.h
             include/OceanPrewarmPolicy.h
             include/ClimatologyThreadGuard.h

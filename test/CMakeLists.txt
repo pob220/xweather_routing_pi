@@ -35,6 +35,7 @@ REQUIRED)
 set(TEST_SRC
     AppendOnlyCache_tests.cpp
     ChartSafetyCache_tests.cpp
+    ChartHazardEvaluator_tests.cpp
     OceanPrewarmPolicy_tests.cpp
     Polar_tests.cpp
     PolygonRegion_tests.cpp
@@ -52,6 +53,7 @@ set(TEST_SRC
     ModernNativeEngine_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/AppendOnlyCache.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartSafetyCache.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartHazardEvaluator.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/OceanPrewarmPolicy.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
@@ -73,6 +75,19 @@ set(TEST_SRC
    )
    
    add_executable(weather_routing_pi_tests ${TEST_SRC})
+
+   set(WEATHER_ROUTING_TEST_SANITIZER "" CACHE STRING
+       "Optional sanitizer for Weather Routing tests: address, thread, or undefined")
+   set_property(CACHE WEATHER_ROUTING_TEST_SANITIZER PROPERTY STRINGS
+                "" address thread undefined)
+   if (WEATHER_ROUTING_TEST_SANITIZER)
+       target_compile_options(weather_routing_pi_tests PRIVATE
+           -fno-omit-frame-pointer
+           -fsanitize=${WEATHER_ROUTING_TEST_SANITIZER})
+       target_link_options(weather_routing_pi_tests PRIVATE
+           -fno-omit-frame-pointer
+           -fsanitize=${WEATHER_ROUTING_TEST_SANITIZER})
+   endif()
 
    # Uncomment include directories as needed - @todo tests should inherit this from main plugin
    target_include_directories(weather_routing_pi_tests 

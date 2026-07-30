@@ -227,7 +227,7 @@ public:
    * Requests grib data for a specific time.
    * @param time Time for which to request grib data.
    */
-  void RequestGrib(wxDateTime time);
+  void RequestGrib(wxDateTime time, const wxString& requestToken);
 
   /**
    * Gets plot data for either the cursor route or destination route.

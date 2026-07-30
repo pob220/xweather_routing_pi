@@ -42,6 +42,25 @@ struct ChartSafetyCacheStats {
   std::size_t dirty_entries{0};
 };
 
+/** Immutable plugin-owned chart classification tile used by route workers. */
+struct ChartHazardTile {
+  int group_index{0};
+  long lat_tile{0};
+  long lon_tile{0};
+  double resolution{0.0};
+  int rows{0};
+  int cols{0};
+  int chart_db_index{-1};
+  int chart_scale{-1};
+  int source{PI_SEGMENT_SAFETY_SOURCE_NONE};
+  std::uint32_t hazard_summary_flags{0};
+  bool depth_complete{false};
+  std::string chart_path;
+  std::vector<unsigned short> hazard_flags;
+  std::vector<unsigned char> has_depth;
+  std::vector<float> min_depth_m;
+};
+
 /**
  * Plugin-owned hot RAM and persistent authoritative chart-safety tile cache.
  *
@@ -70,6 +89,8 @@ public:
 
   bool Lookup(long lat_tile, long lon_tile, bool require_depth,
               PlugInSegmentSafetyTile* tile);
+  bool LookupSnapshot(long lat_tile, long lon_tile, bool require_depth,
+                      std::shared_ptr<const ChartHazardTile>* tile);
   void Store(const PlugInSegmentSafetyTile* tile);
   bool Flush(bool allow_compaction = false);
   bool Clear();

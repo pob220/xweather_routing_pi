@@ -871,9 +871,32 @@ bool ModernNativeRouteEnabled(const RouteMapConfiguration& configuration) {
          configuration.RouteGUID.IsEmpty();
 }
 
+bool ModernNativeRouteRequiresSerialHostServices(
+    const RouteMapConfiguration& configuration) {
+  if (!ModernNativeRouteEnabled(configuration)) return false;
+
+  // GRIB frames and chart masks are immutable snapshots. GSHHS pins its
+  // lifetime for a complete query, while climatology and cyclone callbacks
+  // are admitted only after main-thread preparation and serialize at the
+  // callback boundary. The boundary plugin has neither contract, so it alone
+  // retains the deterministic whole-route lane.
+  return configuration.DetectBoundary;
+}
+
 bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
   const auto started = std::chrono::steady_clock::now();
   const RouteMapConfiguration configuration = overlay.GetConfiguration();
+  const bool enforceChartSafety =
+      configuration.DetectLand &&
+      (configuration.UseChartSafetyForPropagation ||
+       configuration.ChartSafetyPropagationFallbackTried);
+  ConstraintChecker::ResetSegmentSafetyDiagnostics(enforceChartSafety,
+                                                   enforceChartSafety);
+  ConstraintChecker::SetSegmentSafetyDiagnosticContext(wxString::Format(
+      "native route=\"%s to %s\" group=%s candidate_offset=%d",
+      configuration.Start, configuration.End,
+      configuration.DepartureTimeOptimizationGroupId,
+      configuration.DepartureTimeOptimizationOffsetMinutes));
   auto weather =
       std::make_shared<OpenCpnWeatherProvider>(overlay, configuration);
   auto land = std::make_shared<OpenCpnLandProvider>(overlay, configuration);
@@ -990,6 +1013,10 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
     wxLogMessage("WR_MODERN_NATIVE_STAGE route=\"%s -> %s\" %s",
                  configuration.Start, configuration.End,
                  wxString::FromUTF8(reason));
+  if (configuration.DetectLand)
+    ConstraintChecker::LogSegmentSafetyDiagnostics(
+        wxString::Format("native candidate offset=%d",
+                         configuration.DepartureTimeOptimizationOffsetMinutes));
   overlay.InstallModernNativeResult(result);
   if (!Complete(result.status)) error = wxString::FromUTF8(result.message);
   return Complete(result.status);
