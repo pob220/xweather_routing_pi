@@ -64,6 +64,15 @@ final result when the run completes or fails.
 plugin's existing JSON message interface. The file must exist and cover the
 scenario's route area and departure/arrival window.
 
+`WR_HEADLESS_PLANNED_ARRIVAL_TIME` changes the selected scenario to
+arrival-time routing and accepts an ISO timestamp (a trailing `Z` means UTC).
+`WR_HEADLESS_ARRIVAL_HORIZON_MINUTES` controls how far before that deadline
+departures may be considered, and
+`WR_HEADLESS_ARRIVAL_SAFETY_MARGIN_MINUTES` sets the required early-arrival
+buffer. `WR_HEADLESS_ARRIVAL_MAX_EVALUATIONS` can bound the number of full
+probe routes in automated smoke tests. This path otherwise runs the same
+reverse-guided, forward-validated planner as the GUI.
+
 The existing `WR_HEADLESS_ROUTE_TEST` path remains supported. If
 `WR_HEADLESS_SCENARIO` is set without `WR_HEADLESS_ROUTE_TEST`, the plugin still
 starts the headless runner.

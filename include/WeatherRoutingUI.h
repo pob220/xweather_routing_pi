@@ -378,6 +378,9 @@ protected:
   wxRadioButton* m_rbStartWaypointSelection;
   /** The starting point of the route. */
   wxComboBox* m_cStart;
+  wxRadioButton* m_rbRouteByDepartureTime;
+  wxRadioButton* m_rbRouteByArrivalTime;
+  wxStaticText* m_staticTextPlannedTime;
   wxStaticText* m_staticText28;
   /**
    * Button to set the start time to match the currently loaded GRIB file's
@@ -416,6 +419,10 @@ protected:
   wxStaticText* m_staticTextDepartureStepHours;
   wxSpinCtrl* m_sDepartureTimeOptimizationStepMinutes;
   wxStaticText* m_staticTextDepartureStepMinutes;
+  wxStaticText* m_staticTextArrivalSafetyMargin;
+  wxSpinCtrl* m_sArrivalSafetyMarginMinutes;
+  wxStaticText* m_staticTextArrivalSafetyMarginMinutes;
+  wxStaticText* m_tArrivalPlanningHint;
   wxTextCtrl* m_tBoat;
   wxButton* m_bBoatFilename;
   wxButton* m_bEditBoat;
@@ -499,6 +506,7 @@ protected:
   virtual void OnStartFromBoat(wxCommandEvent& event) { event.Skip(); }
   virtual void OnStartFromPosition(wxCommandEvent& event) { event.Skip(); }
   virtual void OnStartFromWaypoint(wxCommandEvent& event) { event.Skip(); }
+  virtual void OnRoutingTimeMode(wxCommandEvent& event) { event.Skip(); }
   virtual void OnEndAtPosition(wxCommandEvent& event) { event.Skip(); }
   virtual void OnEndAtWaypoint(wxCommandEvent& event) { event.Skip(); }
   virtual void OnUpdate(wxCommandEvent& event) { event.Skip(); }

@@ -26,6 +26,7 @@
 #include "RoutingResourcePolicy.h"
 #include "SunCalculator.h"
 #include "WeatherDataProvider.h"
+#include "supercpn/weather_routing/ArrivalPlanner.h"
 #include "supercpn/weather_routing/Engine.h"
 
 namespace {
@@ -43,6 +44,7 @@ wr::TimePoint ToNative(const wxDateTime& time) {
 bool Complete(wr::RoutingStatus status) {
   return status == wr::RoutingStatus::Complete ||
          status == wr::RoutingStatus::CompleteUsingReverseRecovery ||
+         status == wr::RoutingStatus::CompleteUsingFrontierRecovery ||
          status == wr::RoutingStatus::CompleteUsingGraphFallback;
 }
 
@@ -793,7 +795,9 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   request.options.adaptiveHeadings = true;
   request.options.adaptiveFrontierDensity = true;
   request.options.useReverseRecovery =
-      configuration.UseReverseReachabilityRecovery;
+      configuration.UseReverseReachabilityRecovery ||
+      configuration.TimeMode ==
+          RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
   request.options.useFrontierRecovery = true;
   request.options.useGraphFallback = true;
   request.options.retryStages = quality.retry_stages;
@@ -908,8 +912,140 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
   environment.memberIdentity = "OpenCPN native deterministic";
   const wr::RoutingRequest request = BuildRequest(overlay, configuration);
   wr::RoutingEngine engine;
-  const wr::RoutingResult result = engine.route(request, environment);
+  wr::RoutingResult result;
+  OpenCpnWeatherProvider::CacheDiagnostics arrivalWeatherCache;
+  std::optional<wr::ArrivalPlanningResult> arrivalPlan;
+  // A chart-safety scout is one deliberately coarse geometry probe used only
+  // to prewarm immutable chart masks.  Do not recursively run the complete
+  // arrival-time departure search for that probe; the authoritative route
+  // below performs arrival planning with full-quality forward validation.
+  const bool planArrival =
+      configuration.TimeMode ==
+          RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME &&
+      !configuration.chart_safety_scout_preview;
+  if (planArrival) {
+    if (!configuration.PlannedArrivalTime.IsValid()) {
+      error = _("Invalid planned arrival time");
+      return false;
+    }
+    wr::ArrivalPlanningOptions options;
+    options.plannedArrival = ToNative(configuration.PlannedArrivalTime);
+    if (configuration.StartType ==
+        RouteMapConfiguration::START_FROM_BOAT)
+      options.earliestAllowedDeparture = ToNative(wxDateTime::Now());
+    options.safetyMargin = wr::Duration{
+        std::max(0, configuration.ArrivalSafetyMarginMinutes) * 60LL};
+    options.searchHorizon = wr::Duration{
+        std::max(1, configuration.ArrivalSearchHorizonMinutes) * 60LL};
+    options.initialSearchStep = wr::Duration{
+        std::max(1, configuration.DepartureTimeOptimizationStepMinutes) *
+        60LL};
+    options.refinementStep =
+        std::max(wr::Duration{60},
+                 std::min(wr::Duration{15 * 60},
+                          options.initialSearchStep / 4));
+    options.arrivalTolerance = wr::Duration{60};
+    const int effort = weather_routing::NormalizeRoutingEffortPercent(
+        configuration.RoutingEffortPercent);
+    options.maximumRouteEvaluations =
+        effort >= 400 ? 32U : effort >= 200 ? 24U : effort >= 150 ? 20U : 16U;
+    wxString headlessMaximumEvaluations;
+    wxString headlessMode;
+    const bool headless =
+        wxGetEnv("WR_HEADLESS_ROUTE_TEST", &headlessMode) ||
+        wxGetEnv("WR_HEADLESS_SCENARIO", &headlessMode);
+    if (headless &&
+        wxGetEnv("WR_HEADLESS_ARRIVAL_MAX_EVALUATIONS",
+                 &headlessMaximumEvaluations)) {
+      long requested = 0;
+      if (headlessMaximumEvaluations.ToLong(&requested))
+        options.maximumRouteEvaluations = static_cast<unsigned>(
+            std::max(1L, std::min(64L, requested)));
+    }
+    options.nominalPassageSpeedKnots =
+        configuration.UseMotor && configuration.MotorSpeed > 0.0
+            ? std::max(3.0, configuration.MotorSpeed)
+            : 5.0;
+    wr::ArrivalPlanner planner;
+    arrivalPlan = planner.plan(
+        request, options, [&](wr::TimePoint departure) {
+          wr::RoutingRequest candidate = request;
+          candidate.departure = departure;
+          // A departure probe is a complete authoritative route transaction.
+          // Do not let provider cache history or any mutable service state
+          // leak from one departure into another: that was previously shown
+          // to change hard-route frontier retention.
+          auto candidateWeather = std::make_shared<OpenCpnWeatherProvider>(
+              overlay, configuration);
+          auto candidateLand =
+              std::make_shared<OpenCpnLandProvider>(overlay, configuration);
+          auto candidatePerformance =
+              std::make_shared<OpenCpnPerformanceModel>(configuration);
+          wr::RoutingEnvironment candidateEnvironment;
+          candidateEnvironment.grib = candidateWeather;
+          candidateEnvironment.landAndBoundaries = candidateLand;
+          candidateEnvironment.performance = candidatePerformance;
+          candidateEnvironment.memberIdentity =
+              "OpenCPN native deterministic arrival probe";
+          const wr::RoutingResult candidateResult =
+              wr::RoutingEngine().route(candidate, candidateEnvironment);
+          const OpenCpnWeatherProvider::CacheDiagnostics diagnostics =
+              candidateWeather->cacheDiagnostics();
+          arrivalWeatherCache.calls += diagnostics.calls;
+          arrivalWeatherCache.immediateHits += diagnostics.immediateHits;
+          arrivalWeatherCache.localHits += diagnostics.localHits;
+          arrivalWeatherCache.sharedHits += diagnostics.sharedHits;
+          arrivalWeatherCache.misses += diagnostics.misses;
+          arrivalWeatherCache.waits += diagnostics.waits;
+          arrivalWeatherCache.interpolationMicroseconds +=
+              diagnostics.interpolationMicroseconds;
+          return candidateResult;
+        });
+    if (arrivalPlan->route)
+      result = std::move(*arrivalPlan->route);
+    else {
+      result.status =
+          arrivalPlan->status == wr::ArrivalPlanningStatus::Cancelled
+              ? wr::RoutingStatus::Cancelled
+              : wr::RoutingStatus::NoFeasibleRoute;
+      result.message = arrivalPlan->message;
+    }
+  } else {
+    result = engine.route(request, environment);
+  }
   RouteMapConfiguration resultConfiguration = overlay.GetConfiguration();
+  if (arrivalPlan) {
+    resultConfiguration.ArrivalPlanningEvaluatedRoutes =
+        static_cast<int>(arrivalPlan->diagnostics.forwardRoutesEvaluated);
+    resultConfiguration.ArrivalPlanningFeasibleRoutes =
+        static_cast<int>(arrivalPlan->diagnostics.feasibleRoutes);
+    resultConfiguration.ArrivalPlanningScheduleMarginSeconds =
+        static_cast<long>(arrivalPlan->scheduleMargin.count());
+    if (arrivalPlan->departure)
+      resultConfiguration.StartTime = ToWx(*arrivalPlan->departure);
+    wxLogMessage(
+        "WR_ARRIVAL_PLAN route=\"%s -> %s\" status=%s planned_arrival=\"%s\" "
+        "effective_deadline=\"%s\" selected_departure=\"%s\" eta=\"%s\" "
+        "margin_seconds=%lld evaluated=%u complete=%u feasible=%u "
+        "reverse_projections=%u bracket_refinements=%u budget_exhausted=%d",
+        configuration.Start, configuration.End,
+        wxString::FromUTF8(wr::toString(arrivalPlan->status)),
+        configuration.PlannedArrivalTime.FormatISOCombined(),
+        ToWx(arrivalPlan->diagnostics.effectiveDeadline).FormatISOCombined(),
+        arrivalPlan->departure
+            ? ToWx(*arrivalPlan->departure).FormatISOCombined()
+            : wxString("N/A"),
+        arrivalPlan->arrival
+            ? ToWx(*arrivalPlan->arrival).FormatISOCombined()
+            : wxString("N/A"),
+        static_cast<long long>(arrivalPlan->scheduleMargin.count()),
+        arrivalPlan->diagnostics.forwardRoutesEvaluated,
+        arrivalPlan->diagnostics.completeRoutes,
+        arrivalPlan->diagnostics.feasibleRoutes,
+        arrivalPlan->diagnostics.reverseProjections,
+        arrivalPlan->diagnostics.bracketRefinements,
+        arrivalPlan->diagnostics.evaluationBudgetExhausted ? 1 : 0);
+  }
   resultConfiguration.routing_generated_states =
       result.diagnostics.generatedStates;
   resultConfiguration.routing_generated_state_limit =
@@ -923,7 +1059,7 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       request.limits.maximumGraphLabels;
   overlay.SetConfigurationPreserveResult(resultConfiguration);
   const OpenCpnWeatherProvider::CacheDiagnostics weatherCache =
-      weather->cacheDiagnostics();
+      arrivalPlan ? arrivalWeatherCache : weather->cacheDiagnostics();
   const auto elapsedMilliseconds =
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now() - started)
@@ -942,8 +1078,8 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       "scout=%d route_fingerprint=%016llx",
       configuration.Start, configuration.End, status, solver,
       configuration.DepartureTimeOptimizationOffsetMinutes,
-      configuration.StartTime.IsValid()
-          ? configuration.StartTime.FormatISOCombined()
+      resultConfiguration.StartTime.IsValid()
+          ? resultConfiguration.StartTime.FormatISOCombined()
           : wxString("invalid"),
       static_cast<long long>(elapsedMilliseconds),
       static_cast<unsigned long long>(result.legs.size()),

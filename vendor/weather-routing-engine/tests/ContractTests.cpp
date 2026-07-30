@@ -1,3 +1,4 @@
+#include "supercpn/weather_routing/ArrivalPlanner.h"
 #include "supercpn/weather_routing/Engine.h"
 #include "supercpn/weather_routing/Providers.h"
 #include "supercpn/weather_routing/ResourcePolicy.h"
@@ -81,6 +82,92 @@ int main() {
                 second.diagnostics.generatedStates,
             "generated-state count is not deterministic");
     require(first.validation.passed, first.message.c_str());
+
+    ArrivalPlanningOptions arrivalOptions;
+    arrivalOptions.plannedArrival =
+        route.departure + std::chrono::hours{24};
+    arrivalOptions.safetyMargin = std::chrono::minutes{30};
+    arrivalOptions.searchHorizon = std::chrono::hours{20};
+    arrivalOptions.initialSearchStep = std::chrono::hours{2};
+    arrivalOptions.refinementStep = std::chrono::minutes{5};
+    arrivalOptions.maximumRouteEvaluations = 18;
+    arrivalOptions.nominalPassageSpeedKnots = 5.0;
+    const TimePoint effectiveDeadline =
+        arrivalOptions.plannedArrival - arrivalOptions.safetyMargin;
+    std::vector<TimePoint> evaluatedDepartures;
+    ArrivalPlanner arrivalPlanner;
+    const ArrivalPlanningResult arrivalPlan = arrivalPlanner.plan(
+        route, arrivalOptions, [&](TimePoint departure) {
+          evaluatedDepartures.push_back(departure);
+          RoutingResult candidate;
+          candidate.status = RoutingStatus::Complete;
+          candidate.validation.passed = true;
+          candidate.metrics.elapsed = std::chrono::hours{10};
+          RouteLeg leg;
+          leg.start = route.start;
+          leg.end = route.destination;
+          leg.startTime = departure;
+          leg.endTime = departure + candidate.metrics.elapsed;
+          candidate.legs.push_back(leg);
+          return candidate;
+        });
+    require(arrivalPlan.status == ArrivalPlanningStatus::Complete,
+            arrivalPlan.message.c_str());
+    require(arrivalPlan.departure.has_value(),
+            "arrival planner did not select a departure");
+    require(arrivalPlan.arrival == effectiveDeadline,
+            "arrival planner did not converge on the effective deadline");
+    require(*arrivalPlan.departure ==
+                effectiveDeadline - std::chrono::hours{10},
+            "arrival planner selected the wrong latest departure");
+    require(arrivalPlan.route && arrivalPlan.route->validation.passed,
+            "arrival planner returned a route without forward validation");
+    require(arrivalPlan.diagnostics.reverseProjections > 0,
+            "arrival planner did not use reverse timing projection");
+    require(evaluatedDepartures ==
+                arrivalPlan.diagnostics.evaluatedDepartures,
+            "arrival planner diagnostics changed evaluation order");
+
+    ArrivalPlanningOptions impossibleOptions = arrivalOptions;
+    impossibleOptions.maximumRouteEvaluations = 4;
+    const ArrivalPlanningResult impossible = arrivalPlanner.plan(
+        route, impossibleOptions, [](TimePoint) {
+          RoutingResult candidate;
+          candidate.status = RoutingStatus::NoFeasibleRoute;
+          candidate.message = "synthetic route failure";
+          return candidate;
+        });
+    require(impossible.status ==
+                ArrivalPlanningStatus::NoFeasibleSchedule,
+            "failed forward routes produced a false arrival schedule");
+
+    ArrivalPlanningOptions boundedOptions = arrivalOptions;
+    boundedOptions.earliestAllowedDeparture =
+        effectiveDeadline - std::chrono::hours{5};
+    boundedOptions.maximumRouteEvaluations = 8;
+    std::vector<TimePoint> boundedDepartures;
+    const ArrivalPlanningResult bounded = arrivalPlanner.plan(
+        route, boundedOptions, [&](TimePoint departure) {
+          boundedDepartures.push_back(departure);
+          RoutingResult candidate;
+          candidate.status = RoutingStatus::Complete;
+          candidate.validation.passed = true;
+          candidate.metrics.elapsed = std::chrono::hours{10};
+          RouteLeg leg;
+          leg.start = route.start;
+          leg.end = route.destination;
+          leg.startTime = departure;
+          leg.endTime = departure + candidate.metrics.elapsed;
+          candidate.legs.push_back(leg);
+          return candidate;
+        });
+    require(bounded.status == ArrivalPlanningStatus::NoFeasibleSchedule,
+            "earliest departure bound produced an impossible schedule");
+    require(!boundedDepartures.empty(),
+            "earliest departure test evaluated no routes");
+    for (const TimePoint departure : boundedDepartures)
+      require(departure >= *boundedOptions.earliestAllowedDeparture,
+              "arrival planner evaluated before earliest allowed departure");
     std::cout << "deterministic route with " << first.legs.size()
               << " legs\n";
     return 0;

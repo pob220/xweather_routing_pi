@@ -143,6 +143,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       (bool)pConf->Read(_T("UseExperimentalChartSafety"), 0L));
   m_cbEnforceExperimentalChartSafety->SetValue(
       (bool)pConf->Read(_T("EnforceExperimentalChartSafety"), 0L));
+  UpdateRoutingTimeModeControls();
 
 #ifdef __OCPN__ANDROID__
   wxSize sz = ::wxGetDisplaySize();
@@ -185,11 +186,91 @@ void ConfigurationDialog::OnCurrentTime(wxCommandEvent& event) {
 }
 
 void ConfigurationDialog::OnUseCurrentTime(wxCommandEvent& event) {
-  m_dpStartDate->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_tpTime->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_bGribTime->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_bCurrentTime->Enable(!m_cbUseCurrentTime->IsChecked());
+  if (m_cbUseCurrentTime->IsChecked() &&
+      m_rbRouteByDepartureTime->GetValue())
+    SetStartDateTime(wxDateTime::Now());
+  UpdateRoutingTimeModeControls();
   Update();
+}
+
+void ConfigurationDialog::OnRoutingTimeMode(wxCommandEvent& event) {
+  const bool arrival = m_rbRouteByArrivalTime->GetValue();
+  std::list<RouteMapOverlay*> routes = m_WeatherRouting.CurrentRouteMaps();
+  if (!routes.empty()) {
+    const RouteMapConfiguration configuration =
+        routes.front()->GetConfiguration();
+    wxDateTime selectedTime =
+        arrival ? configuration.PlannedArrivalTime : configuration.StartTime;
+    if (!selectedTime.IsValid())
+      selectedTime = arrival ? wxDateTime::Now() + wxTimeSpan::Hours(24)
+                             : wxDateTime::Now();
+    m_bBlockUpdate = true;
+    SetStartDateTime(selectedTime);
+    m_sDepartureTimeOptimizationRangeHours->SetValue(
+        arrival ? std::max(1, configuration.ArrivalSearchHorizonMinutes / 60)
+                : std::max(
+                      0,
+                      configuration.DepartureTimeOptimizationRangeMinutes /
+                          60));
+    m_sArrivalSafetyMarginMinutes->SetValue(
+        std::max(0, configuration.ArrivalSafetyMarginMinutes));
+    m_cbUseCurrentTime->SetValue(
+        !arrival && configuration.UseCurrentTime);
+    m_cbDepartureTimeOptimizationEnabled->SetValue(
+        arrival || configuration.DepartureTimeOptimizationEnabled);
+    m_bBlockUpdate = false;
+  }
+  OnValueChange(event);
+  UpdateRoutingTimeModeControls();
+  Update();
+}
+
+void ConfigurationDialog::UpdateRoutingTimeModeControls() {
+  const bool arrival = m_rbRouteByArrivalTime->GetValue();
+  m_staticTextPlannedTime->SetLabel(
+      arrival ? _("Planned Arrival Time") : _("Planned Departure Time"));
+  m_dpStartDate->SetToolTip(
+      arrival ? _("Select the required destination arrival date.")
+              : _("Select the departure date for weather routing."));
+  m_tpTime->SetToolTip(
+      arrival ? _("Select the required destination arrival time.")
+              : _("Select the departure time for weather routing."));
+  m_cbUseCurrentTime->Enable(!arrival);
+  if (arrival) m_cbUseCurrentTime->SetValue(false);
+  const bool manualTime = arrival || !m_cbUseCurrentTime->IsChecked();
+  m_dpStartDate->Enable(manualTime);
+  m_tpTime->Enable(manualTime);
+  m_bGribTime->Enable(manualTime);
+  m_bCurrentTime->Enable(!arrival && manualTime);
+
+  m_cbDepartureTimeOptimizationEnabled->Enable(!arrival);
+  if (arrival) m_cbDepartureTimeOptimizationEnabled->SetValue(true);
+  m_staticTextDepartureRange->SetLabel(
+      arrival ? _("Search departures up to")
+              : _("Range before/after departure +/-"));
+  m_staticTextDepartureStep->SetLabel(
+      arrival ? _("Initial search interval") : _("Step"));
+  m_sDepartureTimeOptimizationRangeHours->SetToolTip(
+      arrival
+          ? _("Maximum number of hours before the planned arrival time in "
+              "which the engine may search for a departure.")
+          : _("Hours before and after the nominal departure time to test."));
+  m_sDepartureTimeOptimizationStepHours->SetToolTip(
+      arrival
+          ? _("Initial interval between arrival-planning departure probes. "
+              "The engine refines promising times automatically.")
+          : _("Hours between alternative departure time calculations."));
+  m_sDepartureTimeOptimizationStepMinutes->SetToolTip(
+      arrival
+          ? _("Initial interval between arrival-planning departure probes. "
+              "The engine refines promising times automatically.")
+          : _("Minutes between alternative departure time calculations."));
+  m_staticTextArrivalSafetyMargin->Show(arrival);
+  m_sArrivalSafetyMarginMinutes->Show(arrival);
+  m_staticTextArrivalSafetyMarginMinutes->Show(arrival);
+  m_tArrivalPlanningHint->Show(arrival);
+  Layout();
+  Fit();
 }
 
 void ConfigurationDialog::OnStartFromBoat(wxCommandEvent& event) {
@@ -338,8 +419,15 @@ void ConfigurationDialog::SetConfigurations(
 
   const bool useLocalTime =
       m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked();
-  wxDateTime dateValue = it->StartTime.GetDateOnly();
-  wxDateTime timeValue = it->StartTime;
+  const bool routeByArrival =
+      it->TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
+  wxDateTime displayedTime =
+      routeByArrival ? it->PlannedArrivalTime : it->StartTime;
+  if (!routeByArrival && it->UseCurrentTime)
+    displayedTime = wxDateTime::Now();
+  if (!displayedTime.IsValid()) displayedTime = it->StartTime;
+  wxDateTime dateValue = displayedTime.GetDateOnly();
+  wxDateTime timeValue = displayedTime;
   // The native picker controls interpret their wxDateTime input as UTC and
   // convert it for display. Undo that conversion when the UI is showing UTC.
   if (!useLocalTime) {
@@ -350,14 +438,23 @@ void ConfigurationDialog::SetConfigurations(
                     wxDateTime());
   SET_CONTROL_VALUE(timeValue, m_tpTime, SetValue, wxDateTime, wxDateTime());
 
+  m_rbRouteByDepartureTime->SetValue(!routeByArrival);
+  m_rbRouteByArrivalTime->SetValue(routeByArrival);
   SET_CHECKBOX(UseCurrentTime);
   SET_CHECKBOX(DepartureTimeOptimizationEnabled);
+  if (routeByArrival) {
+    m_cbUseCurrentTime->SetValue(false);
+    m_cbDepartureTimeOptimizationEnabled->SetValue(true);
+  }
   SET_SPIN_VALUE(DepartureTimeOptimizationRangeHours,
-                 (*it).DepartureTimeOptimizationRangeMinutes / 60);
+                 routeByArrival
+                     ? (*it).ArrivalSearchHorizonMinutes / 60
+                     : (*it).DepartureTimeOptimizationRangeMinutes / 60);
   SET_SPIN_VALUE(DepartureTimeOptimizationStepHours,
                  (*it).DepartureTimeOptimizationStepMinutes / 60);
   SET_SPIN_VALUE(DepartureTimeOptimizationStepMinutes,
                  (*it).DepartureTimeOptimizationStepMinutes % 60);
+  SET_SPIN(ArrivalSafetyMarginMinutes);
   SET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
   const int firstRoutingEffort =
       weather_routing::NormalizeRoutingEffortPercent(it->RoutingEffortPercent);
@@ -378,14 +475,6 @@ void ConfigurationDialog::SetConfigurations(
   m_sChartSafetyRamCacheMiB->SetValue(
       m_WeatherRouting.ChartSafetyRamCacheMiB());
   UpdateChartSafetyRamLabel();
-
-  bool timeButtonsEnabled = m_tpTime->IsEnabled() &&
-                            m_dpStartDate->IsEnabled() &&
-                            !m_cbUseCurrentTime->IsChecked();
-  m_dpStartDate->Enable(timeButtonsEnabled);
-  m_tpTime->Enable(timeButtonsEnabled);
-  m_bCurrentTime->Enable(timeButtonsEnabled);
-  m_bGribTime->Enable(timeButtonsEnabled);
 
   SET_SPIN_VALUE(TimeStepHours, (int)((*it).DeltaTime / 3600));
   SET_SPIN_VALUE(TimeStepMinutes, ((int)(*it).DeltaTime / 60) % 60);
@@ -456,10 +545,7 @@ void ConfigurationDialog::SetConfigurations(
   m_cStart->Enable(!oRoute && !m_rbStartFromBoat->GetValue());
   m_cEnd->Enable(!oRoute);
 
-  m_bGribTime->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_bCurrentTime->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_dpStartDate->Enable(!m_cbUseCurrentTime->IsChecked());
-  m_tpTime->Enable(!m_cbUseCurrentTime->IsChecked());
+  UpdateRoutingTimeModeControls();
 
   SET_SPIN(FromDegree);
   SET_SPIN(ToDegree);
@@ -721,14 +807,24 @@ void ConfigurationDialog::Update() {
       configuration.EndGUID = wxEmptyString;
     }
 
-    GET_CHECKBOX(UseCurrentTime);
-    GET_CHECKBOX(DepartureTimeOptimizationEnabled);
+    const bool routeByArrival = m_rbRouteByArrivalTime->GetValue();
+    configuration.TimeMode =
+        routeByArrival ? RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
+                       : RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME;
+    if (!routeByArrival) {
+      GET_CHECKBOX(UseCurrentTime);
+      GET_CHECKBOX(DepartureTimeOptimizationEnabled);
+    }
     if (NO_EDITED_CONTROLS ||
         std::find(m_edited_controls.begin(), m_edited_controls.end(),
                   (wxObject*)m_sDepartureTimeOptimizationRangeHours) !=
             m_edited_controls.end()) {
-      configuration.DepartureTimeOptimizationRangeMinutes =
-          60 * m_sDepartureTimeOptimizationRangeHours->GetValue();
+      if (routeByArrival)
+        configuration.ArrivalSearchHorizonMinutes =
+            60 * m_sDepartureTimeOptimizationRangeHours->GetValue();
+      else
+        configuration.DepartureTimeOptimizationRangeMinutes =
+            60 * m_sDepartureTimeOptimizationRangeHours->GetValue();
       m_sDepartureTimeOptimizationRangeHours->SetForegroundColour(
           wxColour(0, 0, 0));
     }
@@ -765,7 +861,10 @@ void ConfigurationDialog::Update() {
       else if (!m_WeatherRouting.m_SettingsDialog.m_cbUseLocalTime->IsChecked())
         time = time.FromUTC();
 
-      configuration.StartTime = time;
+      if (routeByArrival)
+        configuration.PlannedArrivalTime = time;
+      else
+        configuration.StartTime = time;
       if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
                     (wxObject*)m_dpStartDate) != m_edited_controls.end())
         m_dpStartDate->SetForegroundColour(wxColour(0, 0, 0));
@@ -842,6 +941,9 @@ void ConfigurationDialog::Update() {
       m_cRoutingEffortPercent->SetForegroundColour(wxColour(0, 0, 0));
     }
     GET_SPIN(DepartureTimeOptimizationConcurrentRoutes);
+    if (routeByArrival) {
+      GET_SPIN(ArrivalSafetyMarginMinutes);
+    }
 
     GET_CHECKBOX(UseGrib);
     if (m_cClimatologyType->GetSelection() != -1)

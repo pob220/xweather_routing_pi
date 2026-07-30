@@ -268,6 +268,20 @@ struct RouteMapConfiguration {
 
   /** The time when the boat leaves the starting position. */
   wxDateTime StartTime;
+  enum RoutingTimeMode {
+    ROUTE_BY_DEPARTURE_TIME,
+    ROUTE_BY_ARRIVAL_TIME
+  } TimeMode;
+  /** User-selected destination time when routing by arrival. */
+  wxDateTime PlannedArrivalTime;
+  /** Maximum time before PlannedArrivalTime in which departure may occur. */
+  int ArrivalSearchHorizonMinutes;
+  /** Required buffer before PlannedArrivalTime. */
+  int ArrivalSafetyMarginMinutes;
+  /** Runtime diagnostics from the arrival planner. */
+  int ArrivalPlanningEvaluatedRoutes;
+  int ArrivalPlanningFeasibleRoutes;
+  long ArrivalPlanningScheduleMarginSeconds;
   /** Flag to use the current time as the start time. */
   bool UseCurrentTime;
   /** If true, compute a batch of routes around StartTime. */

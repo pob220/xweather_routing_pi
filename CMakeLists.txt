@@ -218,6 +218,7 @@ SET(SRCS
             src/headless/HeadlessRouteRunner.cpp
             src/headless/RoutingScenarioJson.cpp
             src/engine/StabilityCorridorCalculator.cpp
+            vendor/weather-routing-engine/src/ArrivalPlanner.cpp
             vendor/weather-routing-engine/src/Geometry.cpp
             vendor/weather-routing-engine/src/Providers.cpp
             vendor/weather-routing-engine/src/Polar.cpp
@@ -280,6 +281,7 @@ SET (HDRS
             include/weather_routing_engine/RoutingScenario.h
             include/weather_routing_engine/StabilityCorridor.h
             vendor/weather-routing-engine/include/supercpn/weather_routing/Types.h
+            vendor/weather-routing-engine/include/supercpn/weather_routing/ArrivalPlanner.h
             vendor/weather-routing-engine/include/supercpn/weather_routing/Providers.h
             vendor/weather-routing-engine/include/supercpn/weather_routing/Engine.h
             vendor/weather-routing-engine/src/RoutingInternal.h

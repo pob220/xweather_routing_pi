@@ -53,6 +53,7 @@ set(TEST_SRC
     ClimatologyThreadGuard_tests.cpp
     SunCalculator_tests.cpp
     ModernNativeEngine_tests.cpp
+    ArrivalPlanner_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/AppendOnlyCache.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartSafetyCache.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartHazardEvaluator.cpp
@@ -70,6 +71,7 @@ set(TEST_SRC
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Providers.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Polar.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/EnvironmentResolver.cpp
+    ${WEATHER_ROUTING_ENGINE_DIR}/src/ArrivalPlanner.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Engine.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Validator.cpp
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Ensemble.cpp

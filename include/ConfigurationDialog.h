@@ -127,6 +127,7 @@ protected:
   void OnStartFromBoat(wxCommandEvent& event);
   void OnStartFromPosition(wxCommandEvent& event);
   void OnStartFromWaypoint(wxCommandEvent& event);
+  void OnRoutingTimeMode(wxCommandEvent& event);
   void OnEndAtPosition(wxCommandEvent& event);
   void OnEndAtWaypoint(wxCommandEvent& event);
   void OnAvoidCyclones(wxCommandEvent& event);
@@ -137,6 +138,7 @@ protected:
   void OnClearDegreeSteps(wxCommandEvent& event);
   void OnGenerateDegreeSteps(wxCommandEvent& event);
   void UpdateChartSafetyRamLabel();
+  void UpdateRoutingTimeModeControls();
   void OnClose(wxCommandEvent& event) { Hide(); }
 
 private:

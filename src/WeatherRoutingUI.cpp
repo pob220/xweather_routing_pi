@@ -1210,6 +1210,31 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       _("Choose the starting position from the list of available positions"));
   fgSizer60->Add(m_cStart, 1, wxALL | wxEXPAND, 5);
 
+  wxBoxSizer* routingTimeModeSizer = new wxBoxSizer(wxHORIZONTAL);
+  m_rbRouteByDepartureTime = new wxRadioButton(
+      sbStart->GetStaticBox(), wxID_ANY, _("Route by departure time"),
+      wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
+  m_rbRouteByDepartureTime->SetValue(true);
+  m_rbRouteByDepartureTime->SetToolTip(
+      _("Calculate a route starting at the selected departure time."));
+  routingTimeModeSizer->Add(m_rbRouteByDepartureTime, 0,
+                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  m_rbRouteByArrivalTime = new wxRadioButton(
+      sbStart->GetStaticBox(), wxID_ANY, _("Route by arrival time"));
+  m_rbRouteByArrivalTime->SetToolTip(
+      _("Calculate the departure time and a forward-validated route which "
+        "arrives no later than the selected destination time."));
+  routingTimeModeSizer->Add(m_rbRouteByArrivalTime, 0,
+                            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  fgSizer60->Add(routingTimeModeSizer, 0, wxEXPAND, 5);
+
+  m_staticTextPlannedTime = new wxStaticText(
+      sbStart->GetStaticBox(), wxID_ANY, _("Planned Departure Time"));
+  wxFont plannedTimeFont = m_staticTextPlannedTime->GetFont();
+  plannedTimeFont.SetWeight(wxFONTWEIGHT_BOLD);
+  m_staticTextPlannedTime->SetFont(plannedTimeFont);
+  fgSizer60->Add(m_staticTextPlannedTime, 0, wxLEFT | wxRIGHT | wxTOP, 5);
+
   m_cbUseCurrentTime =
       new wxCheckBox(sbStart->GetStaticBox(), wxID_ANY, _("Use current time"),
                      wxDefaultPosition, wxDefaultSize, 0);
@@ -1290,7 +1315,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   m_sDepartureTimeOptimizationRangeHours = new wxSpinCtrl(
       sbStart->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
-      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 168, 6);
+      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 720, 6);
   m_sDepartureTimeOptimizationRangeHours->SetToolTip(_(
       "Hours before and after the nominal departure time to test."));
   fgSizerDepartureOptimization->Add(
@@ -1345,7 +1370,35 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   fgSizerDepartureOptimization->Add(bSizerDepartureStepMinutes, 0,
                                     wxALIGN_CENTER_VERTICAL | wxALL, 5);
 
+  m_staticTextArrivalSafetyMargin = new wxStaticText(
+      sbStart->GetStaticBox(), wxID_ANY, _("Arrival safety margin"));
+  m_staticTextArrivalSafetyMargin->Wrap(-1);
+  fgSizerDepartureOptimization->Add(
+      m_staticTextArrivalSafetyMargin, 0,
+      wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  m_sArrivalSafetyMarginMinutes = new wxSpinCtrl(
+      sbStart->GetStaticBox(), wxID_ANY, wxEmptyString, wxDefaultPosition,
+      wxSize(90, -1), wxALIGN_RIGHT | wxSP_ARROW_KEYS, 0, 360, 30);
+  m_sArrivalSafetyMarginMinutes->SetToolTip(
+      _("The route must arrive this many minutes before the planned arrival "
+        "time."));
+  fgSizerDepartureOptimization->Add(
+      m_sArrivalSafetyMarginMinutes, 0, wxALL, 5);
+  m_staticTextArrivalSafetyMarginMinutes =
+      new wxStaticText(sbStart->GetStaticBox(), wxID_ANY, _("m"));
+  fgSizerDepartureOptimization->Add(
+      m_staticTextArrivalSafetyMarginMinutes, 0,
+      wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  fgSizerDepartureOptimization->Add(0, 0, 1, wxEXPAND, 5);
+
   fgSizer60->Add(fgSizerDepartureOptimization, 0, wxEXPAND, 5);
+
+  m_tArrivalPlanningHint = new wxStaticText(
+      sbStart->GetStaticBox(), wxID_ANY,
+      _("Departure time will be calculated automatically to meet the planned "
+        "arrival time."));
+  m_tArrivalPlanningHint->Wrap(460);
+  fgSizer60->Add(m_tArrivalPlanningHint, 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
 
   sbStart->Add(fgSizer60, 1, wxEXPAND | wxALL, 5);
 
@@ -2435,6 +2488,14 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cStart->Connect(wxEVT_COMMAND_TEXT_UPDATED,
                     wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                     NULL, this);
+  m_rbRouteByDepartureTime->Connect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnRoutingTimeMode), NULL,
+      this);
+  m_rbRouteByArrivalTime->Connect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnRoutingTimeMode), NULL,
+      this);
   m_dpStartDate->Connect(
       wxEVT_DATE_CHANGED,
       wxDateEventHandler(ConfigurationDialogBase::OnUpdateDate), NULL, this);
@@ -2462,6 +2523,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sDepartureTimeOptimizationStepMinutes->Connect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sArrivalSafetyMarginMinutes->Connect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_cRoutingEffortPercent->Connect(
@@ -3088,6 +3152,14 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
   m_cStart->Disconnect(wxEVT_COMMAND_TEXT_UPDATED,
                        wxCommandEventHandler(ConfigurationDialogBase::OnUpdate),
                        NULL, this);
+  m_rbRouteByDepartureTime->Disconnect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnRoutingTimeMode), NULL,
+      this);
+  m_rbRouteByArrivalTime->Disconnect(
+      wxEVT_COMMAND_RADIOBUTTON_SELECTED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnRoutingTimeMode), NULL,
+      this);
   m_dpStartDate->Disconnect(
       wxEVT_DATE_CHANGED,
       wxDateEventHandler(ConfigurationDialogBase::OnUpdateDate), NULL, this);
@@ -3115,6 +3187,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sDepartureTimeOptimizationStepMinutes->Disconnect(
+      wxEVT_COMMAND_SPINCTRL_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sArrivalSafetyMarginMinutes->Disconnect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_cRoutingEffortPercent->Disconnect(

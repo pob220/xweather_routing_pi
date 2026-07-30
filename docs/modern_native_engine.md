@@ -29,6 +29,35 @@ Each configured leg is solved independently and chronologically:
 8. Independently replay the selected route forward at dense chronological
    intervals before it can be displayed or exported.
 
+## Arrival-time routing
+
+The Basic configuration page offers mutually exclusive **Route by departure
+time** and **Route by arrival time** modes. Departure mode remains the default.
+In arrival mode the selected date and time are the required destination
+arrival, and the engine calculates both a departure and a route.
+
+Arrival planning is destination-anchored without pretending that sailing
+physics are reversible. It estimates an initial departure from direct distance,
+projects observed ETA errors back onto the departure axis, brackets the
+deadline where possible, and adaptively refines promising times. Every proposed
+departure is nevertheless solved in normal chronological order by the complete
+forward engine. A candidate can only be returned after the usual independent
+forward replay and chart-safety validation.
+
+The selected route is the latest forward-validated departure whose ETA is no
+later than the planned arrival minus the configured arrival safety margin.
+Routing effort controls the bounded number of full route evaluations. The
+search-horizon setting limits how far before the planned arrival the planner
+may look. When starting from the live boat position, it will not invent a
+departure before the current time; saved positions and waypoints remain
+available for retrospective analysis.
+
+The existing **Optimise departure time** batch control is shown checked and
+disabled in arrival mode because adaptive departure selection is intrinsic to
+that mode. The fixed departure-optimisation batch is not run on top of it.
+Routing status reports the selected departure, planned arrival, schedule
+margin, and number of evaluated and feasible routes.
+
 Forward search reserves part of the global generated-state budget for recovery,
 so a difficult first stage cannot starve the graph fallback. The graph keeps
 time, tack, propulsion mode, sail plan, motor duration, fuel and risk in its

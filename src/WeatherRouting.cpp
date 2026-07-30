@@ -531,6 +531,12 @@ static wxString ChartSafetySharedPrewarmScopeKey(
         configuration.StartTime.IsValid()
             ? configuration.StartTime.FormatISOCombined()
             : wxString("invalid"));
+  } else if (configuration.TimeMode ==
+                 RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME &&
+             configuration.PlannedArrivalTime.IsValid()) {
+    key +=
+        ":planned-arrival=" +
+        configuration.PlannedArrivalTime.FormatISOCombined();
   } else if (configuration.StartTime.IsValid()) {
     key += ":departure=" + configuration.StartTime.FormatISOCombined();
   }
@@ -2027,6 +2033,30 @@ void WeatherRouting::ShowRoutingStatus(RouteMapOverlay* selectedRoute) {
     text += wxString::Format(_("State: %s\n"), state);
     text += wxString::Format(_("Start: %s\n"), display.StartTime);
     text += wxString::Format(_("End: %s\n"), display.EndTime);
+    if (configuration.TimeMode ==
+        RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME) {
+      wxDateTime plannedArrival = configuration.PlannedArrivalTime;
+      const wxString plannedArrivalText =
+          plannedArrival.IsValid()
+              ? plannedArrival.Format(
+                    _T("%x %H:%M"),
+                    m_SettingsDialog.GetTimeZone())
+              : _("N/A");
+      text += wxString::Format(_("Planned arrival: %s\n"),
+                               plannedArrivalText);
+      if (route->Finished()) {
+        const long marginMinutes =
+            configuration.ArrivalPlanningScheduleMarginSeconds / 60;
+        text += wxString::Format(
+            _("Arrival safety margin: %ld min; schedule margin: %ld min\n"),
+            static_cast<long>(configuration.ArrivalSafetyMarginMinutes),
+            marginMinutes);
+        text += wxString::Format(
+            _("Arrival-planning routes evaluated: %d; feasible: %d\n"),
+            configuration.ArrivalPlanningEvaluatedRoutes,
+            configuration.ArrivalPlanningFeasibleRoutes);
+      }
+    }
     text += wxString::Format(_("Time: %s\n"), display.Time);
     text += wxString::Format(_("Distance: %s\n"), display.Distance);
   };
@@ -3643,6 +3673,37 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
               env_reverse_diag.IsSameAs("true", false);
         }
       };
+  auto apply_arrival_planning_options =
+      [&](RouteMapConfiguration& configuration) {
+        wxString plannedArrival =
+            EnvString("WR_HEADLESS_PLANNED_ARRIVAL_TIME");
+        if (plannedArrival.IsEmpty()) return false;
+
+        wxString normalized = plannedArrival;
+        const bool explicitUtc = normalized.EndsWith("Z");
+        if (explicitUtc) normalized.RemoveLast();
+        wxDateTime parsed;
+        if (!parsed.ParseISOCombined(normalized, 'T')) {
+          wxLogMessage(
+              "WR_HEADLESS_ROUTE_TEST warning invalid "
+              "WR_HEADLESS_PLANNED_ARRIVAL_TIME=\"%s\".",
+              plannedArrival);
+          return false;
+        }
+        if (explicitUtc) parsed.MakeFromTimezone(wxDateTime::UTC);
+        configuration.TimeMode =
+            RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
+        configuration.PlannedArrivalTime = parsed;
+        configuration.ArrivalSearchHorizonMinutes =
+            wxMax(60L, EnvLong("WR_HEADLESS_ARRIVAL_HORIZON_MINUTES",
+                               configuration.ArrivalSearchHorizonMinutes));
+        configuration.ArrivalSafetyMarginMinutes =
+            wxMax(0L, EnvLong("WR_HEADLESS_ARRIVAL_SAFETY_MARGIN_MINUTES",
+                              configuration.ArrivalSafetyMarginMinutes));
+        configuration.DepartureTimeOptimizationEnabled = false;
+        configuration.UseCurrentTime = false;
+        return true;
+      };
 
   bool use_chart_safety = false;
   bool enforce_chart_safety = false;
@@ -3854,6 +3915,7 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
             m_weather_routing_pi.SetUsePersistentChartSafeCache(
                 scenario.safety.persistentCertifiedCacheEnabled, false);
         }
+        apply_arrival_planning_options(configuration);
         if (!AddConfiguration(configuration)) {
           wxLogMessage(
               "WR_HEADLESS_ROUTE_TEST abort reason=create_route_failed "
@@ -3888,6 +3950,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
     double original_safety_margin = selected_config.SafetyMarginLand;
     ApplyHeadlessRouteSafetyOverrides(selected_config, _("selected_route"));
     apply_reverse_reachability_options(selected_config);
+    if (apply_arrival_planning_options(selected_config))
+      selected_config_changed = true;
     if (selected_config.SafetyMarginLand != original_safety_margin)
       selected_config_changed = true;
     wxString headless_start_time = EnvString("WR_HEADLESS_START_TIME");
@@ -3943,9 +4007,12 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
           "WR_HEADLESS_ROUTE_TEST setup_step=set_selected_configuration "
           "phase=end");
     }
-    bool departure_opt = mode.IsSameAs("single-opt", false) ||
-                         mode.IsSameAs("departure-opt", false) ||
-                         selected_config.DepartureTimeOptimizationEnabled;
+    bool departure_opt =
+        selected_config.TimeMode !=
+            RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME &&
+        (mode.IsSameAs("single-opt", false) ||
+         mode.IsSameAs("departure-opt", false) ||
+         selected_config.DepartureTimeOptimizationEnabled);
     bool started = false;
     if (departure_opt) {
       started = ComputeDepartureTimeOptimization(selected_route);
@@ -5974,6 +6041,11 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   if (!routemapoverlay) return false;
 
   RouteMapConfiguration base = routemapoverlay->GetConfiguration();
+  // Arrival-time routing has its own adaptive, reverse-guided departure
+  // search. It must remain one route calculation rather than being expanded
+  // into the fixed departure-optimisation batch.
+  if (base.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME)
+    return false;
   if (!base.DepartureTimeOptimizationEnabled ||
       base.DepartureTimeOptimizationCandidate)
     return false;
@@ -7328,6 +7400,19 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
           configuration.EndType = RouteMapConfiguration::END_AT_WAYPOINT;
         configuration.UseCurrentTime =
             AttributeBool(e, "UseCurrentTime", false);
+        const int routingTimeMode =
+            AttributeInt(e, "RoutingTimeMode",
+                         RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME);
+        configuration.TimeMode =
+            routingTimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
+                ? RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
+                : RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME;
+        configuration.ArrivalSearchHorizonMinutes =
+            std::max(60, AttributeInt(e, "ArrivalSearchHorizonMinutes",
+                                      30 * 24 * 60));
+        configuration.ArrivalSafetyMarginMinutes =
+            std::max(0,
+                     AttributeInt(e, "ArrivalSafetyMarginMinutes", 30));
         configuration.DepartureTimeOptimizationEnabled =
             AttributeBool(e, "DepartureTimeOptimizationEnabled", false);
         configuration.DepartureTimeOptimizationRangeMinutes =
@@ -7378,6 +7463,29 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
           } else {
             configuration.StartTime = wxDateTime::Now();
           }
+        }
+        wxDateTime plannedArrivalDate;
+        const char* plannedArrivalDateAttribute =
+            e->Attribute("PlannedArrivalDate");
+        if (plannedArrivalDateAttribute)
+          plannedArrivalDate.ParseISODate(
+              wxString::FromUTF8(plannedArrivalDateAttribute));
+        wxDateTime plannedArrivalClock;
+        const char* plannedArrivalTimeAttribute =
+            e->Attribute("PlannedArrivalTime");
+        if (plannedArrivalTimeAttribute)
+          plannedArrivalClock.ParseISOTime(
+              wxString::FromUTF8(plannedArrivalTimeAttribute));
+        if (plannedArrivalDate.IsValid()) {
+          if (plannedArrivalClock.IsValid()) {
+            plannedArrivalDate.SetHour(plannedArrivalClock.GetHour());
+            plannedArrivalDate.SetMinute(plannedArrivalClock.GetMinute());
+            plannedArrivalDate.SetSecond(plannedArrivalClock.GetSecond());
+          }
+          configuration.PlannedArrivalTime = plannedArrivalDate;
+        } else {
+          configuration.PlannedArrivalTime =
+              configuration.StartTime + wxTimeSpan::Hours(24);
         }
 
         configuration.End = wxString::FromUTF8(e->Attribute("End"));
@@ -7538,6 +7646,12 @@ void WeatherRouting::SaveXML(wxString filename) {
       c->SetAttribute("StartGUID", configuration.StartGUID.mb_str());
     c->SetAttribute("EndType", configuration.EndType);
     c->SetAttribute("UseCurrentTime", configuration.UseCurrentTime);
+    c->SetAttribute("RoutingTimeMode",
+                    static_cast<int>(configuration.TimeMode));
+    c->SetAttribute("ArrivalSearchHorizonMinutes",
+                    configuration.ArrivalSearchHorizonMinutes);
+    c->SetAttribute("ArrivalSafetyMarginMinutes",
+                    configuration.ArrivalSafetyMarginMinutes);
     c->SetAttribute("DepartureTimeOptimizationEnabled",
                     configuration.DepartureTimeOptimizationEnabled);
     c->SetAttribute("DepartureTimeOptimizationRangeMinutes",
@@ -7569,6 +7683,14 @@ void WeatherRouting::SaveXML(wxString filename) {
                       configuration.StartTime.FormatISODate().mb_str());
       c->SetAttribute("StartTime",
                       configuration.StartTime.FormatISOTime().mb_str());
+    }
+    if (configuration.PlannedArrivalTime.IsValid()) {
+      c->SetAttribute(
+          "PlannedArrivalDate",
+          configuration.PlannedArrivalTime.FormatISODate().mb_str());
+      c->SetAttribute(
+          "PlannedArrivalTime",
+          configuration.PlannedArrivalTime.FormatISOTime().mb_str());
     }
     c->SetAttribute("End", configuration.End.mb_str());
     if (!configuration.EndGUID.IsEmpty())
@@ -7920,7 +8042,12 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
         : configuration.StartType == RouteMapConfiguration::START_FROM_WAYPOINT
             ? _("From Waypoint")
             : _("From Position");
-    UseCurrentTime = configuration.UseCurrentTime ? _("true") : _("false");
+    UseCurrentTime =
+        configuration.TimeMode ==
+                RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME &&
+            configuration.UseCurrentTime
+            ? _("true")
+            : _("false");
     wxDateTime starttime = configuration.StartTime;
     StartTime =
         starttime.Format(_T("%x %H:%M"), wr->m_SettingsDialog.GetTimeZone());
@@ -9786,9 +9913,12 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   // 1. The route has completed, or
   // 2. Route is from boat and boat has moved, or
   // 3. Configuration specifies to use current start time.
+  const bool routeByArrival =
+      configuration.TimeMode ==
+      RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
   if (routemapoverlay->Finished() &&
       routemapoverlay->GetWeatherForecastStatus() == WEATHER_FORECAST_SUCCESS &&
-      !boatHasMoved && !configuration.UseCurrentTime) {
+      !boatHasMoved && (!configuration.UseCurrentTime || routeByArrival)) {
     return;
   }
 
@@ -9815,7 +9945,7 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
     configuration.StartGUID = wxEmptyString;
     configUpdated = true;
   }
-  if (configuration.UseCurrentTime) {
+  if (!routeByArrival && configuration.UseCurrentTime) {
     // Use the current time
     configuration.StartTime = wxDateTime::Now();
     configUpdated = true;
@@ -9893,15 +10023,23 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   }
   wxString routeStartLog = wxString::Format(
       "WR_ROUTE_START route=\"%s -> %s\" group=\"%s\" candidate=%d "
-      "candidate_offset=%d start_time=\"%s\" use_current_time=%d ",
+      "candidate_offset=%d time_mode=%s start_time=\"%s\" "
+      "planned_arrival=\"%s\" use_current_time=%d ",
       configuration.Start, configuration.End,
       configuration.DepartureTimeOptimizationGroupId,
       configuration.DepartureTimeOptimizationCandidate ? 1 : 0,
       configuration.DepartureTimeOptimizationOffsetMinutes,
+      configuration.TimeMode ==
+              RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
+          ? "arrival"
+          : "departure",
       configuration.StartTime.IsValid()
           ? configuration.StartTime.FormatISOCombined()
           : wxString("invalid"),
-      configuration.UseCurrentTime ? 1 : 0);
+      configuration.PlannedArrivalTime.IsValid()
+          ? configuration.PlannedArrivalTime.FormatISOCombined()
+          : wxString("invalid"),
+      !routeByArrival && configuration.UseCurrentTime ? 1 : 0);
   routeStartLog += wxString::Format(
       "start{type=%s name=\"%s\" guid=\"%s\" lat=%.6f lon=%.6f} "
       "end{type=%s name=\"%s\" guid=\"%s\" lat=%.6f lon=%.6f} ",
@@ -10338,6 +10476,10 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("MotorSpeed"), configuration.MotorSpeed);
   pConf->Write(_T("DepartureTimeOptimizationConcurrentRoutes"),
                configuration.DepartureTimeOptimizationConcurrentRoutes);
+  pConf->Write(_T("ArrivalSearchHorizonMinutes"),
+               configuration.ArrivalSearchHorizonMinutes);
+  pConf->Write(_T("ArrivalSafetyMarginMinutes"),
+               configuration.ArrivalSafetyMarginMinutes);
   pConf->Write(
       _T("RoutingEffortPercent"),
       weather_routing::NormalizeRoutingEffortPercent(
@@ -10442,6 +10584,18 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               static_cast<long>(
                   weather_routing::kMaximumParallelDepartureCandidates),
               departure_concurrent_routes));
+  long arrival_search_horizon = configuration.ArrivalSearchHorizonMinutes;
+  pConf->Read(_T("ArrivalSearchHorizonMinutes"),
+              &arrival_search_horizon, arrival_search_horizon);
+  configuration.ArrivalSearchHorizonMinutes =
+      static_cast<int>(std::max(60L, std::min(43200L,
+                                             arrival_search_horizon)));
+  long arrival_safety_margin = configuration.ArrivalSafetyMarginMinutes;
+  pConf->Read(_T("ArrivalSafetyMarginMinutes"), &arrival_safety_margin,
+              arrival_safety_margin);
+  configuration.ArrivalSafetyMarginMinutes =
+      static_cast<int>(std::max(0L, std::min(360L,
+                                            arrival_safety_margin)));
   long routing_effort_percent = configuration.RoutingEffortPercent;
   pConf->Read(_T("RoutingEffortPercent"), &routing_effort_percent,
               routing_effort_percent);
@@ -10461,6 +10615,8 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
     configuration.StartLat = 0, configuration.StartLon = 0;
 
   configuration.StartTime = wxDateTime::Now();
+  configuration.PlannedArrivalTime =
+      configuration.StartTime + wxTimeSpan::Hours(24);
   configuration.DeltaTime = 3600;
 
   if (RouteMap::Positions.size() >= 2) {

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(weather_routing_engine
-  VERSION 1.0.1
+  VERSION 1.1.0
   DESCRIPTION "Deterministic, chart-aware weather-routing engine"
   LANGUAGES CXX)
 
@@ -14,10 +14,12 @@ option(WEATHER_ROUTING_ENGINE_ENABLE_INSTALL
   "Generate install and CMake package rules" ON)
 
 add_library(weather_routing_engine STATIC
+  include/supercpn/weather_routing/ArrivalPlanner.h
   include/supercpn/weather_routing/Engine.h
   include/supercpn/weather_routing/Providers.h
   include/supercpn/weather_routing/ResourcePolicy.h
   include/supercpn/weather_routing/Types.h
+  src/ArrivalPlanner.cpp
   src/Engine.cpp
   src/Ensemble.cpp
   src/EnvironmentResolver.cpp

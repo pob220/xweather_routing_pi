@@ -142,6 +142,12 @@ bool ResolvePosition(const wxString& name, double& lat, double& lon) {
 RouteMapConfiguration::RouteMapConfiguration()
     : StartType(START_FROM_POSITION),
       EndType(END_AT_POSITION),
+      TimeMode(ROUTE_BY_DEPARTURE_TIME),
+      ArrivalSearchHorizonMinutes(30 * 24 * 60),
+      ArrivalSafetyMarginMinutes(30),
+      ArrivalPlanningEvaluatedRoutes(0),
+      ArrivalPlanningFeasibleRoutes(0),
+      ArrivalPlanningScheduleMarginSeconds(0),
       DepartureTimeOptimizationEnabled(false),
       DepartureTimeOptimizationRangeMinutes(360),
       DepartureTimeOptimizationStepMinutes(60),

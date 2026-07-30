@@ -17,7 +17,10 @@ The solver combines:
 - independent chronological route validation;
 - bounded waiting for temporary environmental gates;
 - deterministic cumulative 100%, 150%, 200% and 400% effort tiers; and
-- deterministic ensemble and concurrent-request behaviour.
+- deterministic ensemble and concurrent-request behaviour;
+- arrival-anchored reverse timing projection with adaptive bracketing; and
+- mandatory chronological forward solving and validation for every proposed
+  departure in an arrival plan.
 
 ## Embedding
 
