@@ -495,6 +495,13 @@ public:
       wxTheApp->ExitMainLoop();
       return;
     }
+    wxString mode;
+    wxGetEnv("WR_HEADLESS_ROUTE_TEST", &mode);
+    if (mode.IsSameAs("open-only", false)) {
+      plugin->m_pWeather_Routing->Show(true);
+      wxLogMessage("WR_HEADLESS_ROUTE_TEST open_only ready");
+      return;
+    }
     plugin->m_pWeather_Routing->RunHeadlessRouteTestFromEnv();
   }
 

@@ -149,6 +149,13 @@ set(TEST_SRC
    
 # Add the test
 add_test(NAME weather_routing_pi_tests COMMAND weather_routing_pi_tests)
+add_test(
+    NAME weather_routing_time_zone_lifecycle_contract
+    COMMAND ${CMAKE_COMMAND}
+        -DCONFIGURATION_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/ConfigurationDialog.cpp
+        -DROUTING_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/WeatherRouting.cpp
+        -P ${CMAKE_CURRENT_LIST_DIR}/ConfigurationTimeZoneLifecycleContract.cmake
+)
 
 target_compile_definitions(weather_routing_pi_tests
     PUBLIC

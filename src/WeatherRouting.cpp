@@ -1074,6 +1074,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   }
 #endif
   m_SettingsDialog.LoadSettings();
+  m_ConfigurationDialog.RefreshTimeZoneControls();
 
   pConf->SetPath(
       _T( "/PlugIns/WeatherRouting" ));  // path can change after modal dialog

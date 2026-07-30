@@ -145,16 +145,13 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       (bool)pConf->Read(_T("EnforceExperimentalChartSafety"), 0L));
   for (const wxString& zone : marine_time::AvailableTimeZones())
     m_cTimeZone->Append(zone);
-  wxString displayZone =
-      m_WeatherRouting.m_SettingsDialog.DisplayTimeZone();
+  wxString displayZone = marine_time::SystemTimeZone();
   if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) {
-    displayZone = marine_time::SystemTimeZone();
+    displayZone = "UTC";
   }
-  if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) displayZone = "UTC";
   m_cTimeZone->SetStringSelection(displayZone);
-  m_cbUseLocalTimeZone->SetValue(
-      m_WeatherRouting.m_SettingsDialog.UseLocalTimeZone());
-  m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
+  m_cbUseLocalTimeZone->SetValue(false);
+  m_cTimeZone->Enable(false);
   UpdateRoutingTimeModeControls();
 
 #ifdef __OCPN__ANDROID__
@@ -166,6 +163,19 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   pConf->Read(_T ( "ConfigurationY" ), &p.y, p.y);
   SetPosition(p);
 #endif
+}
+
+void ConfigurationDialog::RefreshTimeZoneControls() {
+  wxString displayZone =
+      m_WeatherRouting.m_SettingsDialog.DisplayTimeZone();
+  if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) {
+    displayZone = marine_time::SystemTimeZone();
+  }
+  if (m_cTimeZone->FindString(displayZone) == wxNOT_FOUND) displayZone = "UTC";
+  m_cTimeZone->SetStringSelection(displayZone);
+  m_cbUseLocalTimeZone->SetValue(
+      m_WeatherRouting.m_SettingsDialog.UseLocalTimeZone());
+  m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
 }
 
 ConfigurationDialog::~ConfigurationDialog() {

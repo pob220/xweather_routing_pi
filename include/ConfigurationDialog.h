@@ -84,6 +84,11 @@ public:
   /// Fill combobox for start or end selection with all Weather Routing positions.
   void AddPositions(const bool toStart);
   void SetBoatFilename(wxString path);
+  /**
+   * Synchronize time-zone controls after SettingsDialog has been constructed
+   * and its persisted settings have been loaded.
+   */
+  void RefreshTimeZoneControls();
 
   wxDateTime m_GribTimelineTime;
 
