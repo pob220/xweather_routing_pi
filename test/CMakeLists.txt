@@ -147,6 +147,10 @@ set(TEST_SRC
            COMMAND ${CMAKE_COMMAND} -E copy_if_different
                "${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/zlib/win/zlib1.dll"
                "$<TARGET_FILE_DIR:weather_routing_pi_tests>"
+           COMMAND ${CMAKE_COMMAND} -E copy_if_different
+               "$<TARGET_FILE:GTest::gtest>"
+               "$<TARGET_FILE:GTest::gtest_main>"
+               "$<TARGET_FILE_DIR:weather_routing_pi_tests>"
        )
    endif()
    
