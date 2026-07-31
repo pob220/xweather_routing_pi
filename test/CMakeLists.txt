@@ -166,8 +166,10 @@ set(TEST_SRC
        INSTALL_RPATH "../lib"
        )
    
-# Add the test
-add_test(NAME weather_routing_pi_tests COMMAND weather_routing_pi_tests)
+# gtest_discover_tests below registers every case with CTest.  Do not also
+# register the executable as one aggregate test: that reruns the complete
+# suite, and the duplicate process can exceed CTest's default timeout on the
+# supported 32-bit Windows executor even though every discovered case passes.
 add_test(
     NAME weather_routing_time_zone_lifecycle_contract
     COMMAND ${CMAKE_COMMAND}
