@@ -135,8 +135,8 @@ set(TEST_SRC
            # ocpn::json-schema-validator
            # ocpn::wxsvg
            ocpn::bzip2
+           ocpn::zlib
            ocpn::jsonlib
-           ${ZLIB_LIBRARIES}
    )
    
    # Workaround as per https://discourse.cmake.org/t/how-to-get-an-lc-rpath-and-rpath-prefix-on-a-dylib-on-macos/5540/5

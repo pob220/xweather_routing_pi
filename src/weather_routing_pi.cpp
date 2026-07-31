@@ -93,13 +93,8 @@ weather_routing_pi::weather_routing_pi(void* ppimgr)
 
   // Create the PlugIn icons  -from shipdriver
   // loads png file for the listing panel icon
-  wxFileName fn;
-  auto path = GetPluginDataDir(PLUGIN_PACKAGE_NAME);
-  fn.SetPath(path);
-  fn.AppendDir("data");
-  fn.SetFullName("weather_routing_panel.png");
-
-  path = fn.GetFullPath();
+  const wxString path =
+      WeatherRoutingDataFile(_T("weather_routing_panel.png"));
 
   wxInitAllImageHandlers();
 

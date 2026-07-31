@@ -337,6 +337,14 @@ include_directories(BEFORE
 
 target_sources(${PACKAGE_NAME} PUBLIC ${SRC} )
 
+# Installed packages resolve their assets through OpenCPN's plugin data path.
+# An in-tree developer build has no installed xweather_routing_pi data
+# directory, so give that build an explicit source-only fallback.
+if(NOT CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  target_compile_definitions(${PACKAGE_NAME} PRIVATE
+    XWEATHER_ROUTING_SOURCE_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+endif()
+
 if(CMAKE_DL_LIBS)
   target_link_libraries(${PACKAGE_NAME} ${CMAKE_DL_LIBS})
 endif()
@@ -398,6 +406,9 @@ if (NOT OCPN_FLATPAK_CONFIG)
   
   add_subdirectory(opencpn-libs/bzip2)
   target_link_libraries(${PACKAGE_NAME} ocpn::bzip2)
+
+  add_subdirectory(opencpn-libs/zlib)
+  target_link_libraries(${PACKAGE_NAME} ocpn::zlib)
  
   add_subdirectory(opencpn-libs/libtess2)
   target_link_libraries(${PACKAGE_NAME} ocpn::libtess2)
@@ -414,16 +425,6 @@ add_definitions(-DTIXML_USE_STL)
 
 
 ##------- Change below to match project requirements --------------------##
-
-IF(WIN32)
-    IF(MSVC)
-        #include_directories(${PROJECT_SOURCE_DIR}/buildwin/include)
-        target_link_libraries(${PACKAGE_NAME} "${PROJECT_SOURCE_DIR}/buildwin/zlib1.lib")
-    ELSE()
-        # MINGW
-        target_link_libraries(${PACKAGE_NAME} "-lz")
-    ENDIF()
-ENDIF()
 
 ##------- Change below to match project requirements --------------
 
