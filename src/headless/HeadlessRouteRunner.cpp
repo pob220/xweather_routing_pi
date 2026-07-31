@@ -248,7 +248,8 @@ bool HeadlessRouteRunner::WriteSingleRouteResult(
   if (outputPath.IsEmpty()) return true;
 
   weather_routing_engine::RoutingResult result;
-  result.scenario = scenario ? scenario->name : "Weather Routing headless run";
+  result.scenario =
+      scenario ? scenario->name : wxString(_T("Weather Routing headless run"));
   result.status = status;
   result.failureReason = failureReason;
   for (auto route : routes) result.candidates.push_back(CandidateFromRoute(route));

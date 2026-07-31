@@ -96,7 +96,7 @@ wxString calculateTimeDelta(wxDateTime startTime, wxDateTime endTime) {
     int seconds = (double)span.GetSeconds().ToLong();
 
     timeStr =
-        (days ? wxString::Format(_T("%dd "), days) : _T("")) +
+        (days ? wxString::Format(_T("%dd "), days) : wxString()) +
         (hours || days
              ? wxString::Format(_T("%02d:%02d"), hours, (int)round(minutes))
              : wxString::Format(_T("%02d %02d"), (int)floor(minutes), seconds));

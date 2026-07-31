@@ -131,7 +131,7 @@ void ReportDialog::SetRouteMapOverlays(
     double port_starboard = (*it)->RouteInfo(RouteMapOverlay::PORT_STARBOARD);
     page += _("Port/Starboard") + wxString(_T(": ")) +
             (std::isnan(port_starboard)
-                 ? _T("nan")
+                 ? wxString(_T("nan"))
                  : wxString::Format(_T("%d/%d"), (int)port_starboard,
                                     100 - (int)port_starboard)) +
             _T("<dt>");

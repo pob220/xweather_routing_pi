@@ -194,7 +194,8 @@ static char* strtok_polar(const char* line, char** saveptr) {
 #define MAX_WINDSPEEDS_IN_TABLE 200
 #define MESSAGE(S)                                                        \
   (wxString::FromUTF8(wxFileName(filename).GetFullName()) +               \
-   (linenum > 0 ? (_(" line ") + wxString::Format("%d", linenum)) : "") + \
+   (linenum > 0 ? (_(" line ") + wxString::Format("%d", linenum))          \
+                 : wxString()) +                                          \
    ": " + S + "\n")
 #define PARSE_WARNING(S)                             \
   do {                                               \

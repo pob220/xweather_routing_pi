@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <numbers>
 #include <set>
 #include <sstream>
 
@@ -37,7 +38,9 @@ struct Projection {
   explicit Projection(double latitude)
       : referenceLat(latitude),
         lonScale(kEarthNmPerDegree *
-                 std::max(0.05, std::cos(latitude * M_PI / 180.0))) {}
+                 std::max(0.05,
+                          std::cos(latitude * std::numbers::pi_v<double> /
+                                   180.0))) {}
 
   XYPoint ToXY(const weather_routing_engine::StabilityPoint& point) const {
     return {point.lon * lonScale, point.lat * kEarthNmPerDegree};

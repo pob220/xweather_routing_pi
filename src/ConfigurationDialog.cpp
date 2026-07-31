@@ -415,14 +415,14 @@ void ConfigurationDialog::OnBoatFilename(wxCommandEvent& event) {
   do {                                                                      \
     bool allsame = true;                                                    \
     std::list<RouteMapConfiguration>::iterator it = configurations.begin(); \
-    TYPE value = VALUE;                                                     \
+    TYPE value = (VALUE);                                                   \
     for (it++; it != configurations.end(); it++) {                          \
-      if (value != VALUE) {                                                 \
+      if (value != (VALUE)) {                                               \
         allsame = false;                                                    \
         break;                                                              \
       }                                                                     \
     }                                                                       \
-    CONTROL->SETTER(allsame ? value : NULLVALUE);                           \
+    CONTROL->SETTER(allsame ? value : TYPE(NULLVALUE));                     \
     wxSize s(CONTROL->GetSize());                                           \
     if (allsame)                                                            \
       CONTROL->SetForegroundColour(wxColour(0, 0, 0));                      \
@@ -549,7 +549,7 @@ void ConfigurationDialog::SetConfigurations(
   SET_SPIN_VALUE(TimeStepHours, (int)((*it).DeltaTime / 3600));
   SET_SPIN_VALUE(TimeStepMinutes, ((int)(*it).DeltaTime / 60) % 60);
 
-  SET_CONTROL(boatFileName, m_tBoat, SetValue, wxString, _T(""));
+  SET_CONTROL(boatFileName, m_tBoat, SetValue, wxString, wxString());
   long l = m_tBoat->GetValue().Length();
   m_tBoat->SetSelection(l, l);
 

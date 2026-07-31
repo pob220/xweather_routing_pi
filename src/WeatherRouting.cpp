@@ -5316,8 +5316,9 @@ private:
       weatherroute->Update(m_WeatherRouting);
 
       RouteMapConfiguration configuration = routemap->GetConfiguration();
-      long row = m_List->InsertItem(m_List->GetItemCount(),
-                                    routemap == bestRoute ? _("Best") : _T(""));
+      long row =
+          m_List->InsertItem(m_List->GetItemCount(),
+                             routemap == bestRoute ? _("Best") : wxString());
       bool complete = routemap->Finished() && routemap->ReachedDestination();
       if (complete) ++completeRoutes;
       m_List->SetItemData(row, static_cast<long>(routeIndex));
