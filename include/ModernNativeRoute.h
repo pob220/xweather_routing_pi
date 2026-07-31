@@ -4,7 +4,7 @@
 #include <wx/string.h>
 
 class RouteMapOverlay;
-class RouteMapConfiguration;
+struct RouteMapConfiguration;
 
 /** Return whether this configuration will use the modern native solver. */
 bool ModernNativeRouteEnabled(const RouteMapConfiguration& configuration);

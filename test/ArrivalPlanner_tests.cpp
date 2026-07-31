@@ -9,6 +9,13 @@ namespace wr = supercpn::weather_routing;
 
 namespace {
 
+template <typename Clock, typename Duration>
+auto ChronoTicks(const std::chrono::time_point<Clock, Duration>& value) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             value.time_since_epoch())
+      .count();
+}
+
 wr::RoutingRequest Request() {
   wr::RoutingRequest request;
   request.start = {53.30, -4.63};
@@ -63,12 +70,18 @@ TEST(ArrivalPlanner, SelectsLatestForwardValidatedDepartureBeforeDeadline) {
   ASSERT_EQ(result.status, wr::ArrivalPlanningStatus::Complete);
   ASSERT_TRUE(result.departure);
   ASSERT_TRUE(result.arrival);
-  EXPECT_EQ(*result.departure, deadline - std::chrono::hours{10});
-  EXPECT_EQ(*result.arrival, deadline);
+  EXPECT_EQ(ChronoTicks(*result.departure),
+            ChronoTicks(deadline - std::chrono::hours{10}));
+  EXPECT_EQ(ChronoTicks(*result.arrival), ChronoTicks(deadline));
   ASSERT_TRUE(result.route);
   EXPECT_TRUE(result.route->validation.passed);
   EXPECT_GT(result.diagnostics.reverseProjections, 0U);
-  EXPECT_EQ(evaluated, result.diagnostics.evaluatedDepartures);
+  ASSERT_EQ(evaluated.size(),
+            result.diagnostics.evaluatedDepartures.size());
+  for (std::size_t index = 0; index < evaluated.size(); ++index) {
+    EXPECT_EQ(ChronoTicks(evaluated[index]),
+              ChronoTicks(result.diagnostics.evaluatedDepartures[index]));
+  }
 }
 
 TEST(ArrivalPlanner, NeverEvaluatesBeforeEarliestAllowedDeparture) {
@@ -86,8 +99,10 @@ TEST(ArrivalPlanner, NeverEvaluatesBeforeEarliestAllowedDeparture) {
 
   EXPECT_EQ(result.status, wr::ArrivalPlanningStatus::NoFeasibleSchedule);
   ASSERT_FALSE(evaluated.empty());
-  for (const wr::TimePoint departure : evaluated)
-    EXPECT_GE(departure, *options.earliestAllowedDeparture);
+  for (const wr::TimePoint departure : evaluated) {
+    EXPECT_GE(ChronoTicks(departure),
+              ChronoTicks(*options.earliestAllowedDeparture));
+  }
 }
 
 TEST(ArrivalPlanner, RejectsRoutesWhichFailForwardValidation) {

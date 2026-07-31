@@ -160,6 +160,12 @@ add_test(
         -DROUTING_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/WeatherRouting.cpp
         -P ${CMAKE_CURRENT_LIST_DIR}/ConfigurationTimeZoneLifecycleContract.cmake
 )
+add_test(
+    NAME weather_routing_msvc_cplusplus_contract
+    COMMAND ${CMAKE_COMMAND}
+        -DROOT_CMAKE=${WEATHER_ROUTING_SOURCE_DIR}/CMakeLists.txt
+        -P ${CMAKE_CURRENT_LIST_DIR}/MsvcCplusplusContract.cmake
+)
 
 target_compile_definitions(weather_routing_pi_tests
     PUBLIC

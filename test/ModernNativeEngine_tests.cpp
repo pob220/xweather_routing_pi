@@ -446,18 +446,34 @@ bool Successful(RoutingStatus status) {
          status == RoutingStatus::CompleteUsingGraphFallback;
 }
 
+template <typename Clock, typename Duration>
+auto ChronoTicks(const std::chrono::time_point<Clock, Duration>& value) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             value.time_since_epoch())
+      .count();
+}
+
+template <typename Rep, typename Period>
+auto ChronoTicks(const std::chrono::duration<Rep, Period>& value) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(value).count();
+}
+
 void ExpectExactlyEquivalent(const RoutingResult& expected,
                              const RoutingResult& actual) {
   EXPECT_EQ(expected.status, actual.status);
   EXPECT_EQ(expected.solverPath, actual.solverPath);
   EXPECT_EQ(expected.message, actual.message);
-  EXPECT_EQ(expected.metrics.elapsed, actual.metrics.elapsed);
+  EXPECT_EQ(ChronoTicks(expected.metrics.elapsed),
+            ChronoTicks(actual.metrics.elapsed));
   EXPECT_DOUBLE_EQ(expected.metrics.distanceNm, actual.metrics.distanceNm);
-  EXPECT_EQ(expected.metrics.sailingTime, actual.metrics.sailingTime);
-  EXPECT_EQ(expected.metrics.motorSailingTime,
-            actual.metrics.motorSailingTime);
-  EXPECT_EQ(expected.metrics.motorOnlyTime, actual.metrics.motorOnlyTime);
-  EXPECT_EQ(expected.metrics.waitingTime, actual.metrics.waitingTime);
+  EXPECT_EQ(ChronoTicks(expected.metrics.sailingTime),
+            ChronoTicks(actual.metrics.sailingTime));
+  EXPECT_EQ(ChronoTicks(expected.metrics.motorSailingTime),
+            ChronoTicks(actual.metrics.motorSailingTime));
+  EXPECT_EQ(ChronoTicks(expected.metrics.motorOnlyTime),
+            ChronoTicks(actual.metrics.motorOnlyTime));
+  EXPECT_EQ(ChronoTicks(expected.metrics.waitingTime),
+            ChronoTicks(actual.metrics.waitingTime));
   EXPECT_EQ(expected.diagnostics.generatedStates,
             actual.diagnostics.generatedStates);
   EXPECT_EQ(expected.diagnostics.retainedStates,
@@ -471,8 +487,10 @@ void ExpectExactlyEquivalent(const RoutingResult& expected,
   for (std::size_t index = 0; index < expected.legs.size(); ++index) {
     EXPECT_EQ(expected.legs[index].start, actual.legs[index].start);
     EXPECT_EQ(expected.legs[index].end, actual.legs[index].end);
-    EXPECT_EQ(expected.legs[index].startTime, actual.legs[index].startTime);
-    EXPECT_EQ(expected.legs[index].endTime, actual.legs[index].endTime);
+    EXPECT_EQ(ChronoTicks(expected.legs[index].startTime),
+              ChronoTicks(actual.legs[index].startTime));
+    EXPECT_EQ(ChronoTicks(expected.legs[index].endTime),
+              ChronoTicks(actual.legs[index].endTime));
     EXPECT_DOUBLE_EQ(expected.legs[index].headingDegrees,
                      actual.legs[index].headingDegrees);
     EXPECT_DOUBLE_EQ(expected.legs[index].courseThroughWaterDegrees,
@@ -497,14 +515,17 @@ TEST(ModernNativeEngine, RoutesIrishSeaDeterministically) {
   ASSERT_TRUE(Successful(first.status)) << first.message;
   ASSERT_TRUE(first.validation.passed) << first.validation.failureReason;
   EXPECT_EQ(first.validation.acceptedPrefixLegs, first.legs.size());
-  EXPECT_EQ(first.metrics.elapsed, second.metrics.elapsed);
+  EXPECT_EQ(ChronoTicks(first.metrics.elapsed),
+            ChronoTicks(second.metrics.elapsed));
   EXPECT_DOUBLE_EQ(first.metrics.distanceNm, second.metrics.distanceNm);
   ASSERT_EQ(first.legs.size(), second.legs.size());
   for (std::size_t index = 0; index < first.legs.size(); ++index) {
     EXPECT_EQ(first.legs[index].start, second.legs[index].start);
     EXPECT_EQ(first.legs[index].end, second.legs[index].end);
-    EXPECT_EQ(first.legs[index].startTime, second.legs[index].startTime);
-    EXPECT_EQ(first.legs[index].endTime, second.legs[index].endTime);
+    EXPECT_EQ(ChronoTicks(first.legs[index].startTime),
+              ChronoTicks(second.legs[index].startTime));
+    EXPECT_EQ(ChronoTicks(first.legs[index].endTime),
+              ChronoTicks(second.legs[index].endTime));
     EXPECT_DOUBLE_EQ(first.legs[index].headingDegrees,
                      second.legs[index].headingDegrees);
     EXPECT_DOUBLE_EQ(first.legs[index].courseOverGroundDegrees,
@@ -884,14 +905,17 @@ TEST(ModernNativeEngine, HigherEffortRetainsExactLowerTierSuccess) {
   ASSERT_EQ(expanded.diagnostics.effortTiersAttempted,
             std::vector<unsigned>({100U}));
   EXPECT_EQ(expanded.diagnostics.completedEffortPercent, 100U);
-  EXPECT_EQ(expanded.metrics.elapsed, baseline.metrics.elapsed);
+  EXPECT_EQ(ChronoTicks(expanded.metrics.elapsed),
+            ChronoTicks(baseline.metrics.elapsed));
   EXPECT_DOUBLE_EQ(expanded.metrics.distanceNm, baseline.metrics.distanceNm);
   ASSERT_EQ(expanded.legs.size(), baseline.legs.size());
   for (std::size_t index = 0; index < baseline.legs.size(); ++index) {
     EXPECT_EQ(expanded.legs[index].start, baseline.legs[index].start);
     EXPECT_EQ(expanded.legs[index].end, baseline.legs[index].end);
-    EXPECT_EQ(expanded.legs[index].startTime, baseline.legs[index].startTime);
-    EXPECT_EQ(expanded.legs[index].endTime, baseline.legs[index].endTime);
+    EXPECT_EQ(ChronoTicks(expanded.legs[index].startTime),
+              ChronoTicks(baseline.legs[index].startTime));
+    EXPECT_EQ(ChronoTicks(expanded.legs[index].endTime),
+              ChronoTicks(baseline.legs[index].endTime));
   }
 }
 
@@ -996,7 +1020,8 @@ TEST(ModernNativeEngine, WaitsWithinBoundForAWeatherOrTidalGate) {
   const auto result = RoutingEngine{}.route(request, environment);
   ASSERT_TRUE(Successful(result.status)) << result.message;
   ASSERT_TRUE(result.validation.passed) << result.validation.failureReason;
-  EXPECT_GE(result.metrics.waitingTime, std::chrono::hours{1});
+  EXPECT_GE(ChronoTicks(result.metrics.waitingTime),
+            ChronoTicks(std::chrono::hours{1}));
   EXPECT_GT(result.diagnostics.waitStates, 0U);
   EXPECT_TRUE(
       std::any_of(result.legs.begin(), result.legs.end(),
@@ -1031,7 +1056,8 @@ TEST(ModernNativeEngine, FinalApproachMayOutlastSeveralSearchSteps) {
   ASSERT_TRUE(result.validation.passed) << result.validation.failureReason;
   ASSERT_FALSE(result.legs.empty());
   EXPECT_EQ(result.legs.back().end, request.destination);
-  EXPECT_GT(result.metrics.elapsed, std::chrono::minutes{30});
+  EXPECT_GT(ChronoTicks(result.metrics.elapsed),
+            ChronoTicks(std::chrono::minutes{30}));
   EXPECT_LE(result.diagnostics.generatedStates, 20U);
 }
 

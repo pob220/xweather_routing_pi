@@ -148,6 +148,14 @@ message(STATUS "${CMLOC}Build type: ${CMAKE_BUILD_TYPE}")
 
 project(${PACKAGE})
 
+# MSVC otherwise reports the historical 199711L value for __cplusplus even
+# when /std:c++20 is active.  Frontend2's bundled JsonCpp uses __cplusplus to
+# choose unique_ptr rather than the removed auto_ptr, and plugin code uses the
+# same feature-test contract.
+if(MSVC)
+  add_compile_options(/Zc:__cplusplus)
+endif()
+
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 ##========================================================
