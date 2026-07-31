@@ -47,6 +47,11 @@ if errorlevel 1 (
   call "%VS_HOME%\Community\VC\Auxiliary\Build\vcvars32.bat"
 )
 
+rem The test executable links the same wxWidgets DLLs supplied by an OpenCPN
+rem host. Make that recorded runtime directory available before GoogleTest
+rem discovery; EXTRA_PATH contains gettext tools, not wxWidgets.
+set "PATH=%wxWidgets_LIB_DIR%;%PATH%"
+
 git submodule update --init opencpn-libs
 if errorlevel 1 exit /b %errorlevel%
 
