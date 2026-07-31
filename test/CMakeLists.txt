@@ -138,6 +138,17 @@ set(TEST_SRC
            ocpn::zlib
            ocpn::jsonlib
    )
+
+   if(WIN32)
+       # zlib1.lib is an import library. Keep its matching x86 DLL beside the
+       # x86 test executable so GoogleTest discovery cannot select an
+       # unrelated zlib1.dll from the executor PATH.
+       add_custom_command(TARGET weather_routing_pi_tests POST_BUILD
+           COMMAND ${CMAKE_COMMAND} -E copy_if_different
+               "${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/zlib/win/zlib1.dll"
+               "$<TARGET_FILE_DIR:weather_routing_pi_tests>"
+       )
+   endif()
    
    # Workaround as per https://discourse.cmake.org/t/how-to-get-an-lc-rpath-and-rpath-prefix-on-a-dylib-on-macos/5540/5
    # TODO: Quinton: Make this robust on non-Mac platforms.
