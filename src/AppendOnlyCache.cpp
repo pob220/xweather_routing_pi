@@ -18,6 +18,13 @@
 #include <sstream>
 #include <utility>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
 
 constexpr char kFileMagic[8] = {'O', 'C', 'P', 'C', 'A', 'C', 'H', '1'};
@@ -62,6 +69,24 @@ std::uint32_t RecordCrc(const std::string& key,
 
 void SetError(std::string* error, const std::string& message) {
   if (error) *error = message;
+}
+
+bool ReplacePathWithFile(const std::string& replacement,
+                         const std::string& destination) {
+#ifdef _WIN32
+  const std::wstring replacement_w =
+      std::filesystem::path(replacement).wstring();
+  const std::wstring destination_w =
+      std::filesystem::path(destination).wstring();
+  if (::ReplaceFileW(destination_w.c_str(), replacement_w.c_str(), nullptr,
+                     REPLACEFILE_WRITE_THROUGH, nullptr, nullptr))
+    return true;
+  return ::MoveFileExW(replacement_w.c_str(), destination_w.c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) !=
+         FALSE;
+#else
+  return std::rename(replacement.c_str(), destination.c_str()) == 0;
+#endif
 }
 
 bool WriteRecord(std::ostream& output, const std::string& key,
@@ -421,7 +446,7 @@ bool AppendOnlyCache::Compact(std::string* error) {
     std::remove(temporary_path.c_str());
     return false;
   }
-  if (std::rename(temporary_path.c_str(), path_.c_str()) != 0) {
+  if (!ReplacePathWithFile(temporary_path, path_)) {
     SetError(error, "unable to replace cache with compacted file");
     std::remove(temporary_path.c_str());
     return false;

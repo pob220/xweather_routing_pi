@@ -866,8 +866,6 @@ bool Polar::InsideCrossOverContour(float twa, float tws, bool optimize_tacking,
   // on the point of sail.
   if (!CrossOverRegion.Contains(twa, tws)) {
     if (status) *status = POLAR_SPEED_INVALID_SAIL_CONFIGURATION;
-    wxLogMessage("Outside cross over region: H=%f VW=%f. Polar=%s", twa, tws,
-                 wxFileName(FileName).GetFullName());
     return false;
   }
   return true;
