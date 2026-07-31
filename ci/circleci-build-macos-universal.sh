@@ -28,6 +28,17 @@ export WX_CONFIG="${wx_prefix}/bin/wx-config-3.2"
 export OCPN_TARGET=macos-arm64
 export WX_VER=32
 
+# Some Apple-Silicon Homebrew images have shipped a gettext bottle whose
+# msgfmt crashes with SIGSEGV.  Exercise the largest catalogue before the
+# parallel build and rebuild only a broken bottle from the official formula,
+# matching the guard proven by xGRIB's native macOS job.
+msgfmt_smoke="${TMPDIR:-/tmp}/xweather-routing-msgfmt-smoke.mo"
+if ! msgfmt --check -o "$msgfmt_smoke" po/el_GR.po; then
+  brew reinstall --build-from-source gettext </dev/null
+  msgfmt --check -o "$msgfmt_smoke" po/el_GR.po
+fi
+rm -f "$msgfmt_smoke"
+
 build_tests="$repo/build-tests"
 build_package="$repo/build-package"
 stage="$repo/stage"

@@ -9,6 +9,18 @@ set "SCRIPTDIR=%~dp0"
 set "GIT_HOME=C:\Program Files\Git"
 if "%CONFIGURATION%" == "" set "CONFIGURATION=RelWithDebInfo"
 
+rem CMake 4's FindGettext module requires msgfmt and msgmerge at configure
+rem time.  Install the same pinned package used by xGRIB's validated Windows
+rem build before configuring the wxWidgets and Visual Studio environments.
+choco install gettext --version 1.0.0.20260310 -y --no-progress
+if errorlevel 1 exit /b %errorlevel%
+call refreshenv
+if errorlevel 1 exit /b %errorlevel%
+where msgfmt
+if errorlevel 1 exit /b 1
+where msgmerge
+if errorlevel 1 exit /b 1
+
 set wx_vers="wx%WX_VER%"
 echo Building %wx_vers%
 echo Building with %MSVC_VERSION%
