@@ -46,6 +46,7 @@ set(TEST_SRC
     Polar_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
+    MultiLegRouteOutput_tests.cpp
     RouteSimplifier_tests.cpp
     StabilityCorridor_tests.cpp
     StabilityCorridorLifecycle_tests.cpp
@@ -65,6 +66,7 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/OceanPrewarmPolicy.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/MultiLegRouteOutput.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Polar.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteSimplifier.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/StabilityCorridorCalculator.cpp

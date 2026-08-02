@@ -39,6 +39,7 @@
 #include "BoatDialog.h"
 #include "RouteMapOverlay.h"
 #include "ModernNativeRoute.h"
+#include "MultiLegRouteOutput.h"
 #include "RouteWaypointExtractor.h"
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
@@ -6669,48 +6670,46 @@ void WeatherRouting::OnSimplifyRoute(wxCommandEvent& event) {
 }
 
 void WeatherRouting::OnSaveAsRoute(wxCommandEvent& event) {
-  std::list<RouteMapOverlay*> routemapoverlays = CurrentRouteMaps(true);
-  std::vector<RouteMapOverlay*> routes(routemapoverlays.begin(),
-                                       routemapoverlays.end());
-  std::vector<PlotData> points;
-  if (routes.size() > 1 && SelectedSimplifiedGroup(routes, &points)) {
-    SaveCombinedRoute(routes, points);
-    return;
+  std::vector<RouteOutputGroup> groups = SelectedRouteOutputGroups();
+  for (size_t i = 0; i < groups.size(); ++i) {
+    if (!groups[i].multi_leg) {
+      SaveAsRoute(*groups[i].routes.front());
+      continue;
+    }
+
+    std::vector<PlotData> points;
+    bool simplified = false;
+    wxString failure_reason;
+    if (!PrepareCombinedRouteOutput(groups[i].routes, &points, &simplified,
+                                    &failure_reason)) {
+      if (!failure_reason.IsEmpty())
+        wxMessageBox(failure_reason, _("Save multi-waypoint route"),
+                     wxOK | wxICON_WARNING, this);
+      continue;
+    }
+    SaveCombinedRoute(groups[i].routes, points, simplified);
   }
-  for (std::list<RouteMapOverlay*>::iterator it = routemapoverlays.begin();
-       it != routemapoverlays.end(); it++)
-    SaveAsRoute(**it);
 }
 
 void WeatherRouting::OnExportRouteAsGPX(wxCommandEvent& event) {
-  std::list<RouteMapOverlay*> routemapoverlays = CurrentRouteMaps(true);
-  std::vector<RouteMapOverlay*> routes(routemapoverlays.begin(),
-                                       routemapoverlays.end());
-  std::vector<PlotData> points;
-  if (routes.size() > 1 && SelectedSimplifiedGroup(routes, &points)) {
-    ExportCombinedRoute(routes, points);
-    return;
-  }
-  int nfail = 0;
-  for (std::list<RouteMapOverlay*>::iterator it = routemapoverlays.begin();
-       it != routemapoverlays.end(); it++) {
-    std::list<PlotData> plotdata = (*it)->GetPlotData(false);
+  std::vector<RouteOutputGroup> groups = SelectedRouteOutputGroups();
+  for (size_t i = 0; i < groups.size(); ++i) {
+    if (!groups[i].multi_leg) {
+      ExportRoute(*groups[i].routes.front());
+      continue;
+    }
 
-    if (plotdata.empty())
-      nfail++;
-    else
-      ExportRoute(**it);
-  }
-  if (nfail) {
-    wxString nc;
-    nc.Printf("%d ", nfail);
-    wxString msg(_("Route export failed"));
-    msg += "\n";
-    msg += nc;
-    msg += _("Route(s) not computed, cannot export");
-    wxMessageDialog mdlg(this, msg, _("Weather Routing"),
-                         wxOK | wxICON_WARNING);
-    mdlg.ShowModal();
+    std::vector<PlotData> points;
+    bool simplified = false;
+    wxString failure_reason;
+    if (!PrepareCombinedRouteOutput(groups[i].routes, &points, &simplified,
+                                    &failure_reason)) {
+      if (!failure_reason.IsEmpty())
+        wxMessageBox(failure_reason, _("Export multi-waypoint route"),
+                     wxOK | wxICON_WARNING, this);
+      continue;
+    }
+    ExportCombinedRoute(groups[i].routes, points, simplified);
   }
 }
 
@@ -9476,6 +9475,127 @@ RouteSimplificationResult WeatherRouting::SimplifyOutputRoutes(
   return combined;
 }
 
+std::vector<WeatherRouting::RouteOutputGroup>
+WeatherRouting::SelectedRouteOutputGroups() {
+  std::vector<RouteOutputGroup> groups;
+  const std::list<RouteMapOverlay*> selected = CurrentRouteMaps(true);
+  std::set<wxString> included_multi_leg_groups;
+
+  for (std::list<RouteMapOverlay*>::const_iterator it = selected.begin();
+       it != selected.end(); ++it) {
+    RouteMapOverlay* route = *it;
+    if (!route) continue;
+    const RouteMapConfiguration configuration = route->GetConfiguration();
+
+    RouteOutputGroup output;
+    if (configuration.IsMultiLegGenerated) {
+      output.multi_leg = true;
+      if (configuration.MultiLegGroupId.IsEmpty()) {
+        output.routes.push_back(route);
+        groups.push_back(output);
+        continue;
+      }
+      if (!included_multi_leg_groups.insert(configuration.MultiLegGroupId)
+               .second)
+        continue;
+      output.routes = GetMultiLegGroupRoutes(configuration.MultiLegGroupId);
+    } else {
+      output.routes.push_back(route);
+    }
+    if (!output.routes.empty()) groups.push_back(output);
+  }
+  return groups;
+}
+
+bool WeatherRouting::PrepareCombinedRouteOutput(
+    const std::vector<RouteMapOverlay*>& routes, std::vector<PlotData>* points,
+    bool* simplified, wxString* failure_reason) {
+  if (points) points->clear();
+  if (simplified) *simplified = false;
+  if (routes.empty()) {
+    if (failure_reason)
+      *failure_reason = _("No multi-waypoint weather route is available.");
+    return false;
+  }
+
+  const RouteMapConfiguration first_configuration =
+      routes.front()->GetConfiguration();
+  if (!first_configuration.IsMultiLegGenerated ||
+      first_configuration.MultiLegGroupId.IsEmpty()) {
+    if (failure_reason)
+      *failure_reason = _("The selected route is not a multi-waypoint route.");
+    return false;
+  }
+
+  for (size_t i = 0; i < routes.size(); ++i) {
+    if (!routes[i]) {
+      if (failure_reason)
+        *failure_reason = _("The multi-waypoint route contains an unavailable "
+                            "leg.");
+      return false;
+    }
+    const RouteMapConfiguration configuration = routes[i]->GetConfiguration();
+    if (!configuration.IsMultiLegGenerated ||
+        configuration.MultiLegGroupId !=
+            first_configuration.MultiLegGroupId) {
+      if (failure_reason)
+        *failure_reason = _("The selected route legs do not belong to one "
+                            "multi-waypoint passage.");
+      return false;
+    }
+    if (!routes[i]->Finished() || !routes[i]->ReachedDestination()) {
+      if (failure_reason)
+        *failure_reason = wxString::Format(
+            _("Leg %lu of the multi-waypoint route has not reached its "
+              "destination and cannot be exported."),
+            static_cast<unsigned long>(i + 1));
+      return false;
+    }
+    if (!ValidateRouteForOutput(*routes[i], _("Prepare route output"))) {
+      if (failure_reason) failure_reason->Clear();
+      return false;
+    }
+  }
+
+  std::vector<MultiLegRouteOutputLeg> legs;
+  legs.reserve(routes.size());
+  for (size_t i = 0; i < routes.size(); ++i) {
+    const RouteMapConfiguration configuration = routes[i]->GetConfiguration();
+    MultiLegRouteOutputLeg leg;
+    leg.index = configuration.MultiLegLegIndex;
+    leg.count = configuration.MultiLegLegCount;
+    leg.points = FullOutputRoute(*routes[i]);
+    legs.push_back(leg);
+  }
+
+  MultiLegRouteOutputResult assembled = MultiLegRouteOutput::Assemble(legs);
+  if (!assembled.success) {
+    if (failure_reason) *failure_reason = assembled.failure_reason;
+    return false;
+  }
+
+  // Simplification is optional. Recheck a stored version against the current
+  // geometry and chart evidence only after the complete original passage has
+  // passed leg-count and continuity validation. If simplification is stale,
+  // fall back to the assembled route above.
+  if (SelectedSimplifiedGroup(routes)) {
+    RouteSimplificationResult current =
+        SimplifyOutputRoutes(routes, m_SimplifiedRouteGroup.options);
+    if (current.success) {
+      if (points) *points = current.points;
+      if (simplified) *simplified = true;
+      return true;
+    }
+    wxLogMessage(
+        "WR_ROUTE_OUTPUT group_simplification_fallback group=%s reason=\"%s\"",
+        first_configuration.MultiLegGroupId, current.failure_reason);
+    m_SimplifiedRouteGroup = SimplifiedRouteGroupState();
+  }
+
+  if (points) points->swap(assembled.points);
+  return true;
+}
+
 bool WeatherRouting::SelectedSimplifiedGroup(
     const std::vector<RouteMapOverlay*>& routes,
     std::vector<PlotData>* points) const {
@@ -9494,24 +9614,10 @@ bool WeatherRouting::SelectedSimplifiedGroup(
 
 void WeatherRouting::SaveCombinedRoute(
     const std::vector<RouteMapOverlay*>& routes,
-    const std::vector<PlotData>& points) {
+    const std::vector<PlotData>& points, bool simplified) {
   if (routes.empty() || points.empty()) return;
   for (size_t i = 0; i < routes.size(); ++i)
     if (!ValidateRouteForOutput(*routes[i], _("Save as route"))) return;
-
-  wxString failure_reason;
-  if (!ValidateSimplifiedOutputRoute(*routes.front(), points,
-                                     &failure_reason)) {
-    wxMessageDialog dialog(
-        this,
-        wxString::Format(
-            _("The simplified multi-waypoint route is not chart-safe and was "
-              "not saved.\n\n%s"),
-            failure_reason),
-        _("Weather Routing"), wxOK | wxICON_WARNING);
-    dialog.ShowModal();
-    return;
-  }
 
   const RouteMapConfiguration first = routes.front()->GetConfiguration();
   const RouteMapConfiguration last = routes.back()->GetConfiguration();
@@ -9541,37 +9647,27 @@ void WeatherRouting::SaveCombinedRoute(
 
   wxLogMessage(
       "WR_ROUTE_OUTPUT save_combined_route route=\"%s -> %s\" legs=%lu "
-      "simplified=1 points=%lu",
+      "simplified=%d points=%lu",
       first.Start, last.End, static_cast<unsigned long>(routes.size()),
+      simplified ? 1 : 0,
       static_cast<unsigned long>(points.size()));
   wxMessageDialog dialog(
       this,
-      _("The simplified multi-waypoint routing has been saved as one route in "
-        "the 'Route and Mark' Manager\n"),
+      simplified
+          ? _("The simplified multi-waypoint routing has been saved as one "
+              "route in the 'Route and Mark' Manager\n")
+          : _("The complete multi-waypoint routing has been saved as one "
+              "route in the 'Route and Mark' Manager\n"),
       _("Weather Routing"), wxOK);
   dialog.ShowModal();
 }
 
 void WeatherRouting::ExportCombinedRoute(
     const std::vector<RouteMapOverlay*>& routes,
-    const std::vector<PlotData>& points) {
+    const std::vector<PlotData>& points, bool simplified) {
   if (routes.empty() || points.empty()) return;
   for (size_t i = 0; i < routes.size(); ++i)
     if (!ValidateRouteForOutput(*routes[i], _("Export as GPX"))) return;
-
-  wxString failure_reason;
-  if (!ValidateSimplifiedOutputRoute(*routes.front(), points,
-                                     &failure_reason)) {
-    wxMessageDialog dialog(
-        this,
-        wxString::Format(
-            _("The simplified multi-waypoint route is not chart-safe and was "
-              "not exported.\n\n%s"),
-            failure_reason),
-        _("Weather Routing"), wxOK | wxICON_WARNING);
-    dialog.ShowModal();
-    return;
-  }
 
   const RouteMapConfiguration first = routes.front()->GetConfiguration();
   const RouteMapConfiguration last = routes.back()->GetConfiguration();
@@ -9621,17 +9717,24 @@ void WeatherRouting::ExportCombinedRoute(
   for (int suffix_number = 1; wxFileName::Exists(path) && suffix_number < 100;
        ++suffix_number)
     path = wxString::Format("%s(%d).gpx", base, suffix_number);
-  navobj.save_file(path.ToStdString().c_str());
+  const bool saved = navobj.save_file(path.ToStdString().c_str());
 
   wxLogMessage(
       "WR_ROUTE_OUTPUT export_combined_gpx route=\"%s -> %s\" legs=%lu "
-      "simplified=1 points=%lu path=\"%s\"",
+      "simplified=%d points=%lu saved=%d path=\"%s\"",
       first.Start, last.End, static_cast<unsigned long>(routes.size()),
-      static_cast<unsigned long>(points.size()), path);
-  wxMessageDialog dialog(
-      this, _("Simplified multi-waypoint route exported to:\n") + path,
-      _("Weather Routing"), wxOK);
-  dialog.ShowModal();
+      simplified ? 1 : 0, static_cast<unsigned long>(points.size()),
+      saved ? 1 : 0, path);
+  if (saved) {
+    wxMessageBox(
+        (simplified ? _("Simplified multi-waypoint route exported to:\n")
+                    : _("Complete multi-waypoint route exported to:\n")) +
+            path,
+        _("Weather Routing"), wxOK, this);
+  } else {
+    wxMessageBox(_("GPX route file export failed.\n\n") + path,
+                 _("Weather Routing"), wxOK | wxICON_ERROR, this);
+  }
 }
 
 void WeatherRouting::SaveAsTrack(RouteMapOverlay& routemapoverlay) {

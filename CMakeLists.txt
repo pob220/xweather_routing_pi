@@ -212,6 +212,7 @@ SET(SRCS
             src/RouteMap.cpp
             src/RouteMapOverlay.cpp
             src/RouteWaypointExtractor.cpp
+            src/MultiLegRouteOutput.cpp
             src/RouteSimplifier.cpp
             src/StabilityRouteAdapter.cpp
             src/StabilityCorridorLifecycle.cpp
@@ -264,6 +265,7 @@ SET (HDRS
             include/FilterRoutesDialog.h
             include/ConfigurationBatchDialog.h
             include/ConstraintChecker.h
+            include/MultiLegRouteOutput.h
             include/RouteSimplifier.h
             include/StabilityRouteAdapter.h
             include/StabilityCorridorLifecycle.h

@@ -614,13 +614,24 @@ private:
   RouteSimplificationResult SimplifyOutputRoutes(
       const std::vector<RouteMapOverlay*>& routes,
       const RouteSimplificationOptions& options);
+  struct RouteOutputGroup {
+    bool multi_leg = false;
+    std::vector<RouteMapOverlay*> routes;
+  };
+  std::vector<RouteOutputGroup> SelectedRouteOutputGroups();
+  bool PrepareCombinedRouteOutput(
+      const std::vector<RouteMapOverlay*>& routes,
+      std::vector<PlotData>* points, bool* simplified,
+      wxString* failure_reason);
   bool SelectedSimplifiedGroup(
       const std::vector<RouteMapOverlay*>& routes,
       std::vector<PlotData>* points = nullptr) const;
   void SaveCombinedRoute(const std::vector<RouteMapOverlay*>& routes,
-                         const std::vector<PlotData>& points);
+                         const std::vector<PlotData>& points,
+                         bool simplified);
   void ExportCombinedRoute(const std::vector<RouteMapOverlay*>& routes,
-                           const std::vector<PlotData>& points);
+                           const std::vector<PlotData>& points,
+                           bool simplified);
   bool ValidateSimplifiedOutputRoute(
       RouteMapOverlay& routemapoverlay,
       const std::vector<PlotData>& points, wxString* failure_reason);
