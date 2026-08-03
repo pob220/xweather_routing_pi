@@ -52,8 +52,10 @@ int main() {
   try {
     const auto baseline = selectRoutingResourcePolicy(100.0, 100);
     const auto expanded = selectRoutingResourcePolicy(100.0, 400);
-    require(baseline.maximumGeneratedStates == 1'125'000,
+    require(baseline.maximumGeneratedStates == 1'145'000,
             "incorrect baseline total budget");
+    require(baseline.maximumCoastalEndpointGeneratedStates == 20'000,
+            "incorrect baseline coastal endpoint budget");
     require(baseline.maximumForwardGeneratedStates == 675'000,
             "incorrect baseline forward budget");
     require(baseline.maximumFrontierRecoveryGeneratedStates == 225'000,
@@ -63,6 +65,9 @@ int main() {
     require(expanded.maximumGeneratedStates ==
                 baseline.maximumGeneratedStates * 4,
             "400% effort did not scale every stage cumulatively");
+    require(expanded.maximumCoastalEndpointGeneratedStates ==
+                baseline.maximumCoastalEndpointGeneratedStates * 4,
+            "400% effort did not scale the coastal endpoint stage");
     require(normalizeRoutingEffortPercent(149) == 150,
             "effort tier normalization changed");
 

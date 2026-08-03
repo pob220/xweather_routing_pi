@@ -343,6 +343,56 @@ private:
   GeoPoint departure_;
 };
 
+class CurvedCoastalDepartureProvider final : public LandAndBoundaryProvider {
+public:
+  explicit CurvedCoastalDepartureProvider(GeoPoint departure)
+      : departure_(departure) {}
+
+  bool pointForbidden(GeoPoint) const override { return false; }
+  bool segmentForbidden(GeoPoint start, GeoPoint end,
+                        double safetyMarginNm) const override {
+    return segmentFromKnownSafeForbiddenAt(start, end, TestTime(),
+                                           safetyMarginNm);
+  }
+  bool segmentFromKnownSafeForbiddenAt(GeoPoint start, GeoPoint end, TimePoint,
+                                       double safetyMarginNm) const override {
+    if (safetyMarginNm <= 0.0) return false;
+    const GeoPoint midpoint{(start.latitude + end.latitude) / 2.0,
+                            (start.longitude + end.longitude) / 2.0};
+    const double westNm =
+        (departure_.longitude - midpoint.longitude) * 60.0 *
+        std::cos(departure_.latitude * 3.14159265358979323846 / 180.0);
+    const double northNm =
+        (midpoint.latitude - departure_.latitude) * 60.0;
+    // The configured stand-off forms a short tongue immediately west of the
+    // departure. A safe route must first turn north or south before resuming
+    // the direct westerly course. Zero-margin checks remain open water.
+    return westNm >= 0.25 && westNm <= 1.5 && std::abs(northNm) <= 0.2;
+  }
+  bool validationSegmentFromKnownSafeForbiddenAt(
+      GeoPoint start, GeoPoint end, TimePoint time,
+      double safetyMarginNm) const override {
+    return segmentFromKnownSafeForbiddenAt(start, end, time, safetyMarginNm);
+  }
+  double distanceToForbiddenNm(GeoPoint point) const override {
+    const double westNm =
+        (departure_.longitude - point.longitude) * 60.0 *
+        std::cos(departure_.latitude * 3.14159265358979323846 / 180.0);
+    const double northNm = (point.latitude - departure_.latitude) * 60.0;
+    if (westNm >= 0.0 && westNm <= 1.5 && std::abs(northNm) <= 0.2)
+      return std::max(0.01, 0.1 - westNm * 0.05);
+    if (std::abs(northNm) <= 0.3)
+      return std::min(10.0, 0.1 + std::abs(northNm) * 1.5);
+    return 10.0;
+  }
+  std::string identity() const override {
+    return "curved-coastal-departure";
+  }
+
+private:
+  GeoPoint departure_;
+};
+
 class CoastalDestinationIngressProvider final : public LandAndBoundaryProvider {
 public:
   CoastalDestinationIngressProvider(GeoPoint destination,
@@ -781,6 +831,62 @@ TEST(ModernNativeEngine, AuthoritativeReplayAllowsSafeCoastalDepartureEgress) {
   ASSERT_TRUE(Successful(result.status)) << result.message;
   EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
   EXPECT_EQ(result.validation.acceptedPrefixLegs, result.legs.size());
+}
+
+TEST(ModernNativeEngine,
+     CoastalDepartureUsesFineAuthoritativeEgressBeforeOffshoreSearch) {
+  auto request = TestRequest();
+  request.destination = destinationPoint(request.start, 270.0, 30.0);
+  request.vessel.propulsion.allowSailing = false;
+  request.vessel.propulsion.allowMotor = true;
+  request.vessel.propulsion.configuredMotorSpeedKnots = 6.0;
+  request.constraints.landSafetyMarginNm = 0.4;
+  request.options.timeStep = std::chrono::hours{1};
+  request.options.minimumTimeStep = std::chrono::minutes{10};
+  request.options.adaptiveTimeStep = false;
+  request.options.retryStages = 1;
+  request.options.useReverseRecovery = false;
+  request.options.useFrontierRecovery = false;
+  request.options.useGraphFallback = false;
+  request.limits.maximumRouteDuration = std::chrono::hours{12};
+  request.limits.maximumCoastalEndpointGeneratedStates = 500;
+  auto boundaries =
+      std::make_shared<CurvedCoastalDepartureProvider>(request.start);
+
+  const auto result =
+      RoutingEngine{}.route(request, TestEnvironment(boundaries));
+
+  ASSERT_TRUE(Successful(result.status)) << result.message;
+  ASSERT_FALSE(result.legs.empty());
+  EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
+  EXPECT_LE(result.legs.front().endTime - result.legs.front().startTime,
+            request.options.minimumTimeStep);
+  EXPECT_GT(result.diagnostics.coastalEndpointGeneratedStates, 0U);
+  EXPECT_LE(result.diagnostics.coastalEndpointGeneratedStates,
+            request.limits.maximumCoastalEndpointGeneratedStates);
+}
+
+TEST(ModernNativeEngine, CoastalDepartureEgressHasAnIndependentStateLimit) {
+  auto request = TestRequest();
+  request.destination = destinationPoint(request.start, 270.0, 30.0);
+  request.constraints.landSafetyMarginNm = 0.4;
+  request.options.timeStep = std::chrono::hours{1};
+  request.options.minimumTimeStep = std::chrono::minutes{10};
+  request.options.retryStages = 1;
+  request.options.useReverseRecovery = false;
+  request.options.useFrontierRecovery = false;
+  request.options.useGraphFallback = false;
+  request.limits.maximumCoastalEndpointGeneratedStates = 1;
+  auto boundaries =
+      std::make_shared<CurvedCoastalDepartureProvider>(request.start);
+
+  const auto result =
+      RoutingEngine{}.route(request, TestEnvironment(boundaries));
+
+  EXPECT_EQ(result.status, RoutingStatus::ResourceLimitReached);
+  EXPECT_EQ(result.diagnostics.coastalEndpointGeneratedStates, 1U);
+  EXPECT_NE(result.message.find("coastal endpoint generated-state budget"),
+            std::string::npos);
 }
 
 TEST(ModernNativeEngine,

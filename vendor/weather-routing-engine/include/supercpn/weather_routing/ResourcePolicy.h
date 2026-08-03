@@ -20,6 +20,7 @@ inline unsigned normalizeRoutingEffortPercent(unsigned percent) {
 
 struct RoutingResourcePolicy {
   std::uint64_t maximumGeneratedStates{};
+  std::uint64_t maximumCoastalEndpointGeneratedStates{};
   std::uint64_t maximumForwardGeneratedStates{};
   std::uint64_t maximumReverseCandidates{};
   std::uint64_t maximumReverseBridgeAttempts{};
@@ -54,18 +55,23 @@ inline RoutingResourcePolicy selectRoutingResourcePolicy(
   const double distanceScale =
       std::clamp(finiteDistance / 100.0, 0.6, 4.0);
   if (scoutPreview) {
+    const std::uint64_t endpoint =
+        scaleRoutingResource(4000, 1.0, 100);
     const std::uint64_t forward =
         scaleRoutingResource(60000, distanceScale, 100);
-    return {forward, forward, 0, 0, 0, 0, 0,
+    return {endpoint + forward, endpoint, forward, 0, 0, 0, 0, 0,
             scaleRoutingResource(10000, distanceScale, 100), 1};
   }
+  const std::uint64_t endpoint =
+      scaleRoutingResource(20000, 1.0, effortPercent);
   const std::uint64_t forward =
       scaleRoutingResource(675000, distanceScale, effortPercent);
   const std::uint64_t frontier =
       scaleRoutingResource(225000, distanceScale, effortPercent);
   const std::uint64_t graph =
       scaleRoutingResource(225000, distanceScale, effortPercent);
-  return {forward + frontier + graph,
+  return {endpoint + forward + frontier + graph,
+          endpoint,
           forward,
           scaleRoutingResource(512, distanceScale, effortPercent),
           scaleRoutingResource(40960, distanceScale, effortPercent),

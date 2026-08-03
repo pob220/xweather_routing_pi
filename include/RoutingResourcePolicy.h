@@ -29,6 +29,7 @@ inline int NormalizeRoutingEffortPercent(int percent) {
 
 struct RoutingResourcePolicy {
   std::uint64_t maximum_generated_states{};
+  std::uint64_t maximum_coastal_endpoint_generated_states{};
   std::uint64_t maximum_forward_generated_states{};
   std::uint64_t maximum_reverse_candidates{};
   std::uint64_t maximum_reverse_bridge_attempts{};
@@ -52,6 +53,7 @@ inline RoutingResourcePolicy SelectRoutingResourcePolicy(
           route_distance_nm,
           static_cast<unsigned>(std::max(0, effort_percent)), scout_preview);
   return {policy.maximumGeneratedStates,
+          policy.maximumCoastalEndpointGeneratedStates,
           policy.maximumForwardGeneratedStates,
           policy.maximumReverseCandidates,
           policy.maximumReverseBridgeAttempts,

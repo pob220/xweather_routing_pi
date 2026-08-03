@@ -11,6 +11,8 @@ in `include/supercpn/weather_routing`.
 The solver combines:
 
 - adaptive forward isochrones with bounded alternative-lineage retention;
+- a bounded, fine-grained coastal departure phase which preserves safe egress
+  lineages before returning to the normal offshore cadence;
 - destination-side recovery with chronological forward replay;
 - validated frontier recovery using a focused multi-label A*/Dijkstra search;
 - progressively widened global graph fallback;

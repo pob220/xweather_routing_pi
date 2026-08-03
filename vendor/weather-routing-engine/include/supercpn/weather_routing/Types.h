@@ -279,6 +279,7 @@ struct ResourceLimits {
   Duration maximumRouteDuration{std::chrono::hours{24 * 30}};
   // Stage-specific limits are preferred by production callers. Zero retains
   // the legacy split of maximumGeneratedStates for API compatibility.
+  std::uint64_t maximumCoastalEndpointGeneratedStates{};
   std::uint64_t maximumForwardGeneratedStates{};
   // Reverse bridge recovery does not generate ordinary isochrone states, so
   // bound both the number of retained lineages inspected and the more
@@ -555,6 +556,7 @@ struct RoutingDiagnostics {
   std::vector<SolverPath> stagesAttempted;
   std::vector<std::string> stageStopReasons;
   std::uint64_t generatedStates{};
+  std::uint64_t coastalEndpointGeneratedStates{};
   std::uint64_t forwardGeneratedStates{};
   std::uint64_t frontierRecoveryGeneratedStates{};
   std::uint64_t graphGeneratedStates{};

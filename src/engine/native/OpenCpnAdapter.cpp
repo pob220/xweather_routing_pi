@@ -830,6 +830,8 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
           routeDistance, configuration.RoutingEffortPercent,
           configuration.chart_safety_scout_preview);
   request.limits.maximumGeneratedStates = resources.maximum_generated_states;
+  request.limits.maximumCoastalEndpointGeneratedStates =
+      resources.maximum_coastal_endpoint_generated_states;
   request.limits.maximumForwardGeneratedStates =
       resources.maximum_forward_generated_states;
   request.limits.maximumReverseCandidates =
@@ -1104,13 +1106,16 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       static_cast<unsigned long long>(RouteFingerprint(result.legs)));
   wxLogMessage(
       "WR_MODERN_NATIVE_RESOURCES route=\"%s -> %s\" "
-      "forward_generated=%llu reverse_nodes=%llu reverse_bridges=%llu "
+      "endpoint_generated=%llu forward_generated=%llu reverse_nodes=%llu "
+      "reverse_bridges=%llu "
       "frontier_generated=%llu frontier_labels=%llu "
-      "global_graph_generated=%llu forward_limit=%llu "
+      "global_graph_generated=%llu endpoint_limit=%llu forward_limit=%llu "
       "reverse_candidate_limit=%llu reverse_bridge_limit=%llu "
       "frontier_limit=%llu frontier_label_limit=%llu "
       "global_graph_limit=%llu",
       configuration.Start, configuration.End,
+      static_cast<unsigned long long>(
+          result.diagnostics.coastalEndpointGeneratedStates),
       static_cast<unsigned long long>(
           result.diagnostics.forwardGeneratedStates),
       static_cast<unsigned long long>(result.diagnostics.reverseNodes),
@@ -1121,6 +1126,8 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       static_cast<unsigned long long>(
           result.diagnostics.frontierRecoveryLabels),
       static_cast<unsigned long long>(result.diagnostics.graphGeneratedStates),
+      static_cast<unsigned long long>(
+          request.limits.maximumCoastalEndpointGeneratedStates),
       static_cast<unsigned long long>(
           request.limits.maximumForwardGeneratedStates),
       static_cast<unsigned long long>(request.limits.maximumReverseCandidates),

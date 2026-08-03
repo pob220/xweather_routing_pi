@@ -33,6 +33,11 @@ struct Node {
   std::string profileIdentity;
   int sailPlan{-1};
   Duration modeDuration{};
+  // True only until this lineage first clears the configured stand-off at
+  // the departure. It must never be inferred again from a later coastal
+  // position: doing so would incorrectly grant departure-egress semantics
+  // elsewhere on the route.
+  bool departureEgressActive{};
   Duration motorDuration{};
   Duration waitDuration{};
   double fuel{};
@@ -465,17 +470,22 @@ std::optional<MotionReplay> integrateMotion(
 
 bool nodeMotionForbidden(const RoutingRequest& request,
                          const RoutingEnvironment& environment,
-                         const Node& node, RoutingDiagnostics& diagnostics) {
+                         Node& node, RoutingDiagnostics& diagnostics) {
   if (!environment.landAndBoundaries) return false;
-  const bool departureEgress =
-      distanceNm(node.incomingLeg.start, request.start) <= 1e-6 &&
-      node.incomingLeg.startTime == request.departure;
+  double departureClearanceNm = std::numeric_limits<double>::infinity();
+  bool departureEgress = node.departureEgressActive;
+  if (departureEgress && request.constraints.landSafetyMarginNm > 0.0) {
+    departureClearanceNm =
+        environment.landAndBoundaries->distanceToForbiddenNm(
+            node.incomingLeg.start);
+  }
+  const bool chordStartsInDepartureEgress = departureEgress;
   const bool destinationIngress =
       distanceNm(node.position, request.destination) <= 1e-6 &&
       request.constraints.landSafetyMarginNm > 0.0;
   const double destinationIngressRadiusNm =
       std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
-  const double margin = departureEgress ? 0.0 : searchLandMarginNm(request);
+  const double margin = searchLandMarginNm(request);
   bool ingressStarted = false;
   double priorDestinationDistance =
       distanceNm(node.incomingLeg.start, request.destination);
@@ -484,7 +494,7 @@ bool nodeMotionForbidden(const RoutingRequest& request,
     bool forbidden =
         environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
             segment.start, segment.end, segment.startTime,
-            ingressStarted ? 0.0 : margin);
+            departureEgress || ingressStarted ? 0.0 : margin);
     if (forbidden && destinationIngress && !departureEgress &&
         !ingressStarted) {
       const double nextDistance = distanceNm(segment.end, request.destination);
@@ -500,7 +510,17 @@ bool nodeMotionForbidden(const RoutingRequest& request,
       ++diagnostics.landRejections;
       return true;
     }
-    if (ingressStarted) {
+    if (departureEgress) {
+      const double nextClearanceNm =
+          environment.landAndBoundaries->distanceToForbiddenNm(segment.end);
+      if (nextClearanceNm + 1e-6 < departureClearanceNm) {
+        ++diagnostics.landRejections;
+        return true;
+      }
+      departureClearanceNm = nextClearanceNm;
+      departureEgress = nextClearanceNm + 1e-6 <
+                        request.constraints.landSafetyMarginNm;
+    } else if (ingressStarted) {
       const double nextDistance = distanceNm(segment.end, request.destination);
       if (nextDistance > priorDestinationDistance + 1e-6) {
         ++diagnostics.landRejections;
@@ -526,8 +546,10 @@ bool nodeMotionForbidden(const RoutingRequest& request,
   bool chordForbidden =
       environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
           node.incomingLeg.start, node.incomingLeg.end,
-          node.incomingLeg.startTime, margin);
-  if (chordForbidden && destinationIngress && !departureEgress) {
+          node.incomingLeg.startTime,
+          chordStartsInDepartureEgress ? 0.0 : margin);
+  if (chordForbidden && destinationIngress &&
+      !chordStartsInDepartureEgress) {
     const double chordDistance =
         distanceNm(node.incomingLeg.start, node.incomingLeg.end);
     const double bearing =
@@ -558,6 +580,7 @@ bool nodeMotionForbidden(const RoutingRequest& request,
       return true;
     }
   }
+  node.departureEgressActive = departureEgress;
   return false;
 }
 
@@ -1107,12 +1130,20 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
                               double headingStep, Duration step,
                               unsigned labelCap, bool allowCompletion,
                               unsigned attempt, unsigned totalAttempts,
-                              std::uint64_t generatedStateCeiling,
+                              std::uint64_t endpointGeneratedStateCeiling,
+                              std::uint64_t forwardGeneratedStateCeiling,
                               RoutingDiagnostics& diagnostics) {
   SearchArtifacts result;
   Node initial;
   initial.position = request.start;
   initial.time = request.departure;
+  if (environment.landAndBoundaries &&
+      request.constraints.landSafetyMarginNm > 0.0) {
+    initial.departureEgressActive =
+        environment.landAndBoundaries->distanceToForbiddenNm(request.start) +
+            1e-6 <
+        request.constraints.landSafetyMarginNm;
+  }
   result.nodes.push_back(std::move(initial));
   result.retained.push_back(0);
   const auto deadline = request.departure + request.limits.maximumRouteDuration;
@@ -1137,12 +1168,27 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
     // fan straddles or over-shoots it. Subsequent layers return to the
     // attempt's normal resolution; refining an entire long passage grows the
     // frontier needlessly.
+    bool coastalDepartureEgress = false;
+    if (environment.landAndBoundaries &&
+        request.constraints.landSafetyMarginNm > 0.0) {
+      coastalDepartureEgress = std::any_of(
+          result.retained.begin(), result.retained.end(),
+          [&](std::size_t index) {
+            return result.nodes[index].departureEgressActive;
+          });
+    }
     const double layerHeadingStep =
-        layer == 0 && environment.landAndBoundaries
+        coastalDepartureEgress ||
+                (layer == 0 && environment.landAndBoundaries)
             ? std::min(headingStep, request.options.refinedHeadingStepDegrees)
             : headingStep;
     Duration layerStep = step;
-    if (request.options.adaptiveTimeStep) {
+    if (coastalDepartureEgress) {
+      // This safety-critical endpoint cadence is not an optional offshore
+      // search refinement. Use the authoritative minimum even when ordinary
+      // adaptive time stepping is disabled.
+      layerStep = request.options.minimumTimeStep;
+    } else if (request.options.adaptiveTimeStep) {
       if (layer < 3 && environment.landAndBoundaries) {
         // Preserve a fine, curved departure fan for long configured offshore
         // steps. One shortened layer can still be followed immediately by an
@@ -1204,21 +1250,33 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
         // multiplied provider traffic by roughly three without adding
         // forecast detail, while final replay remains unchanged.
         const Duration integrationSlice{
-            attempt > 1 ? std::chrono::minutes{5}
-                        : std::chrono::minutes{15}};
+            coastalDepartureEgress || attempt > 1
+                ? std::chrono::minutes{5}
+                : std::chrono::minutes{15}};
         for (auto& next : propagate(request, environment, performance, from,
                                     heading, layerStep, diagnostics,
                                     integrationSlice, &dataFailure)) {
-          if (diagnostics.generatedStates >= generatedStateCeiling) {
+          const std::uint64_t ordinaryForwardGenerated =
+              diagnostics.generatedStates -
+              diagnostics.coastalEndpointGeneratedStates;
+          if ((coastalDepartureEgress &&
+               diagnostics.coastalEndpointGeneratedStates >=
+                   endpointGeneratedStateCeiling) ||
+              (!coastalDepartureEgress &&
+               ordinaryForwardGenerated >= forwardGeneratedStateCeiling)) {
             result.failure = RoutingStatus::ResourceLimitReached;
-            result.reason =
-                "forward-stage generated-state budget reached; preserving "
-                "recovery capacity";
+            result.reason = coastalDepartureEgress
+                                ? "coastal endpoint generated-state budget "
+                                  "reached"
+                                : "forward-stage generated-state budget "
+                                  "reached; preserving recovery capacity";
             result.resourceLimited = true;
             diagnostics.resourceLimitEvents.push_back(result.reason);
             return result;
           }
           ++diagnostics.generatedStates;
+          if (coastalDepartureEgress)
+            ++diagnostics.coastalEndpointGeneratedStates;
           if ((diagnostics.generatedStates & 8191U) == 0U)
             reportProgress(request, RoutingProgressStage::ForwardIsochrone,
                            diagnostics, attempt, totalAttempts);
@@ -1229,7 +1287,27 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
       if (candidates.size() == candidatesBefore) {
         if (auto waiting = waitInPlace(request, environment, from, layerStep,
                                        diagnostics)) {
+          const std::uint64_t ordinaryForwardGenerated =
+              diagnostics.generatedStates -
+              diagnostics.coastalEndpointGeneratedStates;
+          if ((coastalDepartureEgress &&
+               diagnostics.coastalEndpointGeneratedStates >=
+                   endpointGeneratedStateCeiling) ||
+              (!coastalDepartureEgress &&
+               ordinaryForwardGenerated >= forwardGeneratedStateCeiling)) {
+            result.failure = RoutingStatus::ResourceLimitReached;
+            result.reason = coastalDepartureEgress
+                                ? "coastal endpoint generated-state budget "
+                                  "reached"
+                                : "forward-stage generated-state budget "
+                                  "reached; preserving recovery capacity";
+            result.resourceLimited = true;
+            diagnostics.resourceLimitEvents.push_back(result.reason);
+            return result;
+          }
           ++diagnostics.generatedStates;
+          if (coastalDepartureEgress)
+            ++diagnostics.coastalEndpointGeneratedStates;
           waiting->predecessor = index;
           candidates.push_back(std::move(*waiting));
         }
@@ -1252,6 +1330,21 @@ SearchArtifacts forwardSearch(const RoutingRequest& request,
     }
     auto retainedNodes = pruneLayer(request, environment, std::move(candidates),
                                     labelCap, diagnostics);
+    if (coastalDepartureEgress && environment.landAndBoundaries) {
+      const auto clearedStandOff = [&](const Node& candidate) {
+        return !candidate.departureEgressActive;
+      };
+      // Once at least one safe family has cleared the coastal stand-off, do
+      // not let slower lineages which remain inside it hold the entire route
+      // at endpoint cadence. Preserve every cleared family and hand those
+      // states to the ordinary offshore isochrone together.
+      if (std::any_of(retainedNodes.begin(), retainedNodes.end(),
+                      clearedStandOff))
+        std::erase_if(retainedNodes,
+                      [&](const Node& candidate) {
+                        return !clearedStandOff(candidate);
+                      });
+    }
     result.retained.clear();
     for (auto& node : retainedNodes) {
       if (result.nodes.size() >= request.limits.maximumRetainedStates) {
@@ -1805,6 +1898,13 @@ SearchArtifacts graphSearch(const RoutingRequest& request,
     Node initial;
     initial.position = request.start;
     initial.time = request.departure;
+    if (environment.landAndBoundaries &&
+        request.constraints.landSafetyMarginNm > 0.0) {
+      initial.departureEgressActive =
+          environment.landAndBoundaries->distanceToForbiddenNm(request.start) +
+              1e-6 <
+          request.constraints.landSafetyMarginNm;
+    }
     result.nodes.push_back(std::move(initial));
     open.push({0.0, 0.0, distanceNm(request.start, request.destination), 0, 0});
   }
@@ -2389,6 +2489,8 @@ RoutingResult RoutingEngine::route(
     tierRequest.options.routingEffortPercent = tier;
     tierRequest.limits.maximumGeneratedStates =
         scale(request.limits.maximumGeneratedStates, tier);
+    tierRequest.limits.maximumCoastalEndpointGeneratedStates =
+        scale(request.limits.maximumCoastalEndpointGeneratedStates, tier);
     tierRequest.limits.maximumForwardGeneratedStates =
         scale(request.limits.maximumForwardGeneratedStates, tier);
     tierRequest.limits.maximumReverseCandidates =
@@ -2589,6 +2691,11 @@ RoutingResult RoutingEngine::routeMember(
           : request.limits.maximumGeneratedStates -
                 std::min(request.limits.maximumGeneratedStates,
                          legacyGraphReserve);
+  const std::uint64_t endpointGeneratedStateCeiling =
+      request.limits.maximumCoastalEndpointGeneratedStates > 0
+          ? request.limits.maximumCoastalEndpointGeneratedStates
+          : std::max<std::uint64_t>(
+                1024U, request.limits.maximumGeneratedStates / 50U);
   const std::uint64_t frontierRecoveryGeneratedStateBudget =
       request.limits.maximumFrontierRecoveryGeneratedStates;
   const std::uint64_t frontierRecoveryLabelBudget =
@@ -2602,11 +2709,14 @@ RoutingResult RoutingEngine::routeMember(
     if (attempt > 0) {
       const std::uint64_t estimatedRefinement = std::max<std::uint64_t>(
           previousAttemptGenerated, previousAttemptGenerated * 3U / 2U);
-      if (result.diagnostics.generatedStates >= forwardGeneratedStateCeiling ||
+      const std::uint64_t ordinaryForwardGenerated =
+          result.diagnostics.generatedStates -
+          result.diagnostics.coastalEndpointGeneratedStates;
+      if (ordinaryForwardGenerated >= forwardGeneratedStateCeiling ||
           estimatedRefinement >
               forwardGeneratedStateCeiling -
                   std::min(forwardGeneratedStateCeiling,
-                           result.diagnostics.generatedStates)) {
+                           ordinaryForwardGenerated)) {
         result.diagnostics.stageStopReasons.push_back(
             "next forward refinement skipped to preserve bounded recovery "
             "budget");
@@ -2626,12 +2736,17 @@ RoutingResult RoutingEngine::routeMember(
     const unsigned labels =
         std::min<unsigned>(64, request.options.labelsPerCell * (1 + attempt));
     const std::uint64_t generatedBefore = result.diagnostics.generatedStates;
+    const std::uint64_t endpointGeneratedBefore =
+        result.diagnostics.coastalEndpointGeneratedStates;
     latest = forwardSearch(
         request, environment, performance, headingStep, step, labels,
         !request.options.forceForwardFailureForTesting, attempt + 1, attempts,
-        forwardGeneratedStateCeiling, result.diagnostics);
+        endpointGeneratedStateCeiling, forwardGeneratedStateCeiling,
+        result.diagnostics);
     previousAttemptGenerated =
-        result.diagnostics.generatedStates - generatedBefore;
+        (result.diagnostics.generatedStates - generatedBefore) -
+        (result.diagnostics.coastalEndpointGeneratedStates -
+         endpointGeneratedBefore);
     if (latest.solution) {
       rejectedCandidateSafePrefixes.clear();
       candidateReplayProducedUsefulPrefix = false;
@@ -2680,7 +2795,8 @@ RoutingResult RoutingEngine::routeMember(
     if (latest.convergenceStalled) break;
   }
   result.diagnostics.forwardGeneratedStates =
-      result.diagnostics.generatedStates;
+      result.diagnostics.generatedStates -
+      result.diagnostics.coastalEndpointGeneratedStates;
 
   // Keep the final forward frontier geometry available to inspection clients
   // even when production recovery subsequently replaces SearchArtifacts with
