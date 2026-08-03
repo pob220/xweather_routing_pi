@@ -136,11 +136,31 @@ int weather_routing_pi::Init() {
   RouteMapConfiguration::s_plugin_instance = this;
 
 #ifdef PLUGIN_USE_SVG
-  m_leftclick_tool_id = InsertPlugInToolSVG(
-      _T("xWeatherRouting"), _svg_weather_routing,
-      _svg_weather_routing_rollover, _svg_weather_routing_toggled, wxITEM_CHECK,
-      _("xWeatherRouting"), _T(""), NULL, WEATHER_ROUTING_TOOL_POSITION, 0,
-      this);
+  const bool svg_icons_available =
+      wxFileExists(_svg_weather_routing) &&
+      wxFileExists(_svg_weather_routing_rollover) &&
+      wxFileExists(_svg_weather_routing_toggled);
+  if (svg_icons_available) {
+    m_leftclick_tool_id = InsertPlugInToolSVG(
+        _T("xWeatherRouting"), _svg_weather_routing,
+        _svg_weather_routing_rollover, _svg_weather_routing_toggled,
+        wxITEM_CHECK, _("xWeatherRouting"), _T(""), NULL,
+        WEATHER_ROUTING_TOOL_POSITION, 0, this);
+  } else {
+    // InsertPlugInToolSVG silently produces OpenCPN's generic jigsaw when an
+    // asset is unavailable.  The embedded bitmap is always a more useful and
+    // recognisable fallback for development builds and incomplete installs.
+    wxLogWarning(
+        "xWeatherRouting SVG toolbar assets are unavailable; using the "
+        "embedded weather-routing icon. normal=\"%s\" rollover=\"%s\" "
+        "toggled=\"%s\".",
+        _svg_weather_routing, _svg_weather_routing_rollover,
+        _svg_weather_routing_toggled);
+    m_leftclick_tool_id =
+        InsertPlugInTool(_T(""), _img_WeatherRouting, _img_WeatherRouting,
+                         wxITEM_CHECK, _("xWeatherRouting"), _T(""), NULL,
+                         WEATHER_ROUTING_TOOL_POSITION, 0, this);
+  }
 #else
   m_leftclick_tool_id =
       InsertPlugInTool(_T(""), _img_WeatherRouting, _img_WeatherRouting,
