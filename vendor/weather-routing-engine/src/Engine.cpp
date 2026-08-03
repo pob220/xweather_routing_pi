@@ -309,6 +309,7 @@ RouteLeg buildLeg(const RoutingRequest& request, const Node& from,
   leg.profileIdentity = performance.profileIdentity;
   leg.sailPlan = performance.sailPlan;
   leg.tack = nextTack;
+  leg.coastalDepartureEgress = from.departureEgressActive;
   leg.propulsionTransition = performance.mode != from.mode;
   leg.tackTransition = from.tack != Tack::Unknown && nextTack != from.tack &&
                        leg.trueWindAngleDegrees <= 90.0;

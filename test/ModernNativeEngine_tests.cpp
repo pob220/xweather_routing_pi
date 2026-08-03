@@ -859,6 +859,17 @@ TEST(ModernNativeEngine,
   ASSERT_TRUE(Successful(result.status)) << result.message;
   ASSERT_FALSE(result.legs.empty());
   EXPECT_TRUE(result.validation.passed) << result.validation.failureReason;
+  EXPECT_TRUE(result.legs.front().coastalDepartureEgress);
+  EXPECT_TRUE(std::any_of(result.legs.begin(), result.legs.end(),
+                          [](const RouteLeg& leg) {
+                            return !leg.coastalDepartureEgress;
+                          }));
+  bool fullMarginResumed = false;
+  for (const RouteLeg& leg : result.legs) {
+    if (!leg.coastalDepartureEgress) fullMarginResumed = true;
+    EXPECT_FALSE(fullMarginResumed && leg.coastalDepartureEgress)
+        << "coastal departure permission reactivated after full margin";
+  }
   EXPECT_LE(result.legs.front().endTime - result.legs.front().startTime,
             request.options.minimumTimeStep);
   EXPECT_GT(result.diagnostics.coastalEndpointGeneratedStates, 0U);

@@ -682,6 +682,16 @@ public:
     // state. While inside the buffer, dense replay uses zero-margin chart
     // checks and may switch back to the full margin only after these probes
     // clear.
+    // CheckLandConstraint deliberately treats the configured route start as a
+    // known-safe endpoint and may relax its margin. Using radial probes from
+    // that exact point would therefore always report it clear and prevent the
+    // engine's bounded departure-egress phase from starting. Mark only the
+    // exact configured start as inside the stand-off; subsequent lineage
+    // points are probed normally and must prove that they have cleared it.
+    const wr::GeoPoint configuredStart{configuration_.StartLat,
+                                       configuration_.StartLon};
+    if (wr::distanceNm(point, configuredStart) <= 1e-6) return 0.0;
+
     auto pointClearAtConfiguredMargin = [&]() {
       RouteMapConfiguration configuration = configuration_;
       configuration.time = configuration.StartTime;

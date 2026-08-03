@@ -480,6 +480,11 @@ struct RouteLeg {
   bool gybeTransition{};
   bool propulsionTransition{};
   bool stationaryWait{};
+  // True when this leg was admitted under the one-way coastal departure
+  // egress rule. Consumers which independently replay the delivered route
+  // must use the zero-margin (actual-hazard) check for this exact leg, then
+  // resume the configured stand-off as soon as this flag becomes false.
+  bool coastalDepartureEgress{};
   // Maximum motion-integration slice used by the solver for this leg. The
   // independent validator repeats the same numerical integration partition
   // so a time- or position-varying current cannot create a false endpoint

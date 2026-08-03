@@ -165,6 +165,9 @@ public:
   double relative_humidity;  //!< Relative humidity in percent (0-100%).
   double air_pressure;       //!< Surface air pressure in hPa.
   double reflectivity;       //!< Reflectivity in dBZ.
+  /** This modern-engine leg is still using the one-way, zero-margin coastal
+   * departure egress rule. It is never inferred for legacy plot data. */
+  bool coastalDepartureEgress{false};
 };
 
 class weather_routing_pi;
