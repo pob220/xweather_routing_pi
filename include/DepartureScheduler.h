@@ -27,6 +27,15 @@ inline void OrderDepartureOffsets(std::vector<int>& offsets) {
   });
 }
 
+// A generated result can be selected and edited into the base route for a
+// subsequent optimisation.  In that case the user's explicit request to
+// optimise takes precedence over the runtime-only candidate marker inherited
+// from the previous sweep.
+inline bool ShouldPromoteDepartureOptimizationCandidate(
+    bool optimization_enabled, bool optimization_candidate) {
+  return optimization_enabled && optimization_candidate;
+}
+
 inline int AutomaticDepartureWorkerLimit(int logical_cpu_count) {
   if (logical_cpu_count <= 0)
     return kFallbackAutomaticParallelDepartureCandidates;

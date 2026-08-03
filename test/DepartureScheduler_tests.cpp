@@ -12,6 +12,18 @@ TEST(DepartureScheduler, RunsNominalThenNearestCandidatesDeterministically) {
   EXPECT_EQ(offsets, (std::vector<int>{0, -60, 60, -180, 180}));
 }
 
+TEST(DepartureScheduler,
+     ExplicitOptimizationPromotesAReusedCandidateIntoANewBaseRoute) {
+  EXPECT_FALSE(weather_routing::ShouldPromoteDepartureOptimizationCandidate(
+      false, false));
+  EXPECT_FALSE(weather_routing::ShouldPromoteDepartureOptimizationCandidate(
+      true, false));
+  EXPECT_FALSE(weather_routing::ShouldPromoteDepartureOptimizationCandidate(
+      false, true));
+  EXPECT_TRUE(weather_routing::ShouldPromoteDepartureOptimizationCandidate(
+      true, true));
+}
+
 TEST(DepartureScheduler, BoundsOnlyDepartureCandidateBatches) {
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(20, true), 4);
   EXPECT_EQ(weather_routing::EffectiveRouteWorkerLimit(2, true), 2);

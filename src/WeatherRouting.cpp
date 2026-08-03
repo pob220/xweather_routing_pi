@@ -6055,9 +6055,18 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   // into the fixed departure-optimisation batch.
   if (base.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME)
     return false;
-  if (!base.DepartureTimeOptimizationEnabled ||
-      base.DepartureTimeOptimizationCandidate)
-    return false;
+  if (!base.DepartureTimeOptimizationEnabled) return false;
+  if (weather_routing::ShouldPromoteDepartureOptimizationCandidate(
+          base.DepartureTimeOptimizationEnabled,
+          base.DepartureTimeOptimizationCandidate)) {
+    wxLogMessage(
+        "WR_DEPARTURE_PROMOTE source=scheduler old_group=\"%s\" "
+        "old_offset_minutes=%d start=\"%s\" end=\"%s\".",
+        base.DepartureTimeOptimizationGroupId,
+        base.DepartureTimeOptimizationOffsetMinutes, base.Start, base.End);
+    base.PromoteDepartureTimeOptimizationCandidate();
+    routemapoverlay->SetConfiguration(base);
+  }
 
   int rangeMinutes = base.DepartureTimeOptimizationRangeMinutes;
   int stepMinutes = base.DepartureTimeOptimizationStepMinutes;

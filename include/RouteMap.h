@@ -237,6 +237,17 @@ struct RouteMapConfiguration {
   RouteMapConfiguration(); /* avoid waiting forever in update longitudes */
 
   /**
+   * Convert a generated departure-optimisation result into an independent
+   * route which can be edited, saved and used as the base of a new sweep.
+   */
+  void PromoteDepartureTimeOptimizationCandidate() {
+    DepartureTimeOptimizationCandidate = false;
+    DepartureTimeOptimizationNominalStartTime = wxDateTime();
+    DepartureTimeOptimizationOffsetMinutes = 0;
+    DepartureTimeOptimizationGroupId.Clear();
+  }
+
+  /**
    * Updates the route configuration with the latest position information.
    *
    * This method performs several important functions:
