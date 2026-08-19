@@ -27,6 +27,7 @@
 
 #include <map>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -760,6 +761,14 @@ public:
   bool HasCompleteMultiLegOptimizationCandidate() const;
 
 private:
+
+  struct HeadlessRouteTestState;
+  void OnHeadlessRouteTestTimer(wxTimerEvent&);
+  void CompleteHeadlessSingleRouteTest(bool timedOut, long elapsedMs);
+  void CompleteHeadlessMultiLegTest(bool timedOut, long elapsedMs);
+
+  wxTimer m_tHeadlessRouteTest;
+  std::unique_ptr<HeadlessRouteTestState> m_HeadlessRouteTestState;
 
   struct PendingGribRequest {
     RouteMapOverlay* route_map_overlay;

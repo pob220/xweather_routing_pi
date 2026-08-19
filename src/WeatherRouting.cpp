@@ -53,6 +53,7 @@
 #include "WeatherDataProvider.h"
 #include "StabilityRouteAdapter.h"
 #include "headless/HeadlessRouteRunner.h"
+#include "headless/HeadlessRouteMonitor.h"
 #include "georef.h"
 #include "icons.h"
 #include "navobj_util.h"
@@ -911,6 +912,20 @@ int wxCALLBACK SortWeatherRoutes(long item1, long item2, long list)
   return sortorder * it1.GetText().Cmp(it2.GetText());
 }
 
+struct WeatherRouting::HeadlessRouteTestState {
+  enum class Kind { SingleRoute, MultiLeg };
+
+  Kind kind{Kind::SingleRoute};
+  long timeoutMs{0};
+  wxLongLong startedMs{0};
+  RouteMapOverlay* selectedRoute{nullptr};
+  bool departureOptimization{false};
+  bool scenarioLoaded{false};
+  weather_routing_engine::RoutingScenario scenario;
+  wxString scenarioOutputPath;
+  wxString selectedGroup;
+};
+
 WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
     : WeatherRoutingBase(parent, wxID_ANY, _("xWeatherRouting")),
       m_panel(NULL),
@@ -1174,6 +1189,9 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   m_tDeferredRoutingStart.Connect(
       wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnDeferredRoutingStart),
       NULL, this);
+  m_tHeadlessRouteTest.Connect(
+      wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnHeadlessRouteTestTimer),
+      NULL, this);
 
   m_tAutoSaveXML.Connect(
       wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnAutoSaveXMLTimer),
@@ -1331,6 +1349,11 @@ WeatherRouting::~WeatherRouting() {
       NULL, this);
   m_tDeferredRoutingStart.Disconnect(
       wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnDeferredRoutingStart),
+      NULL, this);
+  if (m_tHeadlessRouteTest.IsRunning()) m_tHeadlessRouteTest.Stop();
+  m_HeadlessRouteTestState.reset();
+  m_tHeadlessRouteTest.Disconnect(
+      wxEVT_TIMER, wxTimerEventHandler(WeatherRouting::OnHeadlessRouteTestTimer),
       NULL, this);
 
   StopAll();
@@ -3575,6 +3598,204 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimizationNow(
   return true;
 }
 
+void WeatherRouting::OnHeadlessRouteTestTimer(wxTimerEvent&) {
+  if (!m_HeadlessRouteTestState) {
+    m_tHeadlessRouteTest.Stop();
+    return;
+  }
+
+  const long elapsed_ms =
+      (wxGetUTCTimeMillis() - m_HeadlessRouteTestState->startedMs).ToLong();
+  bool active = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty();
+  if (m_HeadlessRouteTestState->kind ==
+          HeadlessRouteTestState::Kind::SingleRoute &&
+      !active && m_HeadlessRouteTestState->departureOptimization) {
+    for (auto route : m_DepartureOptimizationRoutes) {
+      if (route && !route->Finished()) {
+        active = true;
+        break;
+      }
+    }
+  } else if (m_HeadlessRouteTestState->kind ==
+             HeadlessRouteTestState::Kind::MultiLeg) {
+    active = active || m_ActiveMultiLegSequence ||
+             m_ActiveMultiLegDepartureOptimization;
+  }
+
+  const weather_routing_headless::HeadlessRouteMonitorDecision decision =
+      weather_routing_headless::EvaluateHeadlessRouteMonitor(
+          active, elapsed_ms, m_HeadlessRouteTestState->timeoutMs);
+  if (decision ==
+      weather_routing_headless::HeadlessRouteMonitorDecision::Continue)
+    return;
+
+  m_tHeadlessRouteTest.Stop();
+  const HeadlessRouteTestState::Kind kind = m_HeadlessRouteTestState->kind;
+  const bool timed_out =
+      decision == weather_routing_headless::HeadlessRouteMonitorDecision::Timeout;
+  if (kind == HeadlessRouteTestState::Kind::SingleRoute)
+    CompleteHeadlessSingleRouteTest(timed_out, elapsed_ms);
+  else
+    CompleteHeadlessMultiLegTest(timed_out, elapsed_ms);
+}
+
+void WeatherRouting::CompleteHeadlessSingleRouteTest(bool timed_out,
+                                                     long elapsed_ms) {
+  RouteMapOverlay* selected_route = m_HeadlessRouteTestState->selectedRoute;
+  RouteMapConfiguration selected_config =
+      selected_route ? selected_route->GetConfiguration()
+                     : RouteMapConfiguration();
+  if (timed_out) {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST timeout route=\"%s to %s\" "
+        "elapsed_ms=%ld running=%lu waiting=%lu.",
+        selected_config.Start, selected_config.End, elapsed_ms,
+        static_cast<unsigned long>(m_RunningRouteMaps.size()),
+        static_cast<unsigned long>(m_WaitingRouteMaps.size()));
+    StopAll();
+  }
+
+  int complete = 0;
+  int failed = 0;
+  int running = 0;
+  int waiting = 0;
+  std::vector<RouteMapOverlay*> routes;
+  if (m_HeadlessRouteTestState->departureOptimization) {
+    for (auto route : m_DepartureOptimizationRoutes) routes.push_back(route);
+  } else if (selected_route) {
+    routes.push_back(selected_route);
+  }
+  for (size_t i = 0; i < routes.size(); ++i) {
+    RouteMapOverlay* route = routes[i];
+    if (!route) continue;
+    RouteMapConfiguration configuration = route->GetConfiguration();
+    bool is_running = false;
+    bool is_waiting = false;
+    for (auto running_route : m_RunningRouteMaps)
+      if (running_route == route) is_running = true;
+    for (auto waiting_route : m_WaitingRouteMaps)
+      if (waiting_route == route) is_waiting = true;
+    const bool is_complete = route->Finished() && route->ReachedDestination();
+    const bool is_failed = route->Finished() && !route->ReachedDestination();
+    if (is_complete) complete++;
+    if (is_failed) failed++;
+    if (is_running) running++;
+    if (is_waiting) waiting++;
+    const wxString state = is_complete  ? _("Complete")
+                           : is_failed  ? _("Failed")
+                           : is_running ? _("Running")
+                           : is_waiting ? _("Waiting")
+                                        : _("Not running");
+    long elapsed_seconds = -1;
+    if (route->EndTime().IsValid() && configuration.StartTime.IsValid()) {
+      const wxTimeSpan elapsed = route->EndTime() - configuration.StartTime;
+      elapsed_seconds = elapsed.GetSeconds().ToLong();
+    }
+    const double distance_nm = route->RouteInfo(RouteMapOverlay::DISTANCE);
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST route_result index=%lu offset=%d "
+        "start=\"%s\" end=\"%s\" complete=%d failed=%d running=%d "
+        "waiting=%d state=\"%s\" end_time=\"%s\" elapsed=%ld "
+        "distance=%.3f reason=\"%s\".",
+        static_cast<unsigned long>(i),
+        configuration.DepartureTimeOptimizationOffsetMinutes,
+        configuration.Start, configuration.End, is_complete ? 1 : 0,
+        is_failed ? 1 : 0, is_running ? 1 : 0, is_waiting ? 1 : 0, state,
+        route->EndTime().IsValid() ? route->EndTime().FormatISOCombined()
+                                   : wxString("invalid"),
+        elapsed_seconds, distance_nm, route->GetFailureReason());
+  }
+
+  wxLogMessage(
+      "WR_HEADLESS_ROUTE_TEST end route=\"%s to %s\" elapsed_ms=%ld "
+      "timed_out=%d routes=%lu complete=%d failed=%d running=%d "
+      "waiting=%d.",
+      selected_config.Start, selected_config.End, elapsed_ms,
+      timed_out ? 1 : 0, static_cast<unsigned long>(routes.size()), complete,
+      failed, running, waiting);
+
+  const wxString result_status = timed_out      ? _("timeout")
+                                 : complete > 0 ? _("complete")
+                                 : failed > 0   ? _("failed")
+                                                : _("unknown");
+  const wxString result_failure =
+      timed_out ? _("timeout")
+                : (complete > 0 ? wxString() : _("no_completed_routes"));
+  if (m_HeadlessRouteTestState->scenarioLoaded &&
+      !m_HeadlessRouteTestState->scenarioOutputPath.IsEmpty()) {
+    wxString write_error;
+    if (!weather_routing_headless::HeadlessRouteRunner::WriteSingleRouteResult(
+            m_HeadlessRouteTestState->scenarioOutputPath,
+            &m_HeadlessRouteTestState->scenario, result_status,
+            result_failure, routes, write_error)) {
+      wxLogMessage("WR_HEADLESS_SCENARIO warning output=\"%s\" reason=\"%s\".",
+                   m_HeadlessRouteTestState->scenarioOutputPath, write_error);
+    }
+  }
+
+  if (m_tCompute.IsRunning()) m_tCompute.Stop();
+  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+  if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+  FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
+}
+
+void WeatherRouting::CompleteHeadlessMultiLegTest(bool timed_out,
+                                                  long elapsed_ms) {
+  if (timed_out) {
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST timeout group=%s elapsed_ms=%ld running=%lu "
+        "waiting=%lu multileg=%d multileg_opt=%d.",
+        m_HeadlessRouteTestState->selectedGroup, elapsed_ms,
+        static_cast<unsigned long>(m_RunningRouteMaps.size()),
+        static_cast<unsigned long>(m_WaitingRouteMaps.size()),
+        m_ActiveMultiLegSequence ? 1 : 0,
+        m_ActiveMultiLegDepartureOptimization ? 1 : 0);
+    StopAll();
+    CancelMultiLegSequence();
+    CancelMultiLegDepartureOptimization(false);
+  }
+
+  int complete = 0;
+  int failed = 0;
+  int running = 0;
+  int waiting = 0;
+  for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i) {
+    const MultiLegOptimizationCandidate& candidate =
+        m_MultiLegOptimizationCandidates[i];
+    if (candidate.complete) complete++;
+    if (candidate.failed) failed++;
+    if (candidate.running) running++;
+    if (!candidate.complete && !candidate.failed && !candidate.running)
+      waiting++;
+    wxLogMessage(
+        "WR_HEADLESS_ROUTE_TEST candidate index=%lu offset=%d departure=%s "
+        "state=\"%s\" complete=%d failed=%d running=%d legs=%d/%d "
+        "final_eta=%s total_elapsed=%ld distance=%.3f reason=\"%s\".",
+        static_cast<unsigned long>(i), candidate.offsetMinutes,
+        candidate.departureTime.IsValid()
+            ? candidate.departureTime.FormatISOCombined()
+            : wxString("invalid"),
+        candidate.state, candidate.complete ? 1 : 0, candidate.failed ? 1 : 0,
+        candidate.running ? 1 : 0, candidate.completedLegs, candidate.totalLegs,
+        candidate.finalEta.IsValid() ? candidate.finalEta.FormatISOCombined()
+                                     : wxString("invalid"),
+        candidate.totalElapsedSeconds, candidate.totalDistance,
+        candidate.reason);
+  }
+
+  wxLogMessage(
+      "WR_HEADLESS_ROUTE_TEST end group=%s elapsed_ms=%ld timed_out=%d "
+      "candidates=%lu complete=%d failed=%d running=%d waiting=%d.",
+      m_HeadlessRouteTestState->selectedGroup, elapsed_ms, timed_out ? 1 : 0,
+      static_cast<unsigned long>(m_MultiLegOptimizationCandidates.size()),
+      complete, failed, running, waiting);
+
+  if (m_tCompute.IsRunning()) m_tCompute.Stop();
+  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
+  if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+  FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
+}
+
 void WeatherRouting::RunHeadlessRouteTestFromEnv() {
   // A scenario run is an automated test transaction, not an editing session.
   // Configuration mutations below can otherwise arm the normal five-second
@@ -4072,106 +4293,21 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
     }
 
     UpdateComputeState();
-
-    wxStopWatch timer;
-    while (timer.Time() < timeout_ms) {
-      bool active = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty();
-      if (!active && departure_opt) {
-        for (auto route : m_DepartureOptimizationRoutes) {
-          if (route && !route->Finished()) {
-            active = true;
-            break;
-          }
-        }
-      }
-      if (!active) break;
-      wxMilliSleep(50);
-      wxYieldIfNeeded();
-    }
-
-    bool timed_out = timer.Time() >= timeout_ms;
-    if (timed_out) {
-      wxLogMessage(
-          "WR_HEADLESS_ROUTE_TEST timeout route=\"%s to %s\" "
-          "elapsed_ms=%ld running=%lu waiting=%lu.",
-          selected_config.Start, selected_config.End, timer.Time(),
-          static_cast<unsigned long>(m_RunningRouteMaps.size()),
-          static_cast<unsigned long>(m_WaitingRouteMaps.size()));
-      StopAll();
-    }
-
-    int complete = 0;
-    int failed = 0;
-    int running = 0;
-    int waiting = 0;
-    std::vector<RouteMapOverlay*> routes;
-    if (departure_opt) {
-      for (auto route : m_DepartureOptimizationRoutes) routes.push_back(route);
-    } else {
-      routes.push_back(selected_route);
-    }
-    for (size_t i = 0; i < routes.size(); ++i) {
-      RouteMapOverlay* route = routes[i];
-      if (!route) continue;
-      RouteMapConfiguration configuration = route->GetConfiguration();
-      bool is_running = false;
-      bool is_waiting = false;
-      for (auto running_route : m_RunningRouteMaps)
-        if (running_route == route) is_running = true;
-      for (auto waiting_route : m_WaitingRouteMaps)
-        if (waiting_route == route) is_waiting = true;
-      bool is_complete = route->Finished() && route->ReachedDestination();
-      bool is_failed = route->Finished() && !route->ReachedDestination();
-      if (is_complete) complete++;
-      if (is_failed) failed++;
-      if (is_running) running++;
-      if (is_waiting) waiting++;
-      wxString state = is_complete  ? _("Complete")
-                       : is_failed  ? _("Failed")
-                       : is_running ? _("Running")
-                       : is_waiting ? _("Waiting")
-                                    : _("Not running");
-      long elapsed_seconds = -1;
-      if (route->EndTime().IsValid() && configuration.StartTime.IsValid()) {
-        wxTimeSpan elapsed = route->EndTime() - configuration.StartTime;
-        elapsed_seconds = elapsed.GetSeconds().ToLong();
-      }
-      double distance_nm = route->RouteInfo(RouteMapOverlay::DISTANCE);
-      wxLogMessage(
-          "WR_HEADLESS_ROUTE_TEST route_result index=%lu offset=%d "
-          "start=\"%s\" end=\"%s\" complete=%d failed=%d running=%d "
-          "waiting=%d state=\"%s\" end_time=\"%s\" elapsed=%ld "
-          "distance=%.3f reason=\"%s\".",
-          static_cast<unsigned long>(i),
-          configuration.DepartureTimeOptimizationOffsetMinutes,
-          configuration.Start, configuration.End, is_complete ? 1 : 0,
-          is_failed ? 1 : 0, is_running ? 1 : 0, is_waiting ? 1 : 0, state,
-          route->EndTime().IsValid() ? route->EndTime().FormatISOCombined()
-                                     : wxString("invalid"),
-          elapsed_seconds, distance_nm, route->GetFailureReason());
-    }
-
+    m_HeadlessRouteTestState = std::make_unique<HeadlessRouteTestState>();
+    m_HeadlessRouteTestState->kind =
+        HeadlessRouteTestState::Kind::SingleRoute;
+    m_HeadlessRouteTestState->timeoutMs = timeout_ms;
+    m_HeadlessRouteTestState->startedMs = wxGetUTCTimeMillis();
+    m_HeadlessRouteTestState->selectedRoute = selected_route;
+    m_HeadlessRouteTestState->departureOptimization = departure_opt;
+    m_HeadlessRouteTestState->scenarioLoaded = scenario_loaded;
+    m_HeadlessRouteTestState->scenario = scenario;
+    m_HeadlessRouteTestState->scenarioOutputPath = scenario_output_path;
+    m_tHeadlessRouteTest.Start(50);
     wxLogMessage(
-        "WR_HEADLESS_ROUTE_TEST end route=\"%s to %s\" elapsed_ms=%ld "
-        "timed_out=%d routes=%lu complete=%d failed=%d running=%d "
-        "waiting=%d.",
-        selected_config.Start, selected_config.End, timer.Time(),
-        timed_out ? 1 : 0, static_cast<unsigned long>(routes.size()), complete,
-        failed, running, waiting);
-
-    wxString result_status = timed_out      ? _("timeout")
-                             : complete > 0 ? _("complete")
-                             : failed > 0   ? _("failed")
-                                            : _("unknown");
-    wxString result_failure =
-        timed_out ? _("timeout")
-                  : (complete > 0 ? wxString() : _("no_completed_routes"));
-    write_scenario_result(result_status, result_failure, routes);
-
-    if (m_tCompute.IsRunning()) m_tCompute.Stop();
-    if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
-    if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
-    FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
+        "WR_HEADLESS_ROUTE_TEST monitor_started kind=single interval_ms=50 "
+        "timeout_ms=%ld.",
+        timeout_ms);
     return;
   }
 
@@ -4242,70 +4378,16 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
     return;
   }
 
-  wxStopWatch timer;
-  while (timer.Time() < timeout_ms) {
-    bool active = m_ActiveMultiLegSequence ||
-                  m_ActiveMultiLegDepartureOptimization ||
-                  !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty();
-    if (!active) break;
-    wxMilliSleep(50);
-    wxYieldIfNeeded();
-  }
-
-  bool timed_out = timer.Time() >= timeout_ms;
-  if (timed_out) {
-    wxLogMessage(
-        "WR_HEADLESS_ROUTE_TEST timeout group=%s elapsed_ms=%ld running=%lu "
-        "waiting=%lu multileg=%d multileg_opt=%d.",
-        selected_group, timer.Time(),
-        static_cast<unsigned long>(m_RunningRouteMaps.size()),
-        static_cast<unsigned long>(m_WaitingRouteMaps.size()),
-        m_ActiveMultiLegSequence ? 1 : 0,
-        m_ActiveMultiLegDepartureOptimization ? 1 : 0);
-    StopAll();
-    CancelMultiLegSequence();
-    CancelMultiLegDepartureOptimization(false);
-  }
-
-  int complete = 0;
-  int failed = 0;
-  int running = 0;
-  int waiting = 0;
-  for (size_t i = 0; i < m_MultiLegOptimizationCandidates.size(); ++i) {
-    const MultiLegOptimizationCandidate& candidate =
-        m_MultiLegOptimizationCandidates[i];
-    if (candidate.complete) complete++;
-    if (candidate.failed) failed++;
-    if (candidate.running) running++;
-    if (!candidate.complete && !candidate.failed && !candidate.running)
-      waiting++;
-    wxLogMessage(
-        "WR_HEADLESS_ROUTE_TEST candidate index=%lu offset=%d departure=%s "
-        "state=\"%s\" complete=%d failed=%d running=%d legs=%d/%d "
-        "final_eta=%s total_elapsed=%ld distance=%.3f reason=\"%s\".",
-        static_cast<unsigned long>(i), candidate.offsetMinutes,
-        candidate.departureTime.IsValid()
-            ? candidate.departureTime.FormatISOCombined()
-            : wxString("invalid"),
-        candidate.state, candidate.complete ? 1 : 0, candidate.failed ? 1 : 0,
-        candidate.running ? 1 : 0, candidate.completedLegs, candidate.totalLegs,
-        candidate.finalEta.IsValid() ? candidate.finalEta.FormatISOCombined()
-                                     : wxString("invalid"),
-        candidate.totalElapsedSeconds, candidate.totalDistance,
-        candidate.reason);
-  }
-
+  m_HeadlessRouteTestState = std::make_unique<HeadlessRouteTestState>();
+  m_HeadlessRouteTestState->kind = HeadlessRouteTestState::Kind::MultiLeg;
+  m_HeadlessRouteTestState->timeoutMs = timeout_ms;
+  m_HeadlessRouteTestState->startedMs = wxGetUTCTimeMillis();
+  m_HeadlessRouteTestState->selectedGroup = selected_group;
+  m_tHeadlessRouteTest.Start(50);
   wxLogMessage(
-      "WR_HEADLESS_ROUTE_TEST end group=%s elapsed_ms=%ld timed_out=%d "
-      "candidates=%lu complete=%d failed=%d running=%d waiting=%d.",
-      selected_group, timer.Time(), timed_out ? 1 : 0,
-      static_cast<unsigned long>(m_MultiLegOptimizationCandidates.size()),
-      complete, failed, running, waiting);
-
-  if (m_tCompute.IsRunning()) m_tCompute.Stop();
-  if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
-  if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
-  FinishHeadlessRouteTestProcess(timed_out ? 3 : 0);
+      "WR_HEADLESS_ROUTE_TEST monitor_started kind=multileg interval_ms=50 "
+      "timeout_ms=%ld.",
+      timeout_ms);
 }
 
 void WeatherRouting::CursorRouteChanged() {

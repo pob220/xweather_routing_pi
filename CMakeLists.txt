@@ -250,6 +250,7 @@ SET (HDRS
             include/ChartSafetyCache.h
             include/ChartHazardEvaluator.h
             include/ChartSafetyHost.h
+            include/headless/HeadlessRouteMonitor.h
             include/OptionalChartSafetyApi.h
             include/OceanPrewarmPolicy.h
             include/ClimatologyThreadGuard.h

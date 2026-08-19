@@ -43,6 +43,7 @@ set(TEST_SRC
     ChartSafetyCache_tests.cpp
     ChartHazardEvaluator_tests.cpp
     ChartSafetyPolicy_tests.cpp
+    HeadlessRouteMonitor_tests.cpp
     KeyedRequestCache_tests.cpp
     OceanPrewarmPolicy_tests.cpp
     Polar_tests.cpp
@@ -180,6 +181,12 @@ add_test(
         -DCONFIGURATION_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/ConfigurationDialog.cpp
         -DROUTING_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/WeatherRouting.cpp
         -P ${CMAKE_CURRENT_LIST_DIR}/ConfigurationTimeZoneLifecycleContract.cmake
+)
+add_test(
+    NAME weather_routing_headless_route_lifecycle_contract
+    COMMAND ${CMAKE_COMMAND}
+        -DROUTING_SOURCE=${WEATHER_ROUTING_SOURCE_DIR}/src/WeatherRouting.cpp
+        -P ${CMAKE_CURRENT_LIST_DIR}/HeadlessRouteLifecycleContract.cmake
 )
 add_test(
     NAME weather_routing_msvc_cplusplus_contract
