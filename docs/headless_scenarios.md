@@ -30,7 +30,8 @@ services as the GUI path. It assumes:
 
 - the Weather Routing plugin can be loaded from `OPENCPN_PLUGIN_DIRS`;
 - suitable GRIB/weather data is already available in the OpenCPN profile;
-- the requested time range is covered by the loaded GRIB data;
+- the requested time range is covered by the loaded GRIB data, or the scenario
+  configuration enables and has access to a suitable climatology fallback;
 - the selected/default polar and boat settings are usable;
 - chart-backed safety tests require the configured OpenCPN chart database;
 - OpenCPN's host seam extracts immutable raw chart-classification tiles, while
@@ -62,7 +63,12 @@ final result when the run completes or fails.
 
 `WR_HEADLESS_GRIB_FILE` optionally names the GRIB file to open through the GRIB
 plugin's existing JSON message interface. The file must exist and cover the
-scenario's route area and departure/arrival window.
+scenario's route area and the portion of the departure/arrival window expected
+to use forecast data. Routes are not limited to the in-memory GRIB working-set
+duration: old frames are evicted and reacquired as needed. Whether a route may
+continue beyond the forecast's valid time range is controlled separately by
+its climatology/data-deficient configuration. A scenario with climatology
+disabled deliberately fails closed when its forecast ends.
 
 `WR_HEADLESS_PLANNED_ARRIVAL_TIME` changes the selected scenario to
 arrival-time routing and accepts an ISO timestamp (a trailing `Z` means UTC).

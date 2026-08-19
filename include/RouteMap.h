@@ -35,6 +35,7 @@
 
 #include "ODAPI.h"
 #include "GribRecordSet.h"
+#include "KeyedRequestCache.h"
 #include "ConstraintChecker.h"
 #include "RoutePoint.h"
 #include "Position.h"
@@ -981,8 +982,8 @@ public:
     m_bNeedsGrib = false;
     Unlock();
   }
-  void SetNewGrib(GribRecordSet* grib);
-  void SetNewGrib(WR_GribRecordSet* grib);
+  void SetNewGrib(GribRecordSet* grib, std::int64_t timeline_key = -1);
+  void SetNewGrib(WR_GribRecordSet* grib, std::int64_t timeline_key = -1);
   /**
    * Acquire a copied GRIB timeline frame.  Worker threads request missing
    * frames through the normal main-thread plugin-message path and wait on a
@@ -1092,7 +1093,7 @@ public:
     m_bFinished = true;
     Unlock();
     m_CancellationFlag->store(true, std::memory_order_relaxed);
-    m_GribTimelineCondition.notify_all();
+    m_GribTimelineCache.NotifyAll();
   }
   void ResetFinished() {
     Lock();
@@ -1284,13 +1285,17 @@ private:
 
   wxDateTime m_NewTime;
 
-  void PublishTimelineFrame(const Shared_GribRecordSet& frame);
-  mutable std::mutex m_GribTimelineMutex;
-  std::condition_variable m_GribTimelineCondition;
-  std::map<std::int64_t, Shared_GribRecordSet> m_GribTimelineFrames;
-  std::deque<std::int64_t> m_GribTimelineLru;
-  std::int64_t m_PendingGribTimelineKey{-1};
-  bool m_PendingGribTimelineFailed{false};
+  void PublishTimelineFrame(std::int64_t timeline_key,
+                            const Shared_GribRecordSet& frame);
+  // Fifteen-minute weather slices over 128 hours. High-effort coastal routes
+  // have been observed to revisit a 105-hour search frontier concurrently;
+  // the former 12-hour LRU repeatedly discarded frames still in active use.
+  // Keep this substantially below the engine's 30-day route-duration limit:
+  // every entry owns copied GRIB grids, so caching that complete theoretical
+  // horizon per route would create an unacceptable multi-gigabyte contract.
+  static constexpr std::size_t kGribTimelineFrameCapacity = 512;
+  weather_routing::KeyedRequestCache<std::int64_t, Shared_GribRecordSet>
+      m_GribTimelineCache{kGribTimelineFrameCapacity};
   std::shared_ptr<std::atomic_bool> m_CancellationFlag;
 };
 

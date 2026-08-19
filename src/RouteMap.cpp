@@ -336,66 +336,22 @@ bool RouteMap::AcquireGribTimelineFrame(const wxDateTime& time,
                                         long timeoutMilliseconds) {
   const std::int64_t key = GribTimelineKey(time);
   if (key < 0) return false;
-  {
-    std::lock_guard<std::mutex> lock(m_GribTimelineMutex);
-    const auto found = m_GribTimelineFrames.find(key);
-    if (found != m_GribTimelineFrames.end()) {
-      frame = found->second;
-      return frame.GetGribRecordSet() != nullptr;
-    }
-    m_PendingGribTimelineKey = key;
-    m_PendingGribTimelineFailed = false;
-  }
-  Lock();
-  m_NewTime = time;
-  m_bNeedsGrib = true;
-  Unlock();
-
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(timeoutMilliseconds);
-  std::unique_lock<std::mutex> lock(m_GribTimelineMutex);
-  while (!m_PendingGribTimelineFailed) {
-    if (m_CancellationFlag->load(std::memory_order_relaxed)) return false;
-    const auto found = m_GribTimelineFrames.find(key);
-    if (found != m_GribTimelineFrames.end()) {
-      frame = found->second;
-      return frame.GetGribRecordSet() != nullptr;
-    }
-    const auto poll = std::min(deadline, std::chrono::steady_clock::now() +
-                                             std::chrono::milliseconds(100));
-    if (m_GribTimelineCondition.wait_until(lock, poll) ==
-            std::cv_status::timeout &&
-        std::chrono::steady_clock::now() >= deadline)
-      break;
-  }
-  return false;
+  return m_GribTimelineCache.Acquire(
+      key, &frame, timeoutMilliseconds,
+      [this, time](const std::int64_t&) {
+        Lock();
+        m_NewTime = time;
+        m_bNeedsGrib = true;
+        Unlock();
+      },
+      [this] { return m_CancellationFlag->load(std::memory_order_relaxed); });
 }
 
-void RouteMap::PublishTimelineFrame(const Shared_GribRecordSet& frame) {
-  std::lock_guard<std::mutex> lock(m_GribTimelineMutex);
-  if (m_PendingGribTimelineKey < 0) return;
-  if (!frame.GetGribRecordSet()) {
-    m_PendingGribTimelineFailed = true;
-    m_GribTimelineCondition.notify_all();
-    return;
-  }
-  // Native forward refinements revisit the same passage chronology. Eight
-  // quarter-hour frames cover only two hours, causing a typical day passage
-  // to evict and rebuild interpolated GRIB frames repeatedly. Twelve hours is
-  // a bounded working set which covers ordinary coastal routes while the LRU
-  // still caps memory for longer searches.
-  constexpr std::size_t kMaximumRetainedTimelineFrames = 48;
-  const auto key = m_PendingGribTimelineKey;
-  m_GribTimelineFrames[key] = frame;
-  m_GribTimelineLru.erase(
-      std::remove(m_GribTimelineLru.begin(), m_GribTimelineLru.end(), key),
-      m_GribTimelineLru.end());
-  m_GribTimelineLru.push_back(key);
-  while (m_GribTimelineLru.size() > kMaximumRetainedTimelineFrames) {
-    m_GribTimelineFrames.erase(m_GribTimelineLru.front());
-    m_GribTimelineLru.pop_front();
-  }
-  m_GribTimelineCondition.notify_all();
+void RouteMap::PublishTimelineFrame(std::int64_t timeline_key,
+                                    const Shared_GribRecordSet& frame) {
+  if (timeline_key < 0) return;
+  m_GribTimelineCache.Publish(timeline_key, frame,
+                              frame.GetGribRecordSet() != nullptr);
 }
 
 static long CountIsoRouteListPositions(const IsoRouteList& routes) {
@@ -1164,10 +1120,10 @@ bool RouteMap::AwaitChartSafetyData(long timeoutMilliseconds) {
 std::map<time_t, std::weak_ptr<WR_GribRecordSet>> grib_key;
 wxMutex s_key_mutex;
 
-void RouteMap::SetNewGrib(GribRecordSet* grib) {
+void RouteMap::SetNewGrib(GribRecordSet* grib, std::int64_t timeline_key) {
   if (!grib || !grib->m_GribRecordPtrArray[Idx_WIND_VX] ||
       !grib->m_GribRecordPtrArray[Idx_WIND_VY]) {
-    PublishTimelineFrame(Shared_GribRecordSet());
+    PublishTimelineFrame(timeline_key, Shared_GribRecordSet());
     return;
   }
 
@@ -1191,7 +1147,7 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       // compute fake generation grib->m_ID
       if (m_NewGrib->m_ID == bogus_ID) {
-        PublishTimelineFrame(m_SharedNewGrib);
+        PublishTimelineFrame(timeline_key, m_SharedNewGrib);
         return;
       }
     }
@@ -1232,13 +1188,13 @@ void RouteMap::SetNewGrib(GribRecordSet* grib) {
     grib_key[m_NewGrib->m_Reference_Time] =
         m_SharedNewGrib.GetSharedGribRecordSet();
   }
-  PublishTimelineFrame(m_SharedNewGrib);
+  PublishTimelineFrame(timeline_key, m_SharedNewGrib);
 }
 
-void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
+void RouteMap::SetNewGrib(WR_GribRecordSet* grib, std::int64_t timeline_key) {
   if (!grib || !grib->m_GribRecordPtrArray[Idx_WIND_VX] ||
       !grib->m_GribRecordPtrArray[Idx_WIND_VY]) {
-    PublishTimelineFrame(Shared_GribRecordSet());
+    PublishTimelineFrame(timeline_key, Shared_GribRecordSet());
     return;
   }
 
@@ -1252,7 +1208,7 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
       m_SharedNewGrib.SetSharedGribRecordSet(existing);
       m_NewGrib = m_SharedNewGrib.GetGribRecordSet();
       if (m_NewGrib->m_ID == grib->m_ID) {
-        PublishTimelineFrame(m_SharedNewGrib);
+        PublishTimelineFrame(timeline_key, m_SharedNewGrib);
         return;
       }
     }
@@ -1285,7 +1241,7 @@ void RouteMap::SetNewGrib(WR_GribRecordSet* grib) {
     grib_key[m_NewGrib->m_Reference_Time] =
         m_SharedNewGrib.GetSharedGribRecordSet();
   }
-  PublishTimelineFrame(m_SharedNewGrib);
+  PublishTimelineFrame(timeline_key, m_SharedNewGrib);
 }
 
 void RouteMap::GetStatistics(int& isochrons, int& routes, int& invroutes,

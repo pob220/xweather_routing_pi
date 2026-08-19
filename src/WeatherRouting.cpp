@@ -1416,7 +1416,8 @@ void WeatherRouting::RequestGribTimelineFrame(
   }
   if (unanswered) {
     routeMapOverlay->Lock();
-    routeMapOverlay->SetNewGrib(static_cast<GribRecordSet*>(nullptr));
+    routeMapOverlay->SetNewGrib(static_cast<GribRecordSet*>(nullptr),
+                                static_cast<std::int64_t>(time.GetTicks()));
     routeMapOverlay->Unlock();
     wxLogWarning(
         "WR_GRIB_BROKER no synchronous response token=%s timeline=%s",
@@ -1442,7 +1443,7 @@ void WeatherRouting::HandleGribTimelineFrame(const wxString& requestToken,
   }
 
   routeMapOverlay->Lock();
-  routeMapOverlay->SetNewGrib(frame);
+  routeMapOverlay->SetNewGrib(frame, expectedTimelineKey);
   routeMapOverlay->Unlock();
   wxLogMessage(
       "WR_GRIB_BROKER delivered token=%s timeline_key=%lld valid=%d",

@@ -1882,11 +1882,11 @@ void RouteMapOverlay::RequestGrib(wxDateTime time,
 
   Json::FastWriter w;
 
+  // Acknowledge this key before the synchronous plug-in message. Its response
+  // can wake another worker which requests the next key; clearing afterwards
+  // would erase that new request.
+  RequestedGrib();
   SendPluginMessage("GRIB_TIMELINE_RECORD_REQUEST", w.write(v));
-
-  Lock();
-  m_bNeedsGrib = false;
-  Unlock();
 }
 
 std::list<PlotData>& RouteMapOverlay::GetPlotData(bool cursor_route) {

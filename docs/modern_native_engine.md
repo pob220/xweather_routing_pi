@@ -140,11 +140,16 @@ corridor preparation. Consequently CPU scheduling or a warm cache cannot
 change the partial scout geometry used by the final solve.
 
 Weather samples are cached at 15-minute and 0.01-degree keys, which remain
-finer than the 0.025-degree Irish Sea acceptance GRIB. Forty-eight copied GRIB
-timeline frames retain a rolling 12-hour working set. Exact route-to-cursor
-lineages are capped at 48 evenly distributed traces per layer to bound memory
-on long passages while keeping finer resolution than practical cursor
-selection.
+finer than the 0.025-degree Irish Sea acceptance GRIB. Up to 512 copied GRIB
+timeline frames retain a rolling 128-hour working set. This is a memory bound,
+not a route-duration bound: later frames remain requestable, and an evicted
+frame is fetched again if a search revisits it. The routing engine's separate
+maximum duration remains 30 days. Beyond the valid GRIB range, weather either
+comes from configured climatology/data-deficient policy or the route fails for
+lack of weather; cache eviction does not select that policy. Exact
+route-to-cursor lineages are capped at 48 evenly distributed traces per layer
+to bound memory on long passages while keeping finer resolution than practical
+cursor selection.
 
 Successful and failed runs write one structured `WR_MODERN_NATIVE_SUMMARY` log
 entry containing solver path, elapsed time, generated/retained states, graph
