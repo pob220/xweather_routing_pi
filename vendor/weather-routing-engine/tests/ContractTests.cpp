@@ -88,6 +88,42 @@ int main() {
             "generated-state count is not deterministic");
     require(first.validation.passed, first.message.c_str());
 
+    RoutingRequest forecastThenClimatology = request();
+    forecastThenClimatology.destination = {50.0, -0.5};
+    forecastThenClimatology.options.timeStep = std::chrono::hours{12};
+    forecastThenClimatology.options.minimumTimeStep = std::chrono::hours{1};
+    for (auto& profile : forecastThenClimatology.vessel.profiles)
+      for (auto& row : profile.rows)
+        for (auto& point : row.points) point.boatSpeedKnots = 1.0;
+    forecastThenClimatology.environment.climatology =
+        ClimatologyFallbackPolicy::AllowWithWarning;
+    UniformWeatherProvider::Configuration shortForecast;
+    shortForecast.begins = forecastThenClimatology.departure;
+    shortForecast.ends =
+        forecastThenClimatology.departure + std::chrono::hours{2};
+    shortForecast.area = {-20.0, 40.0, 20.0, 60.0};
+    shortForecast.windTowardKnots = Vector2{0.0, 10.0};
+    shortForecast.identity = "short-contract-forecast";
+    shortForecast.source = EnvironmentalSource::GribForecast;
+    UniformWeatherProvider::Configuration climatology;
+    climatology.area = shortForecast.area;
+    climatology.windTowardKnots = Vector2{0.0, 10.0};
+    climatology.identity = "contract-climatology";
+    climatology.source = EnvironmentalSource::Climatology;
+    RoutingEnvironment mixedWeather;
+    mixedWeather.grib = std::make_shared<UniformWeatherProvider>(shortForecast);
+    mixedWeather.climatology =
+        std::make_shared<UniformWeatherProvider>(climatology);
+    const RoutingResult mixed =
+        engine.route(forecastThenClimatology, mixedWeather);
+    require(mixed.validation.passed, mixed.message.c_str());
+    require(mixed.metrics.elapsed > std::chrono::hours{128},
+            "route was incorrectly limited to the 128-hour cache horizon");
+    require(mixed.environment.gribWindDuration > Duration::zero(),
+            "route used no forecast wind before forecast expiry");
+    require(mixed.environment.climatologyWindDuration > Duration::zero(),
+            "route did not continue with climatology after forecast expiry");
+
     ArrivalPlanningOptions arrivalOptions;
     arrivalOptions.plannedArrival =
         route.departure + std::chrono::hours{24};
