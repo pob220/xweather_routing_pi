@@ -89,6 +89,24 @@ TEST(RoutingScenarioJson, LoadsMinimumDepthAcceptanceSettings) {
   EXPECT_TRUE(scenario.safety.persistentCertifiedCacheEnabled);
 }
 
+TEST(RoutingScenarioJson, LoadsPracticalDepthAwareDepartureAcceptance) {
+  weather_routing_engine::RoutingScenario scenario;
+  wxString error;
+  const wxString path = wxString(WEATHER_ROUTING_SOURCE_DIR) +
+                        "/testdata/scenarios/"
+                        "holyhead_foyle_5m_departure_optimization.json";
+  ASSERT_TRUE(
+      weather_routing_headless::LoadRoutingScenarioJson(path, scenario, error))
+      << error;
+  EXPECT_TRUE(scenario.departureOptimization.enabled);
+  EXPECT_EQ(180, scenario.departureOptimization.beforeMinutes);
+  EXPECT_EQ(180, scenario.departureOptimization.afterMinutes);
+  EXPECT_EQ(60, scenario.departureOptimization.stepMinutes);
+  EXPECT_EQ(7, scenario.departureOptimization.concurrentRoutes);
+  EXPECT_EQ(100, scenario.route.routingEffortPercent);
+  EXPECT_DOUBLE_EQ(5.0, scenario.safety.minimumDepthM);
+}
+
 TEST(RoutingScenarioJson, PreservesExplicitUtcAcrossLocalTimezone) {
   const wxString scenarioPath = "/tmp/weather-routing-utc-scenario.json";
   {
