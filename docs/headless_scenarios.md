@@ -180,9 +180,11 @@ for a wider search on difficult routes.
 - `stabilityCorridor.clusterRoutes`
 - `stabilityCorridor.writeGeoJson`
 
-`minimumDepthM` is parsed and retained in the scenario DTO. It is only applied
-when the current Weather Routing/OpenCPN route safety configuration exposes a
-matching option.
+`minimumDepthM` is expressed in metres. A positive finite value enables the
+depth constraint in propagation, chart-safety prewarm and final plotted-route
+validation. This requires `safety.mode` to be `chart` and a compatible OpenCPN
+chart-safety service; the route fails closed if depth-aware safety is requested
+but unavailable. Zero disables the depth constraint.
 
 `departureOptimization.concurrentRoutes` uses the same scheduler policy as the
 Advanced route editor. Auto reserves two logical CPUs for OpenCPN and the

@@ -21,6 +21,7 @@
 
 #include "ConstraintChecker.h"
 #include "ChartSafetyHost.h"
+#include "ChartSafetyPolicy.h"
 #include "WeatherDataProvider.h"
 #include "RouteMap.h"
 #include "Utilities.h"
@@ -399,6 +400,8 @@ bool EndpointMarginOnlyHitIsZeroMarginSafe(RouteMapConfiguration* configuration,
   zero_margin_options.safety_margin_nm = 0.0;
   zero_margin_options.check_land = true;
   zero_margin_options.allow_gshhs_fallback = false;
+  weather_routing::ApplyMinimumDepthPolicy(
+      zero_margin_options, configuration->MinimumDepthMeters);
 
   PlugInSegmentSafetyResult zero_margin_result = {};
   zero_margin_result.struct_size = sizeof(zero_margin_result);
@@ -452,6 +455,8 @@ bool SegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   options.struct_size = sizeof(options);
   options.safety_margin_nm = safety_margin_nm;
   options.check_land = true;
+  weather_routing::ApplyMinimumDepthPolicy(options,
+                                           configuration->MinimumDepthMeters);
   /*
    * Final/display route validation is the last safety gate before a route can
    * be shown, applied, saved, or exported.  When experimental chart safety is
@@ -658,6 +663,8 @@ bool FinalRouteSegmentSafetyRejectsLand(RouteMapConfiguration* configuration,
   options.struct_size = sizeof(options);
   options.safety_margin_nm = safety_margin_nm;
   options.check_land = true;
+  weather_routing::ApplyMinimumDepthPolicy(options,
+                                           configuration->MinimumDepthMeters);
   options.allow_gshhs_fallback = true;
   options.force_authoritative_fine_validation = true;
 

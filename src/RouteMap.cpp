@@ -158,6 +158,7 @@ RouteMapConfiguration::RouteMapConfiguration()
       IsMultiLegGenerated(false),
       MultiLegLegIndex(0),
       MultiLegLegCount(0),
+      MinimumDepthMeters(0.0),
       UpwindEfficiency(1.),
       DownwindEfficiency(1.),
       NightCumulativeEfficiency(1.),

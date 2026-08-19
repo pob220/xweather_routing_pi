@@ -73,6 +73,22 @@ TEST(RoutingScenarioJson, LoadsRoutingEffortForHardRouteRegression) {
   EXPECT_EQ(400, scenario.route.routingEffortPercent);
 }
 
+TEST(RoutingScenarioJson, LoadsMinimumDepthAcceptanceSettings) {
+  weather_routing_engine::RoutingScenario scenario;
+  wxString error;
+  const wxString path = wxString(WEATHER_ROUTING_SOURCE_DIR) +
+                        "/testdata/scenarios/"
+                        "holyhead_lough_foyle_min_depth_5m.json";
+  ASSERT_TRUE(
+      weather_routing_headless::LoadRoutingScenarioJson(path, scenario, error))
+      << error;
+  EXPECT_EQ("chart", scenario.safety.mode);
+  EXPECT_TRUE(scenario.safety.enforce);
+  EXPECT_DOUBLE_EQ(0.4, scenario.safety.landMarginNm);
+  EXPECT_DOUBLE_EQ(5.0, scenario.safety.minimumDepthM);
+  EXPECT_TRUE(scenario.safety.persistentCertifiedCacheEnabled);
+}
+
 TEST(RoutingScenarioJson, PreservesExplicitUtcAcrossLocalTimezone) {
   const wxString scenarioPath = "/tmp/weather-routing-utc-scenario.json";
   {

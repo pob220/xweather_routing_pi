@@ -2235,7 +2235,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   // End Sail Plan Change time.
 
   wxFlexGridSizer* fgSizer11511;
-  fgSizer11511 = new wxFlexGridSizer(1, 0, 0, 0);
+  fgSizer11511 = new wxFlexGridSizer(0, 3, 0, 0);
   fgSizer11511->SetFlexibleDirection(wxBOTH);
   fgSizer11511->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
 
@@ -2260,6 +2260,33 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
                        wxDefaultPosition, wxDefaultSize, 0);
   m_staticText1211->Wrap(-1);
   fgSizer11511->Add(m_staticText1211, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  wxStaticText* minimumDepthLabel =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
+                       _("Minimum Charted Depth"), wxDefaultPosition,
+                       wxDefaultSize, 0);
+  minimumDepthLabel->Wrap(-1);
+  fgSizer11511->Add(minimumDepthLabel, 0,
+                    wxALIGN_CENTER_VERTICAL | wxALL, 5);
+
+  m_sMinimumDepthMeters =
+      new wxSpinCtrlDouble(sbOptions1->GetStaticBox(), wxID_ANY, wxEmptyString,
+                           wxDefaultPosition, wxSize(140, -1), wxSP_ARROW_KEYS,
+                           0., 100., 0. /* initial value */, 0.1 /* inc */);
+  m_sMinimumDepthMeters->SetDigits(1);
+  m_sMinimumDepthMeters->SetToolTip(
+      _("Reject chart-aware routes through water charted shallower than this "
+        "depth in metres. Zero disables the depth constraint. A positive "
+        "value requires enabled and enforced chart-aware safety."));
+  fgSizer11511->Add(m_sMinimumDepthMeters, 0,
+                    wxALL | wxALIGN_CENTER_VERTICAL, 5);
+
+  wxStaticText* minimumDepthUnit =
+      new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY, _("m"),
+                       wxDefaultPosition, wxDefaultSize, 0);
+  minimumDepthUnit->Wrap(-1);
+  fgSizer11511->Add(minimumDepthUnit, 0,
+                    wxALIGN_CENTER_VERTICAL | wxALL, 5);
 
   fgSizer113->Add(fgSizer11511, 1, wxEXPAND, 5);
 
@@ -3117,6 +3144,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_sSafetyMarginLand->Connect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sMinimumDepthMeters->Connect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_sUpwindEfficiency->Connect(
       wxEVT_COMMAND_SPINCTRL_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
@@ -3781,6 +3811,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_MOTION, wxMouseEventHandler(ConfigurationDialogBase::EnableSpin),
       NULL, this);
   m_sSafetyMarginLand->Disconnect(
+      wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
+      wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
+  m_sMinimumDepthMeters->Disconnect(
       wxEVT_COMMAND_SPINCTRLDOUBLE_UPDATED,
       wxSpinEventHandler(ConfigurationDialogBase::OnUpdateSpin), NULL, this);
   m_cbUseReverseReachabilityRecovery->Disconnect(

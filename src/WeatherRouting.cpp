@@ -46,6 +46,7 @@
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
 #include "ChartSafetyHost.h"
+#include "ChartSafetyPolicy.h"
 #include "OceanPrewarmPolicy.h"
 #include "DepartureScheduler.h"
 #include "RoutingResourcePolicy.h"
@@ -438,8 +439,8 @@ static PlugInSegmentSafetyOptions ChartSafetyRouteMaskOptions(
   options.safety_margin_nm = wxMax(0.0, configuration.SafetyMarginLand);
   options.check_land = 1;
   options.allow_gshhs_fallback = 0;
-  options.check_depth = 0;
-  options.minimum_depth_m = 0.0;
+  weather_routing::ApplyMinimumDepthPolicy(options,
+                                           configuration.MinimumDepthMeters);
   return options;
 }
 
@@ -3920,6 +3921,9 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
           if (scenario.safety.hasLandMarginNm)
             configuration.SafetyMarginLand =
                 wxMax(0.0, scenario.safety.landMarginNm);
+          if (scenario.safety.hasMinimumDepthM)
+            configuration.MinimumDepthMeters =
+                wxMax(0.0, scenario.safety.minimumDepthM);
           if (scenario.safety.hasPersistentCertifiedCacheEnabled)
             m_weather_routing_pi.SetUsePersistentChartSafeCache(
                 scenario.safety.persistentCertifiedCacheEnabled, false);
@@ -6629,10 +6633,13 @@ void WeatherRouting::OnSimplifyRoute(wxCommandEvent& event) {
       }
       if (previous.DetectLand != current.DetectLand ||
           std::fabs(previous.SafetyMarginLand - current.SafetyMarginLand) >
-              1e-6) {
+              1e-6 ||
+          std::fabs(previous.MinimumDepthMeters -
+                    current.MinimumDepthMeters) > 1e-6) {
         wxMessageDialog dialog(this,
                                _("Selected legs must use the same "
-                                 "land-detection and safety-margin "
+                                 "land-detection, safety-margin and "
+                                 "minimum-depth "
                                  "settings before they can be combined."),
                                _("Simplify weather route"),
                                wxOK | wxICON_WARNING);
@@ -7568,6 +7575,8 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
         configuration.DetectLand = AttributeBool(e, "DetectLand", true);
         configuration.SafetyMarginLand =
             AttributeDouble(e, "SafetyMarginLand", 0.);
+        configuration.MinimumDepthMeters =
+            wxMax(0.0, AttributeDouble(e, "MinimumDepthMeters", 0.));
         configuration.DetectBoundary =
             AttributeBool(e, "DetectBoundary", false);
         configuration.Currents = AttributeBool(e, "Currents", true);
@@ -7751,6 +7760,8 @@ void WeatherRouting::SaveXML(wxString filename) {
 
     c->SetAttribute("DetectLand", configuration.DetectLand);
     c->SetDoubleAttribute("SafetyMarginLand", configuration.SafetyMarginLand);
+    c->SetDoubleAttribute("MinimumDepthMeters",
+                          configuration.MinimumDepthMeters);
     c->SetAttribute("DetectBoundary", configuration.DetectBoundary);
     c->SetAttribute("Currents", configuration.Currents);
     c->SetAttribute("OptimizeTacking", configuration.OptimizeTacking);
@@ -9064,8 +9075,10 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
 
     PlugInSegmentSafetyOptions endpoint_options = options;
     endpoint_options.safety_margin_nm = 0.0;
-    endpoint_options.check_depth = 0;
-    endpoint_options.minimum_depth_m = 0.0;
+    // Endpoint relaxation removes only the configured land margin.  A
+    // minimum-depth constraint remains a hard safety condition at both ends.
+    weather_routing::ApplyMinimumDepthPolicy(
+        endpoint_options, representative.MinimumDepthMeters);
     PlugInSegmentSafetyResult endpoint_result = {};
     endpoint_result.struct_size = sizeof(endpoint_result);
     bool endpoint_ok =
@@ -10121,6 +10134,20 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   bool use_chart_safety = false;
   bool enforce_chart_safety = false;
   ReadExperimentalChartSafetySettings(use_chart_safety, enforce_chart_safety);
+  if (configuration.MinimumDepthMeters > 0.0 &&
+      (!configuration.DetectLand || !use_chart_safety ||
+       !enforce_chart_safety)) {
+    routemapoverlay->SetError(
+        _("Minimum depth requires enabled and enforced chart-aware safety"));
+    wxLogError(
+        "WR_MINIMUM_DEPTH unavailable route=\"%s -> %s\" "
+        "minimum_depth_m=%.3f detect_land=%d chart_safety_use=%d "
+        "chart_safety_enforce=%d",
+        configuration.Start, configuration.End,
+        configuration.MinimumDepthMeters, configuration.DetectLand ? 1 : 0,
+        use_chart_safety ? 1 : 0, enforce_chart_safety ? 1 : 0);
+    return;
+  }
   if (configuration.DetectLand && use_chart_safety && enforce_chart_safety &&
       !configuration.chart_safety_scout_preview) {
     // An enforced OpenCPN route must ultimately use authoritative chart
@@ -10188,7 +10215,7 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
       "detect_land=%d detect_boundary=%d chart_safety_use=%d "
       "chart_safety_enforce=%d chart_safety_propagation=%d "
       "reverse_reachability=%d scout_eligible=%d "
-      "safety_margin_land_nm=%.3f timestep=%.0f ",
+      "safety_margin_land_nm=%.3f minimum_depth_m=%.3f timestep=%.0f ",
       configuration.boatFileName,
       static_cast<unsigned long>(configuration.boat.Polars.size()),
       configuration.UseGrib ? 1 : 0, configuration.ClimatologyType,
@@ -10201,7 +10228,8 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
               configuration.chart_safety_missing_tile_retry_count == 0
           ? 1
           : 0,
-      configuration.SafetyMarginLand, configuration.DeltaTime);
+      configuration.SafetyMarginLand, configuration.MinimumDepthMeters,
+      configuration.DeltaTime);
   routeStartLog += wxString::Format(
       "degree{from=%.1f to=%.1f by=%.1f count=%lu} "
       "course{max_diverted=%.1f max_course=%.1f max_search=%.1f} "
@@ -10596,6 +10624,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
                configuration.NightCumulativeEfficiency);
   pConf->Write(_T("DetectLand"), configuration.DetectLand);
   pConf->Write(_T("SafetyMarginLand"), configuration.SafetyMarginLand);
+  pConf->Write(_T("MinimumDepthMeters"), configuration.MinimumDepthMeters);
   pConf->Write(_T("DetectBoundary"), configuration.DetectBoundary);
   pConf->Write(_T("Currents"), configuration.Currents);
   pConf->Write(_T("OptimizeTacking"), configuration.OptimizeTacking);
@@ -10687,6 +10716,10 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.DetectLand);
   pConf->Read(_T("SafetyMarginLand"), &configuration.SafetyMarginLand,
               configuration.SafetyMarginLand);
+  pConf->Read(_T("MinimumDepthMeters"), &configuration.MinimumDepthMeters,
+              configuration.MinimumDepthMeters);
+  configuration.MinimumDepthMeters =
+      wxMax(0.0, configuration.MinimumDepthMeters);
   pConf->Read(_T("DetectBoundary"), &configuration.DetectBoundary,
               configuration.DetectBoundary);
   pConf->Read(_T("Currents"), &configuration.Currents, configuration.Currents);
@@ -10791,6 +10824,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.WindStrength = 1;
   configuration.DetectLand = true;
   configuration.SafetyMarginLand = 0.;
+  configuration.MinimumDepthMeters = 0.;
   configuration.DetectBoundary = false;
   configuration.Currents = false;
   configuration.OptimizeTacking = false;

@@ -130,6 +130,10 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
                            "to maintain from land during routing "
                            "calculations."));
+  m_sMinimumDepthMeters->SetToolTip(
+      _("Reject chart-aware routes through water charted shallower than this "
+        "depth in metres. Zero disables the depth constraint. A positive "
+        "value requires enabled and enforced chart-aware safety."));
   m_cbUseExperimentalChartSafety->SetToolTip(
       _("Use OpenCPN chart-backed land checks for Detect Land diagnostics. "
         "Route rejection uses these checks when chart-aware land avoidance is "
@@ -652,6 +656,7 @@ void ConfigurationDialog::SetConfigurations(
   SET_SPIN(CycloneMonths);
   SET_SPIN(CycloneDays);
   SET_SPIN_DOUBLE(SafetyMarginLand);
+  SET_SPIN_DOUBLE(MinimumDepthMeters);
 
   SET_CHECKBOX(DetectLand);
   SET_CHECKBOX(DetectBoundary);
@@ -765,6 +770,7 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent& event) {
   m_sJibingTime->SetValue(0);
   m_sSailPlanChangeTime->SetValue(0);
   m_sSafetyMarginLand->SetValue(0.);
+  m_sMinimumDepthMeters->SetValue(0.);
 
   m_sFromDegree->SetValue(0);
   m_sToDegree->SetValue(180);
@@ -1028,6 +1034,7 @@ void ConfigurationDialog::Update() {
     GET_SPIN(CycloneMonths);
     GET_SPIN(CycloneDays);
     GET_SPIN(SafetyMarginLand);
+    GET_SPIN(MinimumDepthMeters);
 
     GET_CHECKBOX(DetectLand);
     GET_CHECKBOX(DetectBoundary);

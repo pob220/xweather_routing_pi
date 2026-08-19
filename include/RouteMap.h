@@ -449,6 +449,15 @@ struct RouteMapConfiguration {
   double SafetyMarginLand;
 
   /**
+   * Minimum charted water depth accepted by chart-aware routing, in metres.
+   *
+   * A value at or below zero disables depth checking.  This constraint is
+   * meaningful only when enforced chart-backed safety is available; it must
+   * never silently degrade to the GSHHS land-only fallback.
+   */
+  double MinimumDepthMeters;
+
+  /**
    * When enabled, the routing algorithm will avoid historical cyclone tracks.
    *
    * Uses climatology data to identify areas where cyclones have historically

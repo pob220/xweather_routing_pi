@@ -42,6 +42,7 @@ set(TEST_SRC
     AppendOnlyCache_tests.cpp
     ChartSafetyCache_tests.cpp
     ChartHazardEvaluator_tests.cpp
+    ChartSafetyPolicy_tests.cpp
     OceanPrewarmPolicy_tests.cpp
     Polar_tests.cpp
     PolygonRegion_tests.cpp
