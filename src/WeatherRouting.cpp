@@ -398,7 +398,10 @@ static const int kDefaultMaxChartSafetyMissingTileRetries = 16;
 // native adapter. This watchdog is only a deadlock/stall escape hatch. If it
 // fires, the partial result is discarded so wall-clock timing cannot alter the
 // chart-safety corridor used by the authoritative solve.
-static const long kChartSafetyScoutWatchdogMs = 120000;
+// The scout is only a chart-cache hint.  Keep its synchronous wait short: a
+// long wait delays the authoritative solve, and yielding the wx event loop
+// here is unsafe because callers already run from GUI event handlers.
+static const long kChartSafetyScoutWatchdogMs = 2000;
 
 static const char* RouteStartTypeName(
     RouteMapConfiguration::StartDataType type) {
@@ -8672,12 +8675,10 @@ bool WeatherRouting::CollectChartSafetyScoutGeometry(
     }
 
     wxMilliSleep(20);
-    wxYieldIfNeeded();
   }
 
   while (routemapoverlay->Running()) {
     wxMilliSleep(20);
-    wxYieldIfNeeded();
   }
   routemapoverlay->DeleteThread();
 
