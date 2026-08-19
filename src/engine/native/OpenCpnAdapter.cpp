@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "ConstraintChecker.h"
+#include "engine/native/ConstraintTime.h"
 #include "RouteMapOverlay.h"
 #include "RoutingQualityPolicy.h"
 #include "RoutingResourcePolicy.h"
@@ -545,8 +546,10 @@ public:
 
   bool segmentForbidden(wr::GeoPoint start, wr::GeoPoint end,
                         double margin) const override {
-    return segmentForbiddenAt(start, end, ToNative(configuration_.time),
-                              margin);
+    const auto time = weather_routing::native::ResolveConstraintTime(
+        configuration_.time, configuration_.StartTime);
+    if (!time) return true;
+    return segmentForbiddenAt(start, end, ToNative(*time), margin);
   }
 
   bool segmentForbiddenAt(wr::GeoPoint start, wr::GeoPoint end,

@@ -59,6 +59,7 @@ set(TEST_SRC
     RoutingResourcePolicy_tests.cpp
     RoutingFootprint_tests.cpp
     ClimatologyThreadGuard_tests.cpp
+    ConstraintTime_tests.cpp
     SunCalculator_tests.cpp
     TimeZoneDisplay_tests.cpp
     ModernNativeEngine_tests.cpp
