@@ -253,6 +253,24 @@ int ExternalPlanningProvider::RunRequest(
     return Fail("not_ready", "OpenCPN application executor is unavailable",
                 error_code, error_message);
   }
+  const auto clear_scenario = [this] {
+    struct ClearState {
+      std::mutex mutex;
+      std::condition_variable changed;
+      bool complete{false};
+    };
+    auto state = std::make_shared<ClearState>();
+    wxTheApp->CallAfter([this, state] {
+      plugin_.ClearExternalPlanningScenario();
+      {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->complete = true;
+      }
+      state->changed.notify_all();
+    });
+    std::unique_lock<std::mutex> lock(state->mutex);
+    state->changed.wait(lock, [&] { return state->complete; });
+  };
   wxTheApp->CallAfter([this, start_state, scenario_path, output_path] {
     {
       std::lock_guard<std::mutex> lock(start_state->mutex);
@@ -297,6 +315,8 @@ int ExternalPlanningProvider::RunRequest(
                   error_message);
     }
     if (cancellation_requested_.load(std::memory_order_relaxed)) {
+      lock.unlock();
+      clear_scenario();
       wxRemoveFile(scenario_path);
       wxRemoveFile(output_path);
       return Fail("cancelled", "xWeatherRouting job was cancelled",
@@ -334,24 +354,7 @@ int ExternalPlanningProvider::RunRequest(
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  struct ClearState {
-    std::mutex mutex;
-    std::condition_variable changed;
-    bool complete{false};
-  };
-  auto clear_state = std::make_shared<ClearState>();
-  wxTheApp->CallAfter([this, clear_state] {
-    plugin_.ClearExternalPlanningScenario();
-    {
-      std::lock_guard<std::mutex> lock(clear_state->mutex);
-      clear_state->complete = true;
-    }
-    clear_state->changed.notify_all();
-  });
-  {
-    std::unique_lock<std::mutex> lock(clear_state->mutex);
-    clear_state->changed.wait(lock, [&] { return clear_state->complete; });
-  }
+  clear_scenario();
   wxRemoveFile(scenario_path);
   wxRemoveFile(output_path);
   if (cancellation_sent)
