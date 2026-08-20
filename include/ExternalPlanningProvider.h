@@ -8,6 +8,7 @@
 #ifndef XWEATHER_ROUTING_EXTERNAL_PLANNING_PROVIDER_H_
 #define XWEATHER_ROUTING_EXTERNAL_PLANNING_PROVIDER_H_
 
+#include <atomic>
 #include <cstddef>
 #include <mutex>
 #include <string>
@@ -63,6 +64,7 @@ private:
 
   weather_routing_pi& plugin_;
   std::mutex run_mutex_;
+  std::atomic_bool cancellation_requested_{false};
   bool registered_{false};
   std::string result_;
   std::string error_code_;
@@ -70,4 +72,3 @@ private:
 };
 
 #endif
-

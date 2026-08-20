@@ -77,6 +77,7 @@ struct HostFunctions {
 HostFunctions g_host;
 weather_routing::ChartSafetyCache* g_cache = nullptr;
 std::unique_ptr<weather_routing::ChartHazardEvaluator> g_evaluator;
+std::atomic<const std::atomic_bool*> g_prewarm_cancellation{nullptr};
 
 constexpr double kRawTileDegrees = 0.05;
 constexpr double kRawResolutionDegrees = 0.00125;
@@ -256,9 +257,36 @@ bool PrewarmRawTiles(
     lat_tiles.push_back(tile.first);
     lon_tiles.push_back(tile.second);
   }
-  return g_host.raw_tiles(lat_tiles.data(), lon_tiles.data(),
-                          static_cast<int>(lat_tiles.size()),
-                          options->check_depth != 0 ? 1 : 0, result);
+  const auto* cancellation = g_prewarm_cancellation.load(
+      std::memory_order_acquire);
+  if (!cancellation)
+    return g_host.raw_tiles(lat_tiles.data(), lon_tiles.data(),
+                            static_cast<int>(lat_tiles.size()),
+                            options->check_depth != 0 ? 1 : 0, result);
+
+  // External-control cancellation is set by a worker which cannot safely
+  // manipulate wx/plugin state. Keep each main-thread chart extraction
+  // bounded so that worker can stop a large initial corridor without leaving
+  // an orphaned resident calculation. Normal interactive routes retain the
+  // established single-call prewarm above.
+  constexpr std::size_t kExternalPrewarmBatchTiles = 16;
+  PlugInSegmentSafetyResult batch_result = {};
+  batch_result.struct_size = sizeof(batch_result);
+  for (std::size_t offset = 0; offset < lat_tiles.size();
+       offset += kExternalPrewarmBatchTiles) {
+    if (cancellation->load(std::memory_order_relaxed)) return false;
+    const std::size_t count =
+        std::min(kExternalPrewarmBatchTiles, lat_tiles.size() - offset);
+    if (!g_host.raw_tiles(lat_tiles.data() + offset, lon_tiles.data() + offset,
+                          static_cast<int>(count),
+                          options->check_depth != 0 ? 1 : 0, &batch_result))
+      return false;
+  }
+  if (result) {
+    *result = batch_result;
+    result->prewarm_requested_tiles = static_cast<int>(lat_tiles.size());
+  }
+  return !cancellation->load(std::memory_order_relaxed);
 }
 
 }  // namespace
@@ -357,6 +385,16 @@ bool FlushCache() {
 
 void InvalidateDerivedMasks() {
   if (g_evaluator) g_evaluator->ClearDerivedMasks();
+}
+
+void SetPrewarmCancellationFlag(const std::atomic_bool* flag) {
+  g_prewarm_cancellation.store(flag, std::memory_order_release);
+}
+
+bool PrewarmCancellationRequested() {
+  const auto* flag =
+      g_prewarm_cancellation.load(std::memory_order_acquire);
+  return flag && flag->load(std::memory_order_relaxed);
 }
 
 bool CheckSegment(double lat1, double lon1, double lat2, double lon2,

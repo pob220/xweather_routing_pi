@@ -10367,6 +10367,11 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
     routemapoverlay->SetConfiguration(configuration);
   }
 
+  if (weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
+    routemapoverlay->SetError(_("routing cancelled"));
+    return;
+  }
+
   configuration.chart_safety_missing_tile_rejections = 0;
   configuration.chart_safety_missing_tile_first_lat_tile = 0;
   configuration.chart_safety_missing_tile_first_lon_tile = 0;

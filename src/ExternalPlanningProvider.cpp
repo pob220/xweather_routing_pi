@@ -25,6 +25,7 @@
 #include <wx/filename.h>
 #include <wx/log.h>
 
+#include "ChartSafetyHost.h"
 #include "weather_routing_pi.h"
 
 namespace {
@@ -129,6 +130,15 @@ int ExternalPlanningProvider::RunRequest(
                 "xWeatherRouting accepts one resident job at a time",
                 error_code, error_message);
 
+  cancellation_requested_.store(false, std::memory_order_relaxed);
+  weather_routing::chart_safety_host::SetPrewarmCancellationFlag(
+      &cancellation_requested_);
+  struct CancellationFlagGuard {
+    ~CancellationFlagGuard() {
+      weather_routing::chart_safety_host::SetPrewarmCancellationFlag(nullptr);
+    }
+  } cancellation_flag_guard;
+
   Json::Value request;
   Json::Reader reader;
   if (!request_json || !reader.parse(request_json, request, false) ||
@@ -232,6 +242,7 @@ int ExternalPlanningProvider::RunRequest(
     std::mutex mutex;
     std::condition_variable changed;
     bool complete{false};
+    bool entered{false};
     bool started{false};
     bool abandoned{false};
   };
@@ -243,23 +254,53 @@ int ExternalPlanningProvider::RunRequest(
                 error_code, error_message);
   }
   wxTheApp->CallAfter([this, start_state, scenario_path, output_path] {
-    std::lock_guard<std::mutex> lock(start_state->mutex);
-    if (!start_state->abandoned)
-      start_state->started = plugin_.StartExternalPlanningScenario(
-          scenario_path, output_path, 24L * 60L * 60L * 1000L);
-    start_state->complete = true;
+    {
+      std::lock_guard<std::mutex> lock(start_state->mutex);
+      if (start_state->abandoned) {
+        start_state->complete = true;
+        start_state->changed.notify_all();
+        return;
+      }
+      start_state->entered = true;
+      start_state->changed.notify_all();
+    }
+    const bool started = plugin_.StartExternalPlanningScenario(
+        scenario_path, output_path, 24L * 60L * 60L * 1000L);
+    if (cancellation_requested_.load(std::memory_order_relaxed))
+      plugin_.CancelExternalPlanningScenario();
+    {
+      std::lock_guard<std::mutex> lock(start_state->mutex);
+      start_state->started = started;
+      start_state->complete = true;
+    }
     start_state->changed.notify_all();
   });
   {
     std::unique_lock<std::mutex> lock(start_state->mutex);
-    if (!start_state->changed.wait_for(lock, std::chrono::seconds(10),
-                                       [&] { return start_state->complete; })) {
-      start_state->abandoned = true;
+    const auto admission_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!start_state->complete) {
+      if (is_cancelled && is_cancelled(cancellation_context))
+        cancellation_requested_.store(true, std::memory_order_relaxed);
+      if (!start_state->entered &&
+          std::chrono::steady_clock::now() >= admission_deadline) {
+        start_state->abandoned = true;
+        break;
+      }
+      start_state->changed.wait_for(lock, std::chrono::milliseconds(100));
+    }
+    if (start_state->abandoned) {
       wxRemoveFile(scenario_path);
       wxRemoveFile(output_path);
       return Fail("owner_thread_timeout",
-                  "OpenCPN did not start the resident route job", error_code,
+                  "OpenCPN did not admit the resident route job", error_code,
                   error_message);
+    }
+    if (cancellation_requested_.load(std::memory_order_relaxed)) {
+      wxRemoveFile(scenario_path);
+      wxRemoveFile(output_path);
+      return Fail("cancelled", "xWeatherRouting job was cancelled",
+                  error_code, error_message);
     }
     if (!start_state->started) {
       wxRemoveFile(scenario_path);
@@ -324,4 +365,3 @@ int ExternalPlanningProvider::RunRequest(
   if (report_progress) report_progress(progress_context, 1.0);
   return 1;
 }
-

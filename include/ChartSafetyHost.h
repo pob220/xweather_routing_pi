@@ -10,6 +10,7 @@
 #ifndef WEATHER_ROUTING_CHART_SAFETY_HOST_H
 #define WEATHER_ROUTING_CHART_SAFETY_HOST_H
 
+#include <atomic>
 #include <string>
 
 #include "ocpn_plugin.h"
@@ -28,6 +29,13 @@ bool Available();
 std::string Status();
 bool FlushCache();
 void InvalidateDerivedMasks();
+
+/**
+ * Install a non-owning cancellation flag for an externally controlled
+ * prewarm. A null flag restores the normal GUI route behaviour.
+ */
+void SetPrewarmCancellationFlag(const std::atomic_bool* flag);
+bool PrewarmCancellationRequested();
 
 bool CheckSegment(double lat1, double lon1, double lat2, double lon2,
                   const PlugInSegmentSafetyOptions* options,
