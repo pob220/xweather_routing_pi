@@ -326,6 +326,16 @@ bool SaveRoutingResultJson(const wxString& path,
       value["reverseFailureReason"] =
           candidate.reverseFailureReason.ToUTF8().data();
     value["reverseFinalValidationPass"] = candidate.reverseFinalValidationPass;
+    Json::Value route(Json::arrayValue);
+    for (const auto& point : candidate.route) {
+      Json::Value coordinate;
+      coordinate["latitudeDegrees"] = point.latitudeDegrees;
+      coordinate["longitudeDegrees"] = point.longitudeDegrees;
+      if (point.time.IsValid())
+        coordinate["timeUtc"] = TimeToJson(point.time).ToUTF8().data();
+      route.append(coordinate);
+    }
+    value["route"] = route;
     candidates.append(value);
   }
   root["candidates"] = candidates;

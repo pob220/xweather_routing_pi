@@ -141,6 +141,8 @@ TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   departure.MakeFromTimezone(wxDateTime::UTC);
   candidate.departure = departure;
   candidate.state = "complete";
+  candidate.route.emplace_back(53.31, -4.63, departure);
+  candidate.route.emplace_back(55.12, -6.95);
   result.candidates.push_back(candidate);
   result.stabilityCorridor.requested = true;
   result.stabilityCorridor.status = "complete";
@@ -171,6 +173,11 @@ TEST(RoutingScenarioJson, WritesStabilitySummaryAsValidJson) {
   ASSERT_EQ(1U, root["candidates"].size());
   EXPECT_EQ("2026-08-01T10:00:00Z",
             root["candidates"][0]["departure"].asString());
+  ASSERT_EQ(2U, root["candidates"][0]["route"].size());
+  EXPECT_DOUBLE_EQ(53.31, root["candidates"][0]["route"][0]
+                               ["latitudeDegrees"].asDouble());
+  EXPECT_EQ("2026-08-01T10:00:00Z",
+            root["candidates"][0]["route"][0]["timeUtc"].asString());
   EXPECT_EQ(7, root["stabilityCorridor"]["validRoutes"].asInt());
   EXPECT_EQ(2, root["stabilityCorridor"]["routeFamilies"].asInt());
   EXPECT_EQ("candidate-0",

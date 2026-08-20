@@ -9,6 +9,7 @@
 
 #include "HeadlessRouteRunner.h"
 
+#include <cmath>
 #include <cstdlib>
 
 #include <wx/wx.h>
@@ -67,6 +68,21 @@ weather_routing_engine::RoutingCandidateResult CandidateFromRoute(
   candidate.reverseConnectionTime = configuration.ReverseConnectionTime;
   candidate.reverseFailureReason = configuration.ReverseFailureReason;
   candidate.reverseFinalValidationPass = configuration.ReverseFinalValidationPass;
+  const auto append_point = [&candidate](double latitude, double longitude,
+                                          const wxDateTime& time) {
+    if (!candidate.route.empty()) {
+      const auto& last = candidate.route.back();
+      if (fabs(last.latitudeDegrees - latitude) < 1e-9 &&
+          fabs(last.longitudeDegrees - longitude) < 1e-9)
+        return;
+    }
+    candidate.route.emplace_back(latitude, longitude, time);
+  };
+  append_point(configuration.StartLat, configuration.StartLon,
+               configuration.StartTime);
+  for (const auto& point : route->GetPlotData(false))
+    append_point(point.lat, point.lon, point.time);
+  append_point(configuration.EndLat, configuration.EndLon, candidate.eta);
   return candidate;
 }
 

@@ -19,6 +19,19 @@
 
 namespace weather_routing_engine {
 
+struct RoutingResultPoint {
+  double latitudeDegrees;
+  double longitudeDegrees;
+  wxDateTime time;
+
+  RoutingResultPoint() : latitudeDegrees(0.0), longitudeDegrees(0.0) {}
+  RoutingResultPoint(double latitude, double longitude,
+                     const wxDateTime& arrival = wxDateTime())
+      : latitudeDegrees(latitude),
+        longitudeDegrees(longitude),
+        time(arrival) {}
+};
+
 struct RoutingCandidateResult {
   wxDateTime departure;
   wxString state;
@@ -37,6 +50,7 @@ struct RoutingCandidateResult {
   wxDateTime reverseConnectionTime;
   wxString reverseFailureReason;
   bool reverseFinalValidationPass;
+  std::vector<RoutingResultPoint> route;
 
   RoutingCandidateResult()
       : elapsedSeconds(-1),
