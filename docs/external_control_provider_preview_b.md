@@ -9,6 +9,22 @@ xWeatherRouting GUI feature.
 The native OpenCPN plug-in API remains version 1.21.  No virtual method,
 plug-in class layout, or existing ABI contract is changed.
 
+## Published Linux packages
+
+The Preview B release contains two resource-complete Linux x86_64 packages:
+
+- `xweather-routing-preview-b-hardened-arch-x86_64.tar.gz` is compiled against
+  the Preview B core headers and registers the resident planning provider;
+- `xweather-routing-preview-b-stock-arch-x86_64.tar.gz` is compiled solely
+  against the vendored stock OpenCPN 1.21 API and is the backward-compatibility
+  artifact for an unmodified OpenCPN host.
+
+Both contain the plug-in library, data, locales, example boats and polars. The
+raw shared-library assets are diagnostic artifacts and are not complete
+plug-in installations. Package checksums are published with the release. The
+complete isolated installation and acceptance procedure is in the OpenCPN
+hardening branch's `docs/development/external-control-preview-b-testing.md`.
+
 ## Request boundary
 
 The provider accepts coordinates, departure time/window, concurrency, routing
