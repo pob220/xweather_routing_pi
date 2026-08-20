@@ -27,7 +27,7 @@ Climatology build.
 
 ## Lifecycle and compatibility fixes
 
-The implementation fixes four defects found while qualifying the resident
+The implementation fixes six defects found while qualifying the resident
 provider path:
 
 1. A completed resident calculation retained headless-run state, making every
@@ -42,6 +42,13 @@ provider path:
 4. The API's climatology-fallback choice was discarded by self-contained
    scenario loading.  The scenario contract now preserves an explicit value;
    omission remains deterministic and fail-closed.
+5. A large initial chart prewarm held the OpenCPN thread long enough for the
+   API cancellation request to time out. Externally initiated prewarm now runs
+   in bounded batches and observes the host cancellation token between them;
+   ordinary GUI routing retains its established path.
+6. Cancellation during startup stopped route work but returned before clearing
+   the resident headless-session marker. Terminal cancellation now includes
+   owner-thread cleanup, so a subsequent request is admitted immediately.
 
 The first three are confined to the new resident-provider path and do not
 affect stock OpenCPN.  The fourth also corrects reusable headless scenarios.
@@ -57,14 +64,15 @@ library without changing the legacy plug-in ABI.
 
 ## Qualification expectations
 
-Before publication, both builds must pass:
+The published Linux Preview B passed:
 
-- the complete xWeatherRouting test suite against its vendored stock 1.21 API;
-- compilation against the hardened OpenCPN provider header;
-- stock-host load behavior with the optional symbols absent;
-- hardened-host registration, planning, cancellation, repeated-job, and
-  unload/reload workflows;
-- authoritative chart rejection for unsafe returned geometry.
+- 176/176 xWeatherRouting tests against its vendored stock 1.21 API;
+- compilation against both stock and hardened OpenCPN hosts;
+- hardened-host cold-start registration;
+- a completed route with independent authoritative OpenCPN validation at
+  5.0 m minimum depth;
+- cancellation of an active seven-departure, 240-hour request; and
+- immediate successful provider reuse after that cancellation.
 
 Preview B is a developer preview.  Resource discovery, concurrent provider
 jobs, broader dataset identities, and automatic route import are intentionally
