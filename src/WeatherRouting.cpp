@@ -304,7 +304,9 @@ static double EnvDouble(const char* name, double default_value) {
 static void FinishHeadlessRouteTestProcess(int exit_code = 0) {
   weather_routing::chart_safety_host::FlushCache();
   wxLog::FlushActive();
-  if (!EnvString("WR_HEADLESS_NO_EXIT").IsSameAs("1")) {
+  const wxString no_exit = EnvString("WR_HEADLESS_NO_EXIT");
+  if (no_exit.IsSameAs("resident")) return;
+  if (!no_exit.IsSameAs("1")) {
     wxLogMessage("WR_HEADLESS_ROUTE_TEST process_exit code=%d", exit_code);
     wxLog::FlushActive();
     _Exit(exit_code);
@@ -3639,6 +3641,10 @@ void WeatherRouting::OnHeadlessRouteTestTimer(wxTimerEvent&) {
     CompleteHeadlessMultiLegTest(timed_out, elapsed_ms);
 }
 
+void WeatherRouting::ClearExternalPlanningScenario() {
+  m_HeadlessRouteTestState.reset();
+}
+
 void WeatherRouting::CompleteHeadlessSingleRouteTest(bool timed_out,
                                                      long elapsed_ms) {
   RouteMapOverlay* selected_route = m_HeadlessRouteTestState->selectedRoute;
@@ -4087,6 +4093,12 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
         if (scenario_loaded) {
           if (scenario.environment.hasUseGrib)
             configuration.UseGrib = scenario.environment.useGrib;
+          if (scenario.environment.hasAllowClimatologyFallback) {
+            configuration.ClimatologyType =
+                scenario.environment.allowClimatologyFallback
+                    ? RouteMapConfiguration::MOST_LIKELY
+                    : RouteMapConfiguration::DISABLED;
+          }
           if (scenario.route.hasBoatFile) {
             wxString boat_file = scenario.route.boatFile;
             if (boat_file.StartsWith("~/"))

@@ -91,6 +91,10 @@
 
 #include <json/json.h>
 
+#include <memory>
+
+class ExternalPlanningProvider;
+
 //----------------------------------------------------------------------------------------------------------
 //    The PlugIn Class Definition
 //----------------------------------------------------------------------------------------------------------
@@ -175,6 +179,11 @@ public:
   bool ClearChartSafetyCache();
   bool FlushChartSafetyCache();
   bool HasEnhancedChartSafety() const;
+  bool StartExternalPlanningScenario(const wxString& scenario_path,
+                                     const wxString& output_path,
+                                     long timeout_ms);
+  void CancelExternalPlanningScenario();
+  void ClearExternalPlanningScenario();
   weather_routing::ChartSafetyCacheStats ChartSafetyCacheStatistics() const {
     return m_chart_safety_cache.Stats();
   }
@@ -201,6 +210,7 @@ private:
   bool m_use_persistent_chart_safe_cache;
   int m_chart_safety_ram_cache_mib;
   weather_routing::ChartSafetyCache m_chart_safety_cache;
+  std::unique_ptr<ExternalPlanningProvider> m_external_planning_provider;
 
   wxFileConfig* m_pconfig;
   wxWindow* m_parent_window;

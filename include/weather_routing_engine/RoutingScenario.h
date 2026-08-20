@@ -43,12 +43,16 @@ struct RoutingScenarioEnvironment {
   bool hasUseGrib;
   bool useCurrents;
   bool hasUseCurrents;
+  bool allowClimatologyFallback;
+  bool hasAllowClimatologyFallback;
 
   RoutingScenarioEnvironment()
       : useGrib(false),
         hasUseGrib(false),
         useCurrents(false),
-        hasUseCurrents(false) {}
+        hasUseCurrents(false),
+        allowClimatologyFallback(false),
+        hasAllowClimatologyFallback(false) {}
 };
 
 struct RoutingScenarioRouteSettings {

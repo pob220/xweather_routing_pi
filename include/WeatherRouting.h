@@ -713,6 +713,13 @@ public:
   bool ApplyMultiLegOptimizationCandidate(int candidateIndex);
   bool ApplyBestMultiLegOptimizationCandidate();
   void RunHeadlessRouteTestFromEnv();
+  bool CanStartExternalPlanningScenario() const {
+    return !m_HeadlessRouteTestState && m_RunningRouteMaps.empty() &&
+           m_WaitingRouteMaps.empty() && !m_bRunning &&
+           !m_ActiveMultiLegSequence && !m_ActiveMultiLegDepartureOptimization;
+  }
+  void CancelExternalPlanningScenario() { StopAll(); }
+  void ClearExternalPlanningScenario();
   void SaveLastUsedConfigurationDefaults(
       const RouteMapConfiguration& configuration);
   struct MultiLegOptimizationCandidate {

@@ -85,6 +85,7 @@ extern "C" DECL_EXP opencpn_plugin* create_pi(void* ppimgr) {
 extern "C" DECL_EXP void destroy_pi(opencpn_plugin* p) { delete p; }
 
 #include "icons.h"
+#include "ExternalPlanningProvider.h"
 
 weather_routing_pi::weather_routing_pi(void* ppimgr)
     : opencpn_plugin_121(ppimgr) {
@@ -193,6 +194,10 @@ int weather_routing_pi::Init() {
   //    And load the configuration items
   LoadConfig();
 
+  m_external_planning_provider =
+      std::make_unique<ExternalPlanningProvider>(*this);
+  m_external_planning_provider->RegisterIfSupported();
+
   MaybeStartHeadlessRouteTest();
 
   return (WANTS_OVERLAY_CALLBACK | WANTS_OPENGL_OVERLAY_CALLBACK |
@@ -201,6 +206,10 @@ int weather_routing_pi::Init() {
 }
 
 bool weather_routing_pi::DeInit() {
+  if (m_external_planning_provider &&
+      !m_external_planning_provider->Unregister())
+    return false;
+  m_external_planning_provider.reset();
   m_chart_safety_cache.Flush(true);
   weather_routing::chart_safety_host::Shutdown();
   m_tCursorLatLon.Stop();
@@ -211,6 +220,35 @@ bool weather_routing_pi::DeInit() {
   delete wr;
 
   return true;
+}
+
+bool weather_routing_pi::StartExternalPlanningScenario(
+    const wxString& scenario_path, const wxString& output_path,
+    long timeout_ms) {
+  if (!m_pWeather_Routing) NewWR();
+  if (!m_pWeather_Routing ||
+      !m_pWeather_Routing->CanStartExternalPlanningScenario())
+    return false;
+  wxSetEnv("WR_HEADLESS_ROUTE_TEST", "scenario");
+  wxSetEnv("WR_HEADLESS_SCENARIO", scenario_path);
+  wxSetEnv("WR_HEADLESS_OUTPUT", output_path);
+  wxSetEnv("WR_HEADLESS_TIMEOUT_MS", wxString::Format("%ld", timeout_ms));
+  wxSetEnv("WR_HEADLESS_NO_EXIT", "resident");
+  m_pWeather_Routing->RunHeadlessRouteTestFromEnv();
+  return true;
+}
+
+void weather_routing_pi::CancelExternalPlanningScenario() {
+  if (m_pWeather_Routing) m_pWeather_Routing->CancelExternalPlanningScenario();
+}
+
+void weather_routing_pi::ClearExternalPlanningScenario() {
+  if (m_pWeather_Routing) m_pWeather_Routing->ClearExternalPlanningScenario();
+  wxUnsetEnv("WR_HEADLESS_ROUTE_TEST");
+  wxUnsetEnv("WR_HEADLESS_SCENARIO");
+  wxUnsetEnv("WR_HEADLESS_OUTPUT");
+  wxUnsetEnv("WR_HEADLESS_TIMEOUT_MS");
+  wxUnsetEnv("WR_HEADLESS_NO_EXIT");
 }
 
 int weather_routing_pi::GetAPIVersionMajor() { return OCPN_API_VERSION_MAJOR; }

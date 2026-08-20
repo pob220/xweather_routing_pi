@@ -191,6 +191,7 @@ SET(SRCS
             src/ChartHazardEvaluator.cpp
             src/ChartSafetyHost.cpp
             src/OceanPrewarmPolicy.cpp
+            src/ExternalPlanningProvider.cpp
             src/weather_routing_pi.cpp
             src/WeatherRouting.cpp
             src/SunCalculator.cpp
@@ -253,6 +254,7 @@ SET (HDRS
             include/headless/HeadlessRouteMonitor.h
             include/OptionalChartSafetyApi.h
             include/OceanPrewarmPolicy.h
+            include/ExternalPlanningProvider.h
             include/ClimatologyThreadGuard.h
             include/weather_routing_pi.h
             include/WeatherRouting.h
@@ -363,8 +365,10 @@ if (NOT OCPN_FLATPAK_CONFIG)
     target_link_libraries(${PACKAGE_NAME} windows::headers)
   endif (WIN32)
 
-  get_filename_component(OCPN_IN_TREE_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+  if(NOT OCPN_IN_TREE_SOURCE_DIR)
+    get_filename_component(OCPN_IN_TREE_SOURCE_DIR
+      "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+  endif()
   if (NOT XWEATHER_ROUTING_STANDALONE_API
       AND EXISTS "${OCPN_IN_TREE_SOURCE_DIR}/include/ocpn_plugin.h")
     add_library(OCPN_API_LOCAL INTERFACE)

@@ -60,6 +60,46 @@ TEST(RoutingScenarioJson, LoadsSelfContainedGuiRegressionSettings) {
   EXPECT_DOUBLE_EQ(5.5, scenario.route.motorSpeedKnots);
 }
 
+TEST(RoutingScenarioJson, ClimatologyFallbackIsExplicitAndDefaultsOff) {
+  const wxString enabledPath = "/tmp/weather-routing-climatology-on.json";
+  {
+    std::ofstream output(enabledPath.mb_str());
+    output << R"({
+      "schemaVersion": 1,
+      "name": "Climatology fallback contract",
+      "start": {"name": "Start", "lat": 50.0, "lon": -5.0},
+      "end": {"name": "End", "lat": 51.0, "lon": -4.0},
+      "environment": {"useGrib": true, "allowClimatologyFallback": true}
+    })";
+  }
+  weather_routing_engine::RoutingScenario enabled;
+  wxString error;
+  ASSERT_TRUE(weather_routing_headless::LoadRoutingScenarioJson(enabledPath,
+                                                                enabled, error))
+      << error;
+  EXPECT_TRUE(enabled.environment.hasAllowClimatologyFallback);
+  EXPECT_TRUE(enabled.environment.allowClimatologyFallback);
+  std::remove(enabledPath.mb_str());
+
+  const wxString absentPath = "/tmp/weather-routing-climatology-absent.json";
+  {
+    std::ofstream output(absentPath.mb_str());
+    output << R"({
+      "schemaVersion": 1,
+      "name": "No implicit climatology fallback",
+      "start": {"name": "Start", "lat": 50.0, "lon": -5.0},
+      "end": {"name": "End", "lat": 51.0, "lon": -4.0}
+    })";
+  }
+  weather_routing_engine::RoutingScenario absent;
+  ASSERT_TRUE(weather_routing_headless::LoadRoutingScenarioJson(absentPath,
+                                                                absent, error))
+      << error;
+  EXPECT_FALSE(absent.environment.hasAllowClimatologyFallback);
+  EXPECT_FALSE(absent.environment.allowClimatologyFallback);
+  std::remove(absentPath.mb_str());
+}
+
 TEST(RoutingScenarioJson, LoadsRoutingEffortForHardRouteRegression) {
   weather_routing_engine::RoutingScenario scenario;
   wxString error;

@@ -1,5 +1,9 @@
 # xWeatherRouting
 
+The optional hardened-OpenCPN planning-provider boundary is documented in
+[docs/external_control_provider_preview_b.md](docs/external_control_provider_preview_b.md).
+Stock OpenCPN remains supported through the unchanged plug-in API 1.21.
+
 xWeatherRouting is an experimental, standalone OpenCPN weather-routing
 plugin derived from the established Weather Routing plugin. It retains the
 existing configuration, polar and GRIB integrations while adding the modern

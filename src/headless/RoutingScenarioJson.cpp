@@ -146,6 +146,13 @@ bool LoadRoutingScenarioJson(const wxString& path,
       scenario.environment.useCurrents = use_currents;
       scenario.environment.hasUseCurrents = true;
     }
+    bool allow_climatology_fallback = false;
+    if (JsonBool(environment, "allowClimatologyFallback",
+                 allow_climatology_fallback)) {
+      scenario.environment.allowClimatologyFallback =
+          allow_climatology_fallback;
+      scenario.environment.hasAllowClimatologyFallback = true;
+    }
   }
 
   const Json::Value& route = root["route"];
