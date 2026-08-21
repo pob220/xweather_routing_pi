@@ -33,6 +33,7 @@ struct PlugInPlanningProviderV1 {
   const char* display_name;
   void* provider_context;
   PlugInPlanningRunV1 run;
+  const char* descriptor_json;
 };
 #endif
 
@@ -69,6 +70,7 @@ private:
   std::string result_;
   std::string error_code_;
   std::string error_message_;
+  std::string descriptor_;
 };
 
 #endif

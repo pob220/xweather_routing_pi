@@ -10,7 +10,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <fstream>
+#include <algorithm>
 #include <thread>
+#include <vector>
 
 #ifndef _WIN32
 #include <dlfcn.h>
@@ -21,6 +23,7 @@
 #include <json/json.h>
 #include <wx/app.h>
 #include <wx/datetime.h>
+#include <wx/dir.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
 #include <wx/log.h>
@@ -51,6 +54,97 @@ std::string TimeUtc(Json::Int64 epoch_seconds) {
   wxDateTime value(static_cast<time_t>(epoch_seconds));
   return std::string((value.ToUTC().FormatISOCombined('T') + "Z").ToUTF8());
 }
+
+std::string ProviderDescriptor() {
+  Json::Value value;
+  value["schemaVersion"] = 1;
+  value["cancellable"] = true;
+  value["maximumConcurrentJobs"] = 1;
+  const auto field = [&](const char* name, const char* label,
+                         const char* type, bool required) {
+    Json::Value result;
+    result["name"] = name;
+    result["label"] = label;
+    result["type"] = type;
+    result["required"] = required;
+    return result;
+  };
+  auto polar = field("polarIdentity", "Boat / polar", "resource", true);
+  polar["resourceKind"] = "boat";
+  value["fields"].append(polar);
+  auto depth = field("minimumDepthMeters", "Minimum safe depth", "number",
+                     true);
+  depth["unit"] = "m";
+  depth["defaultValue"] = "5";
+  depth["minimum"] = 0.0;
+  depth["maximum"] = 100.0;
+  value["fields"].append(depth);
+  auto margin = field("landMarginNauticalMiles", "Land margin", "number",
+                      false);
+  margin["unit"] = "NM";
+  margin["defaultValue"] = "0";
+  margin["minimum"] = 0.0;
+  margin["maximum"] = 20.0;
+  value["fields"].append(margin);
+  auto effort = field("routingEffortPercent", "Routing effort", "integer",
+                      false);
+  effort["unit"] = "%";
+  effort["defaultValue"] = "100";
+  effort["minimum"] = 10;
+  effort["maximum"] = 400;
+  value["fields"].append(effort);
+  auto window_before = field("departureWindowBeforeMinutes",
+                             "Earlier departure window", "integer", false);
+  window_before["unit"] = "min";
+  window_before["defaultValue"] = "0";
+  window_before["minimum"] = 0;
+  window_before["maximum"] = 10080;
+  value["fields"].append(window_before);
+  auto window_after = field("departureWindowAfterMinutes",
+                            "Later departure window", "integer", false);
+  window_after["unit"] = "min";
+  window_after["defaultValue"] = "0";
+  window_after["minimum"] = 0;
+  window_after["maximum"] = 10080;
+  value["fields"].append(window_after);
+  auto step = field("departureStepMinutes", "Departure step", "integer",
+                    false);
+  step["unit"] = "min";
+  step["defaultValue"] = "60";
+  step["minimum"] = 1;
+  step["maximum"] = 1440;
+  value["fields"].append(step);
+  auto concurrent = field("concurrentRoutes", "Concurrent departure routes",
+                          "integer", false);
+  concurrent["defaultValue"] = "1";
+  concurrent["minimum"] = 1;
+  concurrent["maximum"] = 16;
+  value["fields"].append(concurrent);
+  auto climatology = field("allowClimatologyFallback",
+                           "Allow climatology fallback", "boolean", false);
+  climatology["defaultValue"] = "false";
+  value["fields"].append(climatology);
+
+  wxArrayString boats;
+  wxDir directory(weather_routing_pi::StandardPath() + "boats");
+  wxString name;
+  for (bool more = directory.IsOpened() &&
+                   directory.GetFirst(&name, "*.xml", wxDIR_FILES);
+       more; more = directory.GetNext(&name))
+    boats.Add(name);
+  boats.Sort();
+  for (const auto& boat : boats) {
+    Json::Value resource;
+    resource["kind"] = "boat";
+    resource["identity"] = std::string(boat.ToUTF8());
+    resource["label"] = std::string(boat.BeforeLast('.').ToUTF8());
+    resource["available"] = true;
+    resource["metadata"]["format"] = "OpenCPN weather-routing boat XML";
+    value["resources"].append(resource);
+  }
+  if (!value.isMember("resources")) value["resources"] = Json::arrayValue;
+  return Json::FastWriter().write(value);
+}
 }  // namespace
 
 ExternalPlanningProvider::ExternalPlanningProvider(weather_routing_pi& plugin)
@@ -72,8 +166,10 @@ bool ExternalPlanningProvider::RegisterIfSupported() {
   provider.struct_size = sizeof(provider);
   provider.capability = "route-planning.chart-weather.v1";
   provider.display_name = "xWeatherRouting";
+  descriptor_ = ProviderDescriptor();
   provider.provider_context = this;
   provider.run = &ExternalPlanningProvider::Run;
+  provider.descriptor_json = descriptor_.c_str();
   registered_ =
       register_provider(plugin_.GetCommonName().ToUTF8().data(), &provider);
   if (!registered_)
@@ -159,13 +255,12 @@ int ExternalPlanningProvider::RunRequest(
       request.get("weatherDatasetIdentity", "active").asString();
   const std::string currents =
       request.get("currentDatasetIdentity", "active").asString();
-  if (!weather.empty() && weather != "active")
-    return Fail("unknown_weather_dataset",
-                "Preview B currently supports the active xGRIB dataset only",
-                error_code, error_message);
-  if (!currents.empty() && currents != "active")
-    return Fail("unknown_current_dataset",
-                "Preview B currently supports the active current dataset only",
+  if ((!weather.empty() && weather != "active" &&
+       !PlainResourceId(weather)) ||
+      (!currents.empty() && currents != "active" &&
+       !PlainResourceId(currents)))
+    return Fail("invalid_environment_identity",
+                "Environmental dataset identities must be discovered IDs",
                 error_code, error_message);
 
   const std::string polar = request.get("polarIdentity", "").asString();
