@@ -94,6 +94,13 @@ set(TEST_SRC
     ${WEATHER_ROUTING_ENGINE_DIR}/src/Ensemble.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/zuFile.cpp
    )
+
+# georef.cpp maps snprintf to the plug-in's compatibility implementation on
+# MSVC.  The production target already compiles cutil.cpp; include it in the
+# Windows test executable as well so the test link matches the shipped DLL.
+if(WIN32)
+    list(APPEND TEST_SRC ${WEATHER_ROUTING_SOURCE_DIR}/src/cutil.cpp)
+endif()
    
    add_executable(weather_routing_pi_tests ${TEST_SRC})
 
