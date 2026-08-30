@@ -63,11 +63,6 @@ bool PrewarmRouteMaskForSegment(
     double lat1, double lon1, double lat2, double lon2,
     double corridor_margin_nm, const PlugInSegmentSafetyOptions* options,
     PlugInSegmentSafetyResult* result);
-bool PrewarmReachabilityEnvelope(
-    double start_lat, double start_lon, double end_lat, double end_lon,
-    double maximum_path_length_nm,
-    const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result);
 /** Prebuild an exact, bounded set of 0.05-degree semantic base tiles. */
 bool PrewarmAtlasTiles(
     const std::vector<std::pair<long, long>>& tiles,

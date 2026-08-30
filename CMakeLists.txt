@@ -192,7 +192,6 @@ SET(SRCS
             src/ChartHazardEvaluator.cpp
             src/ChartSafetyHost.cpp
             src/OceanPrewarmPolicy.cpp
-            src/ReachabilityPrewarmPolicy.cpp
             src/ExternalPlanningProvider.cpp
             src/weather_routing_pi.cpp
             src/WeatherRouting.cpp
@@ -256,7 +255,6 @@ SET (HDRS
             include/headless/HeadlessRouteMonitor.h
             include/OptionalChartSafetyApi.h
             include/OceanPrewarmPolicy.h
-            include/ReachabilityPrewarmPolicy.h
             include/ExternalPlanningProvider.h
             include/ClimatologyThreadGuard.h
             include/weather_routing_pi.h

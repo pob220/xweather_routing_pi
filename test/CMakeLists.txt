@@ -48,7 +48,6 @@ set(TEST_SRC
     HeadlessRouteMonitor_tests.cpp
     KeyedRequestCache_tests.cpp
     OceanPrewarmPolicy_tests.cpp
-    ReachabilityPrewarmPolicy_tests.cpp
     Polar_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
@@ -74,7 +73,6 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ChartHazardEvaluator.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/georef.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/OceanPrewarmPolicy.cpp
-    ${WEATHER_ROUTING_SOURCE_DIR}/src/ReachabilityPrewarmPolicy.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/Utilities.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PolygonRegion.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/MultiLegRouteOutput.cpp

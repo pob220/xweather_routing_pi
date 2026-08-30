@@ -49,7 +49,6 @@
 #include "ChartSafetyHost.h"
 #include "ChartSafetyPolicy.h"
 #include "OceanPrewarmPolicy.h"
-#include "ReachabilityPrewarmPolicy.h"
 #include "DepartureScheduler.h"
 #include "RoutingResourcePolicy.h"
 #include "WeatherDataProvider.h"
@@ -9469,50 +9468,11 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     PlugInSegmentSafetyResult result = {};
     result.struct_size = sizeof(result);
     wxStopWatch timer;
-    const bool prewarm_full_corridor =
+    // Route startup prepares only the bounded scout/direct footprint.  A
+    // chart-wide semantic atlas is separate, optional idle work owned by the
+    // plug-in timer; it must never delay an active route calculation.
+    const bool prewarm_route_footprint =
         representative.UseChartSafetyForPropagation;
-
-    // Union the scout footprint with a filled geodesic reachability envelope.
-    // For the logged maximum path length, every possible route point obeys
-    // d(start, point) + d(point, end) <= maximum_path_length. This is only
-    // proactive cache coverage: routes outside the budget remain eligible and
-    // use the existing fail-closed on-demand expansion path.
-    const double direct_distance_nm = DistGreatCircle_Plugin(
-        representative.StartLat, representative.StartLon,
-        representative.EndLat, representative.EndLon);
-    const weather_routing::ReachabilityPrewarmPlan reachability =
-        weather_routing::BuildReachabilityPrewarmPlan(direct_distance_nm);
-    PlugInSegmentSafetyResult reachability_result = {};
-    reachability_result.struct_size = sizeof(reachability_result);
-    bool reachability_ok = true;
-    if (prewarm_full_corridor && reachability.enabled) {
-      if (m_RoutingProgressDialog && m_RoutingProgressDialog->IsShown())
-        UpdateRoutingProgress(_("Building chart safety grid"),
-                              _("Prewarming wider chart area"), -1, -1);
-      PlugInSegmentSafetyOptions reachability_options = options;
-      reachability_options.safety_margin_nm =
-          std::max(options.safety_margin_nm, search_options.safety_margin_nm);
-      reachability_ok = weather_routing::chart_safety_host::
-          PrewarmReachabilityEnvelope(
-              representative.StartLat, representative.StartLon,
-              representative.EndLat, representative.EndLon,
-              reachability.maximum_path_length_nm, &reachability_options,
-              &reachability_result);
-      wxLogMessage(
-          "WR_ROUTE_MASK_REACHABILITY_PREWARM context=%s scope=%s ok=%d "
-          "direct_nm=%.3f maximum_path_nm=%.3f cross_track_nm=%.3f "
-          "safety_margin_nm=%.3f requested_tiles=%d base_built=%d "
-          "base_reused=%d build_ms=%d solver_bound=0",
-          context, group->first, reachability_ok ? 1 : 0,
-          reachability.direct_distance_nm,
-          reachability.maximum_path_length_nm,
-          reachability.maximum_cross_track_nm,
-          reachability_options.safety_margin_nm,
-          reachability_result.prewarm_requested_tiles,
-          reachability_result.prewarm_base_tiles_built,
-          reachability_result.prewarm_base_tiles_reused,
-          reachability_result.grid_build_ms);
-    }
 
     if (m_RoutingProgressDialog && m_RoutingProgressDialog->IsShown())
       UpdateRoutingProgress(
@@ -9520,7 +9480,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
           wxString::Format(_("Preparing from %lu route scouts"),
                            static_cast<unsigned long>(group->second.size())),
           -1, -1);
-    bool ok = !prewarm_full_corridor ||
+    bool ok = !prewarm_route_footprint ||
               weather_routing::chart_safety_host::
                   PrewarmRouteMaskForPolylinesWithTileHalo(
                   latitudes.data(), longitudes.data(), point_counts.data(),
@@ -9529,7 +9489,7 @@ void WeatherRouting::PrepareChartSafetyScoutEnvelopes(
     PlugInSegmentSafetyResult search_result = {};
     search_result.struct_size = sizeof(search_result);
     const bool search_ok =
-        !prewarm_full_corridor || !search_mask_differs ||
+        !prewarm_route_footprint || !search_mask_differs ||
         weather_routing::chart_safety_host::
             PrewarmRouteMaskForPolylinesWithTileHalo(
             latitudes.data(), longitudes.data(), point_counts.data(),
