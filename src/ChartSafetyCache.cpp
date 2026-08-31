@@ -37,16 +37,14 @@ constexpr std::uint32_t kAtlasCompletionVersion = 1;
 constexpr char kAtlasCompletionKey[] = "@atlas-completion-v1";
 constexpr std::uint64_t kEstimatedPersistentBytesPerTile = 12288;
 constexpr std::size_t kFlushDirtyTiles = 512;
-constexpr std::uint64_t kCompactThresholdBytes =
-    1024ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kCompactThresholdBytes = 1024ULL * 1024ULL * 1024ULL;
 constexpr int kMinimumRamMiB = 256;
 constexpr int kMaximumRamMiB = 8192;
 constexpr int kMaximumAutomaticRamMiB = 2048;
 
 template <typename T>
 void AppendValue(std::vector<unsigned char>* output, const T& value) {
-  const unsigned char* start =
-      reinterpret_cast<const unsigned char*>(&value);
+  const unsigned char* start = reinterpret_cast<const unsigned char*>(&value);
   output->insert(output->end(), start, start + sizeof(value));
 }
 
@@ -128,17 +126,14 @@ int ChartSafetyCache::ResolveEffectiveRamMiB(int requested_ram_mib) {
       PhysicalMemoryBytes() / (1024ULL * 1024ULL);
   int automatic = static_cast<int>(physical_mib / 32ULL);
   automatic = (automatic / 256) * 256;
-  return std::clamp(automatic, kMinimumRamMiB,
-                    kMaximumAutomaticRamMiB);
+  return std::clamp(automatic, kMinimumRamMiB, kMaximumAutomaticRamMiB);
 }
 
-void ChartSafetyCache::Configure(const std::string& path,
-                                 int requested_ram_mib,
+void ChartSafetyCache::Configure(const std::string& path, int requested_ram_mib,
                                  bool persistent_enabled) {
   std::lock_guard<std::mutex> lock(mutex_);
   path_ = path;
-  requested_ram_mib_ =
-      std::clamp(requested_ram_mib, 0, kMaximumRamMiB);
+  requested_ram_mib_ = std::clamp(requested_ram_mib, 0, kMaximumRamMiB);
   effective_ram_mib_ = ResolveEffectiveRamMiB(requested_ram_mib_);
   persistent_enabled_ = persistent_enabled;
   configured_ = true;
@@ -194,8 +189,7 @@ void ChartSafetyCache::SetPersistentEnabled(bool enabled) {
 
 void ChartSafetyCache::SetRequestedRamMiB(int requested_ram_mib) {
   std::lock_guard<std::mutex> lock(mutex_);
-  requested_ram_mib_ =
-      std::clamp(requested_ram_mib, 0, kMaximumRamMiB);
+  requested_ram_mib_ = std::clamp(requested_ram_mib, 0, kMaximumRamMiB);
   effective_ram_mib_ = ResolveEffectiveRamMiB(requested_ram_mib_);
   stats_.ram_budget_bytes =
       static_cast<std::uint64_t>(effective_ram_mib_) * 1024ULL * 1024ULL;
@@ -263,16 +257,16 @@ std::size_t ChartSafetyCache::TileBytes(const std::string& key,
          tile.min_depth_m.capacity() * sizeof(tile.min_depth_m[0]) + 96;
 }
 
-bool ChartSafetyCache::ReadExternalTile(
-    const PlugInSegmentSafetyTile* source, TileData* tile) {
-  if (!source || !tile || source->struct_size <
-                              static_cast<int>(sizeof(*source)) ||
-      source->rows <= 0 || source->cols <= 0 ||
-      source->rows > 256 || source->cols > 256 ||
+bool ChartSafetyCache::ReadExternalTile(const PlugInSegmentSafetyTile* source,
+                                        TileData* tile) {
+  if (!source || !tile ||
+      source->struct_size < static_cast<int>(sizeof(*source)) ||
+      source->rows <= 0 || source->cols <= 0 || source->rows > 256 ||
+      source->cols > 256 ||
       source->cell_capacity < source->rows * source->cols ||
-      !source->hazard_flags || !source->has_depth ||
-      !source->min_depth_m || !IsValidSource(source->source) ||
-      !std::isfinite(source->resolution) || source->resolution <= 0.0)
+      !source->hazard_flags || !source->has_depth || !source->min_depth_m ||
+      !IsValidSource(source->source) || !std::isfinite(source->resolution) ||
+      source->resolution <= 0.0)
     return false;
   const int cells = source->rows * source->cols;
   TileData result;
@@ -292,8 +286,7 @@ bool ChartSafetyCache::ReadExternalTile(
   result.hazard_flags.assign(source->hazard_flags,
                              source->hazard_flags + cells);
   result.has_depth.assign(source->has_depth, source->has_depth + cells);
-  result.min_depth_m.assign(source->min_depth_m,
-                            source->min_depth_m + cells);
+  result.min_depth_m.assign(source->min_depth_m, source->min_depth_m + cells);
   for (int i = 0; i < cells; ++i)
     if (result.has_depth[i] > 1 ||
         (result.has_depth[i] && !std::isfinite(result.min_depth_m[i])))
@@ -329,15 +322,13 @@ bool ChartSafetyCache::WriteExternalTile(const TileData& source,
   memcpy(tile->chart_path, source.chart_path.data(), chart_path_size);
   tile->chart_path[chart_path_size] = '\0';
   const std::size_t dependency_size = std::min(
-      source.dependency_identity.size(),
-      sizeof(tile->dependency_identity) - 1);
+      source.dependency_identity.size(), sizeof(tile->dependency_identity) - 1);
   memcpy(tile->dependency_identity, source.dependency_identity.data(),
          dependency_size);
   tile->dependency_identity[dependency_size] = '\0';
   std::copy(source.hazard_flags.begin(), source.hazard_flags.end(),
             tile->hazard_flags);
-  std::copy(source.has_depth.begin(), source.has_depth.end(),
-            tile->has_depth);
+  std::copy(source.has_depth.begin(), source.has_depth.end(), tile->has_depth);
   std::copy(source.min_depth_m.begin(), source.min_depth_m.end(),
             tile->min_depth_m);
   return true;
@@ -348,15 +339,14 @@ bool ChartSafetyCache::Serialize(const TileData& tile,
   if (!bytes || tile.rows <= 0 || tile.cols <= 0 ||
       tile.chart_path.size() > 4096 || tile.dependency_identity.size() > 256)
     return false;
-  const std::uint32_t cells =
-      static_cast<std::uint32_t>(tile.rows * tile.cols);
+  const std::uint32_t cells = static_cast<std::uint32_t>(tile.rows * tile.cols);
   if (!cells || tile.hazard_flags.size() != cells ||
       tile.has_depth.size() != cells || tile.min_depth_m.size() != cells)
     return false;
   bytes->clear();
-  bytes->reserve(128 + tile.chart_path.size() +
-                 cells * (sizeof(unsigned short) + sizeof(unsigned char) +
-                          sizeof(float)));
+  bytes->reserve(
+      128 + tile.chart_path.size() +
+      cells * (sizeof(unsigned short) + sizeof(unsigned char) + sizeof(float)));
   AppendValue(bytes, kTilePayloadVersion);
   AppendValue(bytes, tile.group_index);
   const std::int64_t lat_tile = tile.lat_tile;
@@ -406,8 +396,7 @@ bool ChartSafetyCache::Deserialize(const std::vector<unsigned char>& bytes,
   std::uint32_t path_size = 0;
   std::uint32_t dependency_size = 0;
   std::uint32_t cells = 0;
-  if (!ReadValue(bytes, &offset, &version) ||
-      version != kTilePayloadVersion ||
+  if (!ReadValue(bytes, &offset, &version) || version != kTilePayloadVersion ||
       !ReadValue(bytes, &offset, &result.group_index) ||
       !ReadValue(bytes, &offset, &lat_tile) ||
       !ReadValue(bytes, &offset, &lon_tile) ||
@@ -425,12 +414,11 @@ bool ChartSafetyCache::Deserialize(const std::vector<unsigned char>& bytes,
   result.lat_tile = static_cast<long>(lat_tile);
   result.lon_tile = static_cast<long>(lon_tile);
   result.depth_complete = depth_complete != 0;
-  result.chart_path.assign(
-      reinterpret_cast<const char*>(bytes.data() + offset), path_size);
+  result.chart_path.assign(reinterpret_cast<const char*>(bytes.data() + offset),
+                           path_size);
   offset += path_size;
-  if (!ReadValue(bytes, &offset, &dependency_size) ||
-      dependency_size > 256 || offset > bytes.size() ||
-      bytes.size() - offset < dependency_size)
+  if (!ReadValue(bytes, &offset, &dependency_size) || dependency_size > 256 ||
+      offset > bytes.size() || bytes.size() - offset < dependency_size)
     return false;
   result.dependency_identity.assign(
       reinterpret_cast<const char*>(bytes.data() + offset), dependency_size);
@@ -499,8 +487,7 @@ bool ChartSafetyCache::SerializeAtlasCompletion(
 }
 
 bool ChartSafetyCache::AtlasCompletionMatches(
-    const std::vector<unsigned char>& bytes,
-    const std::string& atlas_identity,
+    const std::vector<unsigned char>& bytes, const std::string& atlas_identity,
     const std::vector<std::pair<long, long>>& expected_tiles) {
   std::size_t offset = 0;
   std::uint32_t version = 0;
@@ -511,8 +498,8 @@ bool ChartSafetyCache::AtlasCompletionMatches(
       version != kAtlasCompletionVersion ||
       !ReadValue(bytes, &offset, &count) ||
       !ReadValue(bytes, &offset, &digest) ||
-      !ReadValue(bytes, &offset, &identity_size) ||
-      offset > bytes.size() || bytes.size() - offset != identity_size)
+      !ReadValue(bytes, &offset, &identity_size) || offset > bytes.size() ||
+      bytes.size() - offset != identity_size)
     return false;
   const std::string stored_identity(
       reinterpret_cast<const char*>(bytes.data() + offset), identity_size);
@@ -529,9 +516,9 @@ bool ChartSafetyCache::OpenStoreLocked() {
       "weather-routing-chart-tile-v2:" + identity_;
   const std::uint64_t budget_bytes =
       static_cast<std::uint64_t>(maximum_disk_mib_) * 1024ULL * 1024ULL;
-  const std::size_t maximum_entries = static_cast<std::size_t>(
-      std::max<std::uint64_t>(1, budget_bytes /
-                                    kEstimatedPersistentBytesPerTile));
+  const std::size_t maximum_entries =
+      static_cast<std::size_t>(std::max<std::uint64_t>(
+          1, budget_bytes / kEstimatedPersistentBytesPerTile));
   store_open_ =
       store_.Open(path_, store_identity, maximum_entries, &last_error_);
   UpdateStoreStatsLocked();
@@ -545,8 +532,7 @@ void ChartSafetyCache::TouchLocked(
   entry->second.lru = std::prev(lru_.end());
 }
 
-void ChartSafetyCache::InsertRamLocked(const std::string& key,
-                                       TileData tile) {
+void ChartSafetyCache::InsertRamLocked(const std::string& key, TileData tile) {
   auto existing = ram_.find(key);
   if (existing != ram_.end()) {
     stats_.ram_bytes -= existing->second.bytes;
@@ -585,8 +571,7 @@ void ChartSafetyCache::UpdateStoreStatsLocked() {
   stats_.dirty_entries = dirty_.size();
 }
 
-bool ChartSafetyCache::Lookup(long lat_tile, long lon_tile,
-                              bool require_depth,
+bool ChartSafetyCache::Lookup(long lat_tile, long lon_tile, bool require_depth,
                               PlugInSegmentSafetyTile* tile) {
   std::lock_guard<std::mutex> lock(mutex_);
   const std::string key = TileKey(lat_tile, lon_tile);
@@ -623,8 +608,8 @@ bool ChartSafetyCache::Lookup(long lat_tile, long lon_tile,
     return false;
   }
   TileData persistent;
-  if (!Deserialize(bytes, &persistent) ||
-      persistent.lat_tile != lat_tile || persistent.lon_tile != lon_tile ||
+  if (!Deserialize(bytes, &persistent) || persistent.lat_tile != lat_tile ||
+      persistent.lon_tile != lon_tile ||
       (require_depth && !persistent.depth_complete)) {
     ++stats_.rejected_records;
     ++stats_.misses;
@@ -635,9 +620,8 @@ bool ChartSafetyCache::Lookup(long lat_tile, long lon_tile,
   ++stats_.disk_hits;
   UpdateStoreStatsLocked();
   found = ram_.find(key);
-  return WriteExternalTile(found != ram_.end() ? found->second.tile
-                                                : persistent,
-                           tile);
+  return WriteExternalTile(
+      found != ram_.end() ? found->second.tile : persistent, tile);
 }
 
 bool ChartSafetyCache::LookupSnapshot(
@@ -703,8 +687,7 @@ void ChartSafetyCache::Store(const PlugInSegmentSafetyTile* tile) {
     // Only depth-complete records belong in the durable semantic atlas. A
     // later land-only query must never downgrade an authoritative depth tile
     // which was already proven complete and persisted.
-    if (persistent_enabled_ && identity_confirmed_ &&
-        incoming.depth_complete) {
+    if (persistent_enabled_ && identity_confirmed_ && incoming.depth_complete) {
       dirty_[key] = {key, std::move(bytes)};
       stats_.dirty_entries = dirty_.size();
       should_flush = dirty_.size() >= kFlushDirtyTiles;
@@ -753,8 +736,7 @@ bool ChartSafetyCache::Clear() {
     std::error_code error;
     if (!path_.empty()) std::filesystem::remove(path_, error);
     if (error) {
-      last_error_ = "unable to remove chart-safety cache: " +
-                    error.message();
+      last_error_ = "unable to remove chart-safety cache: " + error.message();
       return false;
     }
     stats_.disk_entries = 0;
@@ -780,8 +762,8 @@ ChartSafetyAtlasCacheStatus ChartSafetyCache::InspectAtlasCoverage(
   std::lock_guard<std::mutex> lock(mutex_);
   if ((!store_open_ && !OpenStoreLocked()) || !persistent_enabled_ ||
       !identity_confirmed_) {
-    status.error = last_error_.empty() ? "persistent tile store unavailable"
-                                       : last_error_;
+    status.error =
+        last_error_.empty() ? "persistent tile store unavailable" : last_error_;
     return status;
   }
   status.store_ready = true;
@@ -797,13 +779,13 @@ ChartSafetyAtlasCacheStatus ChartSafetyCache::InspectAtlasCoverage(
   std::vector<unsigned char> marker;
   std::string marker_error;
   if (store_.Get(kAtlasCompletionKey, &marker, &marker_error))
-    status.completion_marker_matches = AtlasCompletionMatches(
-        marker, atlas_identity, expected_tiles);
+    status.completion_marker_matches =
+        AtlasCompletionMatches(marker, atlas_identity, expected_tiles);
   else if (!marker_error.empty())
     status.error = marker_error;
 
-  status.complete = status.completion_marker_matches &&
-                    status.missing_tiles.empty();
+  status.complete =
+      status.completion_marker_matches && status.missing_tiles.empty();
   if (status.completion_marker_matches && !status.complete) {
     std::string erase_error;
     if (!store_.Erase(kAtlasCompletionKey, &erase_error) &&
@@ -863,13 +845,11 @@ bool ChartSafetyCache::ClearAtlasCompletion() {
   return result;
 }
 
-int ChartSafetyCache::LookupCallback(void* context, long lat_tile,
-                                     long lon_tile, int require_depth,
-                                     PlugInSegmentSafetyTile* tile) {
+bool ChartSafetyCache::LookupCallback(void* context, long lat_tile,
+                                      long lon_tile, bool require_depth,
+                                      PlugInSegmentSafetyTile* tile) {
   ChartSafetyCache* cache = static_cast<ChartSafetyCache*>(context);
-  return cache && cache->Lookup(lat_tile, lon_tile, require_depth != 0, tile)
-             ? 1
-             : 0;
+  return cache && cache->Lookup(lat_tile, lon_tile, require_depth, tile);
 }
 
 void ChartSafetyCache::StoreCallback(void* context,

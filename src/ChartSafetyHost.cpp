@@ -25,65 +25,12 @@
 #include "ChartSafetyCache.h"
 #include "georef.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 namespace {
 
-void* ResolveHostSymbol(const char* name) {
-#ifdef _WIN32
-  HMODULE process = GetModuleHandle(nullptr);
-  return process ? reinterpret_cast<void*>(GetProcAddress(process, name))
-                 : nullptr;
-#else
-  return dlsym(RTLD_DEFAULT, name);
-#endif
-}
-
-template <typename T>
-T Resolve(const char* name) {
-  return reinterpret_cast<T>(ResolveHostSymbol(name));
-}
-
-using RegisterFn = bool (*)(
-    const PlugInSegmentSafetyTileCacheCallbacks*);
-using IdentityFn = bool (*)(char*, int);
-using CheckFn = bool (*)(double, double, double, double,
-                         const PlugInSegmentSafetyOptions*,
-                         PlugInSegmentSafetyResult*);
-using RawTilesFn = bool (*)(const long*, const long*, int, int,
-                            PlugInSegmentSafetyResult*);
-using SnapshotFn = bool (*)(double, double, double, double, int, int,
-                            const PlugInSegmentSafetyOptions*,
-                            PlugInSegmentSafetyResult*);
-using ServiceFn = bool (*)(int, int,
-                           PlugInSegmentSafetyRequestServiceResult*);
-using ReleaseFn = void (*)();
-using SetPersistentFn = bool (*)(int);
-using SavePersistentFn = bool (*)();
-using ClearPersistentFn = bool (*)();
-using ChartInfoCountFn = int (*)();
-using ChartInfoFn = bool (*)(int, PlugInSegmentSafetyChartInfoV1*);
-using CoverageTilesFn = bool (*)(const int*, int, double, long*, long*, int,
-                                 int*, int*);
-
 struct HostFunctions {
-  RegisterFn register_cache{nullptr};
-  IdentityFn get_identity{nullptr};
-  CheckFn check{nullptr};
-  RawTilesFn raw_tiles{nullptr};
-  SnapshotFn snapshot{nullptr};
-  ServiceFn service{nullptr};
-  ReleaseFn release{nullptr};
-  SetPersistentFn set_persistent{nullptr};
-  SavePersistentFn save_persistent{nullptr};
-  ClearPersistentFn clear_persistent{nullptr};
-  ChartInfoCountFn chart_info_count{nullptr};
-  ChartInfoFn chart_info{nullptr};
-  CoverageTilesFn coverage_tiles{nullptr};
+  std::unique_ptr<HostApi> owner;
+  HostApi122* api{nullptr};
+  std::string plugin_name;
   bool available{false};
   bool registered{false};
 };
@@ -94,9 +41,9 @@ std::unique_ptr<weather_routing::ChartHazardEvaluator> g_evaluator;
 std::atomic<const std::atomic_bool*> g_prewarm_cancellation{nullptr};
 
 bool ConfirmHostIdentity() {
-  if (!g_cache || !g_host.get_identity) return false;
-  char identity[4096] = {};
-  if (!g_host.get_identity(identity, sizeof(identity)) || !identity[0])
+  if (!g_cache || !g_host.api) return false;
+  std::string identity;
+  if (!g_host.api->GetSegmentSafetyChartIdentity(&identity) || identity.empty())
     return false;
   g_cache->SetIdentity(identity);
   return true;
@@ -147,8 +94,8 @@ void AddCorridorTiles(double lat1, double lon1, double lat2, double lon2,
     const long sy = y < y1 ? 1 : -1;
     long error = dx - dy;
     for (;;) {
-      tiles->insert(TileAt(y * kRawResolutionDegrees,
-                           x * kRawResolutionDegrees));
+      tiles->insert(
+          TileAt(y * kRawResolutionDegrees, x * kRawResolutionDegrees));
       if (x == x1 && y == y1) break;
       const long twice_error = 2 * error;
       if (twice_error > -dy) {
@@ -184,8 +131,7 @@ void AddCorridorTiles(double lat1, double lon1, double lat2, double lon2,
         double offset_lat = lat;
         double offset_lon = lon;
         ll_gc_ll(lat, lon,
-                 NormalizeBearing(
-                     bearing + (offset_nm < 0.0 ? -90.0 : 90.0)),
+                 NormalizeBearing(bearing + (offset_nm < 0.0 ? -90.0 : 90.0)),
                  std::abs(offset_nm), &offset_lat, &offset_lon);
         lat = offset_lat;
         lon = offset_lon;
@@ -201,15 +147,13 @@ void AddCorridorTiles(double lat1, double lon1, double lat2, double lon2,
   const double endpoint_lons[2] = {lon1, lon2};
   for (int endpoint = 0; endpoint < 2; ++endpoint) {
     for (int radial_step = 0; radial_step <= radial_steps; ++radial_step) {
-      const double radius_nm =
-          corridor_margin_nm * radial_step / radial_steps;
+      const double radius_nm = corridor_margin_nm * radial_step / radial_steps;
       for (int direction = 0; direction < kRadialBearings; ++direction) {
         double lat = endpoint_lats[endpoint];
         double lon = endpoint_lons[endpoint];
         if (radius_nm > 0.0)
           ll_gc_ll(endpoint_lats[endpoint], endpoint_lons[endpoint],
-                   360.0 * direction / kRadialBearings, radius_nm, &lat,
-                   &lon);
+                   360.0 * direction / kRadialBearings, radius_nm, &lat, &lon);
         tiles->insert(TileAt(lat, lon));
       }
     }
@@ -235,12 +179,12 @@ bool RequestRawTiles(const std::set<std::pair<long, long>>& raw_tiles,
     lat_tiles.push_back(tile.first);
     lon_tiles.push_back(tile.second);
   }
-  const auto* cancellation = g_prewarm_cancellation.load(
-      std::memory_order_acquire);
+  const auto* cancellation =
+      g_prewarm_cancellation.load(std::memory_order_acquire);
   if (!cancellation)
-    return g_host.raw_tiles(lat_tiles.data(), lon_tiles.data(),
-                            static_cast<int>(lat_tiles.size()),
-                            options->check_depth != 0 ? 1 : 0, result);
+    return g_host.api->PrepareSegmentSafetyTiles(
+        lat_tiles.data(), lon_tiles.data(), static_cast<int>(lat_tiles.size()),
+        options->check_depth != 0, result);
 
   constexpr std::size_t kExternalPrewarmBatchTiles = 16;
   PlugInSegmentSafetyResult batch_result = {};
@@ -250,9 +194,9 @@ bool RequestRawTiles(const std::set<std::pair<long, long>>& raw_tiles,
     if (cancellation->load(std::memory_order_relaxed)) return false;
     const std::size_t count =
         std::min(kExternalPrewarmBatchTiles, lat_tiles.size() - offset);
-    if (!g_host.raw_tiles(lat_tiles.data() + offset, lon_tiles.data() + offset,
-                          static_cast<int>(count),
-                          options->check_depth != 0 ? 1 : 0, &batch_result))
+    if (!g_host.api->PrepareSegmentSafetyTiles(
+            lat_tiles.data() + offset, lon_tiles.data() + offset,
+            static_cast<int>(count), options->check_depth != 0, &batch_result))
       return false;
   }
   if (result) {
@@ -262,12 +206,12 @@ bool RequestRawTiles(const std::set<std::pair<long, long>>& raw_tiles,
   return !cancellation->load(std::memory_order_relaxed);
 }
 
-bool PrewarmRawTiles(
-    const double* latitudes, const double* longitudes,
-    const int* point_counts, int polyline_count, double corridor_margin_nm,
-    int fine_tile_halo, const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result) {
-  if (!g_host.available || !g_host.raw_tiles || !latitudes || !longitudes ||
+bool PrewarmRawTiles(const double* latitudes, const double* longitudes,
+                     const int* point_counts, int polyline_count,
+                     double corridor_margin_nm, int fine_tile_halo,
+                     const PlugInSegmentSafetyOptions* options,
+                     PlugInSegmentSafetyResult* result) {
+  if (!g_host.available || !g_host.api || !latitudes || !longitudes ||
       !point_counts || polyline_count <= 0 || !options)
     return false;
 
@@ -301,17 +245,15 @@ bool PrewarmRawTiles(
 
   std::set<std::pair<long, long>> raw_tiles;
   for (const auto& tile : route_tiles) {
-    const double mid_lat =
-        tile.first * kRawTileDegrees + kRawTileDegrees / 2.0;
+    const double mid_lat = tile.first * kRawTileDegrees + kRawTileDegrees / 2.0;
     const double cell_nm =
         std::min(kRawResolutionDegrees * 60.0,
                  kRawResolutionDegrees * 60.0 *
                      std::max(0.1, std::abs(std::cos(mid_lat * kPi / 180.0))));
-    int cell_halo =
-        options->safety_margin_nm > 0.0
-            ? static_cast<int>(std::ceil(options->safety_margin_nm /
-                                         std::max(0.01, cell_nm)))
-            : 0;
+    int cell_halo = options->safety_margin_nm > 0.0
+                        ? static_cast<int>(std::ceil(options->safety_margin_nm /
+                                                     std::max(0.01, cell_nm)))
+                        : 0;
     cell_halo = std::min(cell_halo, 128);
     const int margin_tile_halo =
         (cell_halo + kRawCellsPerTile - 1) / kRawCellsPerTile;
@@ -332,38 +274,17 @@ void DependenciesChangedCallback(void*) {
 }
 }  // namespace
 
-bool Initialize(ChartSafetyCache* cache) {
+bool Initialize(ChartSafetyCache* cache, const std::string& plugin_name) {
   Shutdown();
   g_cache = cache;
-  g_host.register_cache = Resolve<RegisterFn>(
-      "PlugIn_RegisterSegmentSafetyTileCache");
-  g_host.get_identity = Resolve<IdentityFn>(
-      "PlugIn_GetSegmentSafetyChartIdentity");
-  g_host.check = Resolve<CheckFn>("PlugIn_CheckSegmentSafety");
-  g_host.raw_tiles = Resolve<RawTilesFn>(
-      "PlugIn_PrewarmSegmentSafetyRawTiles");
-  g_host.snapshot = Resolve<SnapshotFn>(
-      "PlugIn_PrewarmSegmentSafetyHazardSnapshot");
-  g_host.service = Resolve<ServiceFn>(
-      "PlugIn_ServicePendingSegmentSafetyRequests");
-  g_host.release = Resolve<ReleaseFn>(
-      "PlugIn_ReleaseSegmentSafetyRouteMaskPins");
-  g_host.set_persistent = Resolve<SetPersistentFn>(
-      "PlugIn_SetSegmentSafetyPersistentCacheEnabled");
-  g_host.save_persistent = Resolve<SavePersistentFn>(
-      "PlugIn_SaveSegmentSafetyPersistentCache");
-  g_host.clear_persistent = Resolve<ClearPersistentFn>(
-      "PlugIn_ClearSegmentSafetyPersistentCache");
-  g_host.chart_info_count = Resolve<ChartInfoCountFn>(
-      "PlugIn_GetSegmentSafetyChartInfoCount");
-  g_host.chart_info = Resolve<ChartInfoFn>(
-      "PlugIn_GetSegmentSafetyChartInfo");
-  g_host.coverage_tiles = Resolve<CoverageTilesFn>(
-      "PlugIn_GetSegmentSafetyChartCoverageTiles");
-
-  g_host.available =
-      cache && g_host.register_cache && g_host.get_identity && g_host.check &&
-      g_host.raw_tiles && g_host.snapshot && g_host.service && g_host.release;
+  g_host.owner = GetHostApi();
+#ifdef XWEATHER_ROUTING_TEST_HOST_STUB
+  g_host.api = nullptr;
+#else
+  g_host.api = dynamic_cast<HostApi122*>(g_host.owner.get());
+#endif
+  g_host.plugin_name = plugin_name;
+  g_host.available = cache && g_host.api && !plugin_name.empty();
   if (!g_host.available) return false;
 
   PlugInSegmentSafetyTileCacheCallbacks callbacks = {};
@@ -373,7 +294,7 @@ bool Initialize(ChartSafetyCache* cache) {
   callbacks.store = &ChartSafetyCache::StoreCallback;
   callbacks.identity_changed = &ChartSafetyCache::IdentityCallback;
   callbacks.dependencies_changed = &DependenciesChangedCallback;
-  if (!g_host.register_cache(&callbacks)) {
+  if (!g_host.api->RegisterSegmentSafetyTileCache(plugin_name, &callbacks)) {
     g_host.available = false;
     return false;
   }
@@ -383,15 +304,14 @@ bool Initialize(ChartSafetyCache* cache) {
   // as provisional because later-loaded chart providers (notably o-charts)
   // are not necessarily registered yet. The first main-thread prewarm
   // confirms the post-load identity before persistent storage is touched.
-  g_evaluator =
-      std::make_unique<weather_routing::ChartHazardEvaluator>(*cache);
+  g_evaluator = std::make_unique<weather_routing::ChartHazardEvaluator>(*cache);
   return true;
 }
 
 void Shutdown() {
   g_evaluator.reset();
-  if (g_host.registered && g_host.register_cache)
-    g_host.register_cache(nullptr);
+  if (g_host.registered && g_host.api)
+    g_host.api->RegisterSegmentSafetyTileCache(g_host.plugin_name, nullptr);
   g_host = HostFunctions();
   g_cache = nullptr;
 }
@@ -405,14 +325,14 @@ std::string ConfirmedIdentity() {
 
 std::vector<ChartSafetyAtlasChart> AtlasCharts() {
   std::vector<ChartSafetyAtlasChart> charts;
-  if (!g_host.chart_info_count || !g_host.chart_info) return charts;
-  const int count = g_host.chart_info_count();
+  if (!g_host.api) return charts;
+  const int count = g_host.api->GetSegmentSafetyChartInfoCount();
   if (count <= 0 || count > 1000000) return charts;
   charts.reserve(static_cast<std::size_t>(count));
   for (int ordinal = 0; ordinal < count; ++ordinal) {
     PlugInSegmentSafetyChartInfoV1 info = {};
     info.struct_size = sizeof(info);
-    if (!g_host.chart_info(ordinal, &info) ||
+    if (!g_host.api->GetSegmentSafetyChartInfo(ordinal, &info) ||
         info.abi_version != PI_SEGMENT_SAFETY_CHART_INFO_ABI_V1 ||
         !info.available || !info.in_active_group || !info.chart_path[0])
       continue;
@@ -438,8 +358,7 @@ std::vector<std::pair<long, long>> AtlasCoverageTiles(
     std::uint64_t maximum_tiles, bool* complete) {
   if (complete) *complete = false;
   std::vector<std::pair<long, long>> result;
-  if (!g_host.coverage_tiles || maximum_tiles == 0 ||
-      maximum_tiles > 2000000)
+  if (!g_host.api || maximum_tiles == 0 || maximum_tiles > 2000000)
     return result;
   std::vector<int> indexes;
   indexes.reserve(charts.size());
@@ -453,18 +372,17 @@ std::vector<std::pair<long, long>> AtlasCoverageTiles(
   std::vector<long> lat_tiles(static_cast<std::size_t>(maximum_tiles));
   std::vector<long> lon_tiles(static_cast<std::size_t>(maximum_tiles));
   int tile_count = 0;
-  int host_complete = 0;
-  if (!g_host.coverage_tiles(
+  bool host_complete = false;
+  if (!g_host.api->GetSegmentSafetyChartCoverageTiles(
           indexes.data(), static_cast<int>(indexes.size()),
           kChartSafetyAtlasTileDegrees, lat_tiles.data(), lon_tiles.data(),
           static_cast<int>(maximum_tiles), &tile_count, &host_complete) ||
-      tile_count < 0 ||
-      static_cast<std::uint64_t>(tile_count) > maximum_tiles)
+      tile_count < 0 || static_cast<std::uint64_t>(tile_count) > maximum_tiles)
     return result;
   result.reserve(static_cast<std::size_t>(tile_count));
   for (int index = 0; index < tile_count; ++index)
     result.emplace_back(lat_tiles[index], lon_tiles[index]);
-  if (complete) *complete = host_complete != 0;
+  if (complete) *complete = host_complete;
   return OrderChartSafetyAtlasTiles(result);
 }
 
@@ -501,20 +419,22 @@ bool FlushCache() {
         static_cast<unsigned long long>(stats.dirty_entries),
         static_cast<unsigned long long>(stats.flushes));
   }
-  const bool host_ok = !g_host.save_persistent || g_host.save_persistent();
+  const bool host_ok =
+      !g_host.api || g_host.api->SaveSegmentSafetyPersistentCache();
   return plugin_ok && host_ok;
 }
 
 bool SetPersistentCacheEnabled(bool enabled) {
-  return !g_host.set_persistent || g_host.set_persistent(enabled ? 1 : 0);
+  return !g_host.api ||
+         g_host.api->SetSegmentSafetyPersistentCacheEnabled(enabled);
 }
 
 bool SavePersistentCache() {
-  return !g_host.save_persistent || g_host.save_persistent();
+  return !g_host.api || g_host.api->SaveSegmentSafetyPersistentCache();
 }
 
 bool ClearPersistentCache() {
-  return !g_host.clear_persistent || g_host.clear_persistent();
+  return !g_host.api || g_host.api->ClearSegmentSafetyPersistentCache();
 }
 
 void InvalidateDerivedMasks() {
@@ -526,8 +446,7 @@ void SetPrewarmCancellationFlag(const std::atomic_bool* flag) {
 }
 
 bool PrewarmCancellationRequested() {
-  const auto* flag =
-      g_prewarm_cancellation.load(std::memory_order_acquire);
+  const auto* flag = g_prewarm_cancellation.load(std::memory_order_acquire);
   return flag && flag->load(std::memory_order_relaxed);
 }
 
@@ -537,8 +456,8 @@ bool CheckSegment(double lat1, double lon1, double lat2, double lon2,
   if (g_evaluator && options && result &&
       g_evaluator->CheckSegment(lat1, lon1, lat2, lon2, *options, result))
     return true;
-  return g_host.available &&
-         g_host.check(lat1, lon1, lat2, lon2, options, result);
+  return g_host.available && g_host.api->CheckSegmentSafety(
+                                 lat1, lon1, lat2, lon2, options, result);
 }
 
 bool PrewarmHazardSnapshot(double min_lat, double min_lon, double max_lat,
@@ -547,14 +466,15 @@ bool PrewarmHazardSnapshot(double min_lat, double min_lon, double max_lat,
                            const PlugInSegmentSafetyOptions* options,
                            PlugInSegmentSafetyResult* result) {
   return g_host.available && ConfirmHostIdentity() &&
-         g_host.snapshot(min_lat, min_lon, max_lat, max_lon, enable_fast_path,
-                         shadow_compare, options, result);
+         g_host.api->PrepareSegmentSafetySnapshot(
+             min_lat, min_lon, max_lat, max_lon, enable_fast_path != 0,
+             shadow_compare != 0, options, result);
 }
 
-bool PrewarmRouteMaskForSegment(
-    double lat1, double lon1, double lat2, double lon2,
-    double corridor_margin_nm, const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result) {
+bool PrewarmRouteMaskForSegment(double lat1, double lon1, double lat2,
+                                double lon2, double corridor_margin_nm,
+                                const PlugInSegmentSafetyOptions* options,
+                                PlugInSegmentSafetyResult* result) {
   const double latitudes[2] = {lat1, lat2};
   const double longitudes[2] = {lon1, lon2};
   const int point_count = 2;
@@ -562,10 +482,9 @@ bool PrewarmRouteMaskForSegment(
                          corridor_margin_nm, 0, options, result);
 }
 
-bool PrewarmAtlasTiles(
-    const std::vector<std::pair<long, long>>& tiles,
-    const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result) {
+bool PrewarmAtlasTiles(const std::vector<std::pair<long, long>>& tiles,
+                       const PlugInSegmentSafetyOptions* options,
+                       PlugInSegmentSafetyResult* result) {
   if (tiles.empty()) return true;
   return RequestRawTiles(
       std::set<std::pair<long, long>>(tiles.begin(), tiles.end()), options,
@@ -573,23 +492,22 @@ bool PrewarmAtlasTiles(
 }
 
 bool PrewarmRouteMaskForPolylinesWithTileHalo(
-    const double* latitudes, const double* longitudes,
-    const int* point_counts, int polyline_count, double corridor_margin_nm,
-    int fine_tile_halo, const PlugInSegmentSafetyOptions* options,
+    const double* latitudes, const double* longitudes, const int* point_counts,
+    int polyline_count, double corridor_margin_nm, int fine_tile_halo,
+    const PlugInSegmentSafetyOptions* options,
     PlugInSegmentSafetyResult* result) {
   return PrewarmRawTiles(latitudes, longitudes, point_counts, polyline_count,
                          corridor_margin_nm, fine_tile_halo, options, result);
 }
 
-bool ServicePendingRequests(
-    int max_requests, int max_milliseconds,
-    PlugInSegmentSafetyRequestServiceResult* result) {
-  return g_host.available &&
-         g_host.service(max_requests, max_milliseconds, result);
+bool ServicePendingRequests(int max_requests, int max_milliseconds,
+                            PlugInSegmentSafetyRequestServiceResult* result) {
+  return g_host.available && g_host.api->ServicePendingSegmentSafetyRequests(
+                                 max_requests, max_milliseconds, result);
 }
 
 void ReleaseRouteMaskPins() {
-  if (g_host.available) g_host.release();
+  if (g_host.available) g_host.api->ReleaseSegmentSafetyPins();
 }
 
 }  // namespace chart_safety_host

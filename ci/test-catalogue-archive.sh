@@ -29,6 +29,11 @@ if nm -D --undefined-only "$plugin" |
   echo "Plugin has a direct dependency on the optional enhanced host API" >&2
   exit 1
 fi
+if nm -D --undefined-only "$plugin" | c++filt |
+    grep -F 'typeinfo for HostApi122'; then
+  echo "Plugin requires API 1.22 RTTI and cannot load on an API 1.21 host" >&2
+  exit 1
+fi
 
 mapfile -t metadata < <(
   find "$build_dir" -maxdepth 1 -type f -name 'xweather_routing_pi-*.xml' |

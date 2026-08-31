@@ -83,6 +83,9 @@ set(OCPN_MIN_VERSION "ov511")
 
 set(OCPN_API_VERSION_MAJOR "1")
 set(OCPN_API_VERSION_MINOR "21")
+# Compile against the open development API for optional chart-safety feature
+# detection while retaining API 1.21 as the plugin's loadable minimum.
+set(OCPN_HEADER_API_VERSION_MINOR "22")
 set(TP_COMMENT "  * Release using CI")
 
 set(PARENT "opencpn")
@@ -377,20 +380,15 @@ if (NOT OCPN_FLATPAK_CONFIG)
     add_library(ocpn::api ALIAS OCPN_API_LOCAL)
     target_include_directories(OCPN_API_LOCAL INTERFACE
       "${OCPN_IN_TREE_SOURCE_DIR}/include")
-  elseif (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_API_VERSION_MINOR}/CMakeLists.txt")
-    add_subdirectory(opencpn-libs/api-${OCPN_API_VERSION_MINOR})
-    # The enhanced chart-safety service is optional and resolved dynamically.
-    # Stock API headers intentionally do not declare its ABI-only structures,
-    # so make the plugin-local declarations available to every target in this
-    # directory, including the standalone regression tests.
-    add_compile_definitions(
-      XWEATHER_ROUTING_DECLARE_OPTIONAL_CHART_SAFETY_ABI=1)
+  elseif (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/opencpn-libs/api-${OCPN_HEADER_API_VERSION_MINOR}/CMakeLists.txt")
+    add_subdirectory(opencpn-libs/api-${OCPN_HEADER_API_VERSION_MINOR})
   elseif (EXISTS "${CMAKE_SOURCE_DIR}/include/ocpn_plugin.h")
     add_library(OCPN_API_LOCAL INTERFACE)
     add_library(ocpn::api ALIAS OCPN_API_LOCAL)
     target_include_directories(OCPN_API_LOCAL INTERFACE "${CMAKE_SOURCE_DIR}/include")
   else ()
-    message(FATAL_ERROR "Missing opencpn-libs/api-${OCPN_API_VERSION_MINOR}")
+    message(FATAL_ERROR
+      "Missing opencpn-libs/api-${OCPN_HEADER_API_VERSION_MINOR}")
   endif ()
   target_link_libraries(${PACKAGE_NAME} ocpn::api)
 

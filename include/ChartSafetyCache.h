@@ -132,11 +132,9 @@ public:
   /** Remove only the atlas completion proof, retaining reusable tiles. */
   bool ClearAtlasCompletion();
 
-  static int LookupCallback(void* context, long lat_tile, long lon_tile,
-                            int require_depth,
-                            PlugInSegmentSafetyTile* tile);
-  static void StoreCallback(void* context,
-                            const PlugInSegmentSafetyTile* tile);
+  static bool LookupCallback(void* context, long lat_tile, long lon_tile,
+                             bool require_depth, PlugInSegmentSafetyTile* tile);
+  static void StoreCallback(void* context, const PlugInSegmentSafetyTile* tile);
   static void IdentityCallback(void* context, const char* identity);
 
 private:

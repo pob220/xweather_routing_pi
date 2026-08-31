@@ -45,6 +45,7 @@ set(TEST_SRC
     ChartSafetyAtlas_tests.cpp
     ChartHazardEvaluator_tests.cpp
     ChartSafetyPolicy_tests.cpp
+    HostApiStub.cpp
     HeadlessRouteMonitor_tests.cpp
     KeyedRequestCache_tests.cpp
     OceanPrewarmPolicy_tests.cpp
@@ -210,7 +211,8 @@ add_test(
 
 target_compile_definitions(weather_routing_pi_tests
     PUBLIC
-        USE_MOCK_DEFS CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR}"
+        USE_MOCK_DEFS XWEATHER_ROUTING_TEST_HOST_STUB=1
+        CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR}"
         TESTDATADIR="${CMAKE_CURRENT_LIST_DIR}/testdata"
         WEATHER_ROUTING_SOURCE_DIR="${WEATHER_ROUTING_SOURCE_DIR}"
 )

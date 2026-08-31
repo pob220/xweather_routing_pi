@@ -25,7 +25,7 @@ class ChartSafetyCache;
 namespace chart_safety_host {
 
 /** Detect and attach to the optional enhanced OpenCPN chart-safety service. */
-bool Initialize(ChartSafetyCache* cache);
+bool Initialize(ChartSafetyCache* cache, const std::string& plugin_name);
 void Shutdown();
 bool Available();
 std::string Status();
@@ -59,23 +59,21 @@ bool PrewarmHazardSnapshot(double min_lat, double min_lon, double max_lat,
                            int shadow_compare,
                            const PlugInSegmentSafetyOptions* options,
                            PlugInSegmentSafetyResult* result);
-bool PrewarmRouteMaskForSegment(
-    double lat1, double lon1, double lat2, double lon2,
-    double corridor_margin_nm, const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result);
+bool PrewarmRouteMaskForSegment(double lat1, double lon1, double lat2,
+                                double lon2, double corridor_margin_nm,
+                                const PlugInSegmentSafetyOptions* options,
+                                PlugInSegmentSafetyResult* result);
 /** Prebuild an exact, bounded set of 0.05-degree semantic base tiles. */
-bool PrewarmAtlasTiles(
-    const std::vector<std::pair<long, long>>& tiles,
+bool PrewarmAtlasTiles(const std::vector<std::pair<long, long>>& tiles,
+                       const PlugInSegmentSafetyOptions* options,
+                       PlugInSegmentSafetyResult* result);
+bool PrewarmRouteMaskForPolylinesWithTileHalo(
+    const double* latitudes, const double* longitudes, const int* point_counts,
+    int polyline_count, double corridor_margin_nm, int fine_tile_halo,
     const PlugInSegmentSafetyOptions* options,
     PlugInSegmentSafetyResult* result);
-bool PrewarmRouteMaskForPolylinesWithTileHalo(
-    const double* latitudes, const double* longitudes,
-    const int* point_counts, int polyline_count, double corridor_margin_nm,
-    int fine_tile_halo, const PlugInSegmentSafetyOptions* options,
-    PlugInSegmentSafetyResult* result);
-bool ServicePendingRequests(
-    int max_requests, int max_milliseconds,
-    PlugInSegmentSafetyRequestServiceResult* result);
+bool ServicePendingRequests(int max_requests, int max_milliseconds,
+                            PlugInSegmentSafetyRequestServiceResult* result);
 void ReleaseRouteMaskPins();
 
 }  // namespace chart_safety_host
