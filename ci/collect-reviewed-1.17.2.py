@@ -8,6 +8,8 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
+import re
 from pathlib import Path
 import time
 import urllib.request
@@ -33,12 +35,12 @@ def get_json(url):
             time.sleep(3)
 
 
-def check_source(job):
+def check_source(job, revision=REVISION, workflow=WORKFLOW):
     if job.get("status") != "success":
         raise ValueError("Source job has not succeeded")
-    if job.get("vcs_revision") != REVISION:
+    if job.get("vcs_revision") != revision:
         raise ValueError("Source revision mismatch")
-    if job.get("workflows", {}).get("workflow_id") != WORKFLOW:
+    if job.get("workflows", {}).get("workflow_id") != workflow:
         raise ValueError("Source workflow mismatch")
 
 
@@ -56,13 +58,14 @@ def select_artifacts(target, items):
     return selected
 
 
-def wait_for_builds(timeout):
+def wait_for_builds(timeout, source_jobs=None):
+    source_jobs = JOBS if source_jobs is None else source_jobs
     deadline = time.monotonic() + timeout
     while True:
         data = get_json(f"https://circleci.com/api/v2/workflow/{WORKFLOW}/job")
         jobs = {j.get("job_number"): j for j in data["items"]}
         states = {target: jobs.get(number, {}).get("status", "missing")
-                  for target, number in JOBS.items()}
+                  for target, number in source_jobs.items()}
         if any(s in {"failed", "canceled", "not_run", "unauthorized", "missing"}
                for s in states.values()):
             raise RuntimeError(f"Source builds cannot be published: {states}")
@@ -75,17 +78,38 @@ def wait_for_builds(timeout):
         time.sleep(30)
 
 
-def collect(output, timeout):
-    wait_for_builds(timeout)
+def replacement_jammy(jobs, revision, workflow):
+    if not re.fullmatch(r"[0-9a-f]{40}", revision) or not workflow:
+        raise ValueError("Missing immutable recovery revision/workflow")
+    matches = [j for j in jobs if j.get("name") == "ubuntu22.04-x86_64-recovery"]
+    if len(matches) != 1 or matches[0].get("status") != "success":
+        raise ValueError("Expected one successful Ubuntu 22.04 recovery job")
+    number = matches[0].get("job_number")
+    if not isinstance(number, int) or number <= 0:
+        raise ValueError("Invalid recovery job number")
+    return number, revision, workflow
+
+
+def collect(output, timeout, recover_jammy=False):
+    sources = {t: (n, REVISION, WORKFLOW) for t, n in JOBS.items()}
+    retained = dict(JOBS)
+    if recover_jammy:
+        workflow = os.environ["CIRCLE_WORKFLOW_ID"]
+        revision = os.environ["CIRCLE_SHA1"]
+        data = get_json(f"https://circleci.com/api/v2/workflow/{workflow}/job")
+        sources["jammy"] = replacement_jammy(data["items"], revision, workflow)
+        del retained["jammy"]
+    wait_for_builds(timeout, retained)
     # Check provenance of the entire matrix before downloading any binaries.
-    for number in JOBS.values():
-        check_source(get_json(f"https://circleci.com/api/v1.1/project/{PROJECT}/{number}"))
+    for number, revision, workflow in sources.values():
+        check_source(get_json(f"https://circleci.com/api/v1.1/project/{PROJECT}/{number}"),
+                     revision, workflow)
     output.mkdir(parents=True, exist_ok=False)
     spec = importlib.util.spec_from_file_location("prepare", Path(__file__).with_name("prepare-alpha-artifacts.py"))
     prepare = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(prepare)
     records = []
-    for target, number in JOBS.items():
+    for target, (number, revision, workflow) in sources.items():
         items = get_json(f"https://circleci.com/api/v2/project/{PROJECT}/{number}/artifacts")["items"]
         directory = output / target / "package"
         directory.mkdir(parents=True)
@@ -103,7 +127,8 @@ def collect(output, timeout):
                     time.sleep(3)
             with path.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            records.append({"path": str(path), "sha256": digest, "job": number})
+            records.append({"path": str(path), "sha256": digest, "job": number,
+                            "revision": revision, "workflow": workflow})
         _, _, version, abi, _ = prepare.inspect_pair(directory)
         if version != "1.17.2.0":
             raise ValueError("Expected version 1.17.2.0")
@@ -116,5 +141,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
     parser.add_argument("--wait-seconds", type=int, default=2700)
+    parser.add_argument("--current-workflow-jammy", action="store_true")
     args = parser.parse_args()
-    collect(args.output, args.wait_seconds)
+    collect(args.output, args.wait_seconds, args.current_workflow_jammy)

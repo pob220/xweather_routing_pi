@@ -11,6 +11,11 @@ fi
 python3 ci/prepare-alpha-artifacts.py artifacts alpha-publication \
   "${XWEATHER_ARTIFACT_REVISION:-$(git rev-parse HEAD)}" "${CIRCLE_BUILD_NUM:?CircleCI build number required}"
 
+# Retain per-platform build provenance, including the CI-only Jammy recovery.
+if [[ -f artifacts/source-provenance.json ]]; then
+  cp artifacts/source-provenance.json alpha-publication/source-provenance.json
+fi
+
 # Fixed destination: never deploy to xGRIB's repo or the standard WR repo.
 python3 - <<'PY'
 import json

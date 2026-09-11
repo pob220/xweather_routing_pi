@@ -1,8 +1,38 @@
 version: 2.1
 
-# Deployment-only recovery of the exact 1.17.2 artifacts. No build jobs.
+# Rebuild only the timed-out Jammy target; retain the eight passing builds.
 # Isolated publication branch: never merge this workflow into the source branch.
 jobs:
+  jammy-recovery:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+    environment:
+      OCPN_TARGET: jammy
+      DOCKER_IMAGE: ubuntu:22.04
+      BUILD_ENV: ubuntu
+      DOCKERFILE: ci/Dockerfile.jammy
+      BUILD_GTK3: "true"
+      WX_VER: "32"
+      CMAKE_BUILD_PARALLEL_LEVEL: "3"
+    steps:
+      - checkout
+      - run:
+          name: Verify unchanged 1.17.2 plugin sources and publication guards
+          command: |
+            git diff --exit-code 6c4d5b2a4870bf50e75dae7aa3bcfd6be34419fe HEAD -- . \
+              ':(exclude)ci/**' ':(exclude).circleci/**' \
+              ':(exclude)README.md' ':(exclude)docs/alpha-publication.md'
+            python3 -m unittest discover -s ci/tests -v
+      - run: chmod a+x ci/*.sh
+      - run:
+          name: Build Ubuntu 22.04 only, with bounded HTTPS dependency bootstrap
+          command: ci/circleci-build-ubuntu-docker.sh
+          no_output_timeout: 20m
+      - store_artifacts:
+          path: artifacts
+          destination: artifacts
+
   collect-reviewed-artifacts:
     docker:
       - image: cimg/python:3.13
@@ -14,7 +44,7 @@ jobs:
           command: python3 -m unittest discover -s ci/tests -v
       - run:
           name: Wait for and validate existing 1.17.2 builds
-          command: python3 ci/collect-reviewed-1.17.2.py artifacts
+          command: python3 ci/collect-reviewed-1.17.2.py artifacts --current-workflow-jammy --wait-seconds 0
           no_output_timeout: 50m
       - run:
           name: Validate complete publication matrix without uploading
@@ -50,9 +80,12 @@ jobs:
           path: alpha-publication
 
 workflows:
-  publish-existing-1-17-2:
+  recover-jammy-and-publish-1-17-2:
     jobs:
-      - collect-reviewed-artifacts
+      - jammy-recovery:
+          name: ubuntu22.04-x86_64-recovery
+      - collect-reviewed-artifacts:
+          requires: [ubuntu22.04-x86_64-recovery]
       - hold-for-oss-alpha-approval:
           type: approval
           requires: [collect-reviewed-artifacts]
