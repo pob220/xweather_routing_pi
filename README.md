@@ -86,6 +86,10 @@ failures with configuration, boat/polar files, GRIB and logs.
 
 ## Licence and acknowledgement
 
+Alpha package hosting is provided by [Cloudsmith](https://cloudsmith.com/)
+through its open-source hosting programme:
+[xWeatherRouting Alpha packages](https://cloudsmith.io/~pob220/repos/xweather-routing-alpha-oss/).
+
 The plugin is GPL v3 or later. The original Weather Routing plugin was written
 by Sean D'Epagnier and has benefited from many OpenCPN contributors,
 translators and testers. This integration preserves that lineage and licence.

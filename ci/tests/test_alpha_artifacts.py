@@ -137,7 +137,7 @@ class AlphaArtifacts(unittest.TestCase):
         self.assertTrue(all(u["version"] == "1.17.1.0+23.abcdef1" for u in uploads))
         for metadata in output.glob("*.xml"):
             url = ET.parse(metadata).findtext("tarball-url").strip()
-            self.assertIn("/pob220/xweather-routing-alpha/", url)
+            self.assertIn("/pob220/xweather-routing-alpha-oss/", url)
             self.assertNotIn("--", url)
 
     def test_mixed_versions_write_nothing(self):

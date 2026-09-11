@@ -52,7 +52,7 @@ The 1.17.2 binaries require fresh builds; do not retry publication of 1.17.1.
 
 ## Credentials and destinations
 
-- Public Cloudsmith raw repository: `pob220/xweather-routing-alpha`.
+- Open-Source Cloudsmith raw repository: `pob220/xweather-routing-alpha-oss`.
 - Existing CircleCI context: `xgrib-deployment`, containing the working
   `CLOUDSMITH_API_KEY`. The key must allow uploads to the new repository; this
   must be verified during publication, not assumed. No secret retrieval or
@@ -62,6 +62,32 @@ The 1.17.2 binaries require fresh builds; do not retry publication of 1.17.1.
 - Do not change the CircleCI plan, add paid capacity, or bypass an approval gate.
 
 ## Procedure
+
+### 1.17.2 deployment-only repository correction
+
+The owner created `pob220/xweather-routing-alpha-oss` as Open-Source. The old
+empty Public repository is untouched. On the isolated
+`publish/xweather-alpha-1.17.2-oss` branch, CI has only artifact collection,
+approval and deployment jobs; it does not compile anything. Do not merge this
+recovery workflow into the normal branch. Carry forward the destination and
+publication guard fixes separately for future releases.
+
+`ci/collect-reviewed-1.17.2.py` pins source commit
+`6c4d5b2a4870bf50e75dae7aa3bcfd6be34419fe`, workflow
+`24046c17-4209-4dc8-af63-7e3d7a7a38d9` and all nine job numbers. It waits for
+those builds, requires successful jobs from that exact workflow/revision,
+downloads retained artifacts and checks version 1.17.2.0 and the full matrix.
+No deployment credential is attached to collection. The new
+`hold-for-oss-alpha-approval` gates the uploader, which revalidates the matrix
+and uses the original binary source revision in Cloudsmith package versions.
+
+Do not approve the original 1.17.2 workflow's deployment: its fixed destination
+is the superseded Public repository. Only approve the new recovery workflow
+after collection succeeds. A changed Cloudsmith destination requires new XML
+download URLs, not rebuilt plugin binaries. Upload success still needs public
+download and checksum verification before catalogue PR 1406 becomes ready.
+
+### Normal future releases
 
 1. Run the default `validate` workflow and check all nine targets. Debian 12/13,
    Ubuntu 22.04/24.04, Debian ARM64, Flatpak x86_64/aarch64, Windows x86 and native

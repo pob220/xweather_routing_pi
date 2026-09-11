@@ -18,7 +18,7 @@ TARGETS = {
     "flatpak-x86_64", "flatpak-aarch64", "windows-x86", "macos-arm64",
 }
 PACKAGE = "xweather_routing_pi"
-REPOSITORY = "pob220/xweather-routing-alpha"
+REPOSITORY = "pob220/xweather-routing-alpha-oss"
 
 
 def value(root, field):
