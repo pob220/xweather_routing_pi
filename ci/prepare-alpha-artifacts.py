@@ -56,6 +56,10 @@ def inspect_pair(directory):
     target = tuple(value(root, key) for key in ("target", "target-version", "target-arch"))
     if any(not re.fullmatch(r"[\w.+-]+", item) for item in target):
         raise ValueError(f"Invalid target: {target}")
+    if target[0].startswith("flatpak-") and target[0] not in {"flatpak-x86_64", "flatpak-aarch64"}:
+        raise ValueError(f"Invalid Flatpak catalogue target: {target[0]}")
+    if target[1] == "22.04" and target[0] != "ubuntu-wx32-x86_64":
+        raise ValueError(f"Missing Ubuntu 22.04 wxWidgets ABI marker: {target[0]}")
     library_names = {f"lib{PACKAGE}.so", f"lib{PACKAGE}.dylib", f"{PACKAGE}.dll"}
     with tarfile.open(archive, "r:gz") as package:
         members = package.getmembers()

@@ -21,6 +21,13 @@ CMake package files. GoogleTest installation is now disabled for fetched test
 dependencies, with an explicit Windows archive guard and regression test.
 Do not publish the Windows archive from `1e168fc`; require the corrected rerun.
 
+The final metadata audit also found two existing xGRIB fixes missing here:
+Linux Docker must receive `BUILD_ENV`, `WX_VER` and `BUILD_GTK3` (particularly
+Ubuntu 22.04's `ubuntu-wx32-x86_64` ABI), and Flatpak metadata must use
+`flatpak-<architecture>`, not `flatpak-32-<architecture>`. The same fixes are
+now applied to xWeatherRouting without editing xGRIB. Publication preflight
+rejects these legacy labels.
+
 ## Credentials and destinations
 
 - Public Cloudsmith raw repository: `pob220/xweather-routing-alpha`.
