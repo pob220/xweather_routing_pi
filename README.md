@@ -1,14 +1,14 @@
-# Weather Routing integration branch
+# xWeatherRouting Alpha preview
 
 The optional hardened-OpenCPN planning-provider boundary is documented in
 [docs/external_control_provider_preview_b.md](docs/external_control_provider_preview_b.md).
 Stock OpenCPN remains supported through the unchanged plug-in API 1.21.
 
-This branch integrates the fully working xWeatherRouting developments back
-into the current standard OpenCPN Weather Routing plugin. It retains the
-standard plugin identity, settings, polar and GRIB integrations while adding
-the modern deterministic routing engine developed and qualified in the
-xWeatherRouting branch.
+This repository builds the separately installable **xWeatherRouting** variant
+of Weather Routing 1.17.1, including the route-table lifetime fix. Its library
+and catalogue identity are `xweather_routing_pi` / `xWeatherRouting`; it does
+not replace the standard WeatherRouting package. Alpha publication status and
+the release process are documented in [docs/alpha-publication.md](docs/alpha-publication.md).
 
 The plugin currently provides:
 
@@ -31,7 +31,10 @@ There is no direct enhanced-core symbol dependency.
 Fresh installations leave both optional chart/depth controls unchecked.
 Users of an enhanced OpenCPN host can opt in; explicit choices made by
 existing users are preserved. The established `/PlugIns/WeatherRouting`
-settings and user-data layout remain unchanged.
+settings and user-data layout remain unchanged. Back up your routing files and
+disable standard WeatherRouting before enabling xWeatherRouting. These variants
+share routing settings/data; they are not isolated profiles and should not be
+enabled simultaneously. Use a separate OpenCPN profile for isolated testing.
 
 ## Building
 
@@ -73,10 +76,12 @@ Further architecture and validation details are in
 
 ## Status
 
-The package, library, catalogue and UI use the standard identity:
-`weather_routing_pi` / WeatherRouting. Cross-platform artifacts may be built
-for validation, but publishing or opening an upstream pull request is a
-separate release decision.
+The default build uses the standalone xWeatherRouting identity, including inside
+Docker and Flatpak. Explicitly setting `WEATHER_ROUTING_XWEATHER_IDENTITY=OFF`
+still permits standard-identity builds for integration validation; those packages
+are rejected by the standalone Alpha publisher. Build success is not evidence
+that every real-world passage will route successfully: please report reproducible
+failures with configuration, boat/polar files, GRIB and logs.
 
 ## Licence and acknowledgement
 

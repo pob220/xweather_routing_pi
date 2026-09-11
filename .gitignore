@@ -1,4 +1,5 @@
 cmake-build*
+__pycache__/
 .BATCH
 .build
 build/*

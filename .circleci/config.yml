@@ -1,7 +1,10 @@
 version: 2.1
 
-# Validation only. Publishing to an OpenCPN catalogue remains a separate,
-# explicitly approved operation and is intentionally absent from this file.
+# Match xGRIB's parameter-gated, approval-gated Alpha publication process.
+parameters:
+  run_workflow_deploy:
+    type: boolean
+    default: false
 
 orbs:
   win: circleci/windows@5.1.0
@@ -23,6 +26,9 @@ commands:
           path: test-results
       - store_artifacts:
           path: artifacts
+      - persist_to_workspace:
+          root: .
+          paths: [artifacts]
 
 jobs:
   linux-catalogue:
@@ -44,6 +50,9 @@ jobs:
     steps:
       - checkout
       - run: chmod a+x ci/*.sh
+      - run:
+          name: Test standalone publication guards
+          command: python3 -m unittest discover -s ci/tests -v
       - run:
           name: Stock-API tests, clean package and archive validation
           command: ci/circleci-build-ubuntu-docker.sh
@@ -103,6 +112,14 @@ jobs:
       - store_artifacts:
           path: build
           destination: windows-x86
+      - run:
+          name: Retain Windows release pair
+          command: |
+            mkdir -p artifacts/windows-x86/package
+            cp build/xweather_routing_pi-*.tar.gz build/xweather_routing_pi-*.xml artifacts/windows-x86/package/
+      - persist_to_workspace:
+          root: .
+          paths: [artifacts/windows-x86]
 
   macos-universal:
     macos:
@@ -124,11 +141,36 @@ jobs:
           path: artifacts/macos-arm64/tests
       - store_artifacts:
           path: artifacts/macos-arm64
+      - persist_to_workspace:
+          root: .
+          paths: [artifacts/macos-arm64]
+
+  deploy-alpha:
+    docker:
+      - image: cimg/python:3.13
+    resource_class: small
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install deployment client
+          command: python -m pip install --user cloudsmith-cli
+      - run:
+          name: Test publication guards
+          command: python3 -m unittest discover -s ci/tests -v
+      - run:
+          name: Upload reviewed xWeatherRouting Alpha artifacts
+          command: bash ci/deploy-alpha-artifacts.sh
+      - store_artifacts:
+          path: alpha-publication
 
 workflows:
   validate:
+    when:
+      not: << pipeline.parameters.run_workflow_deploy >>
     jobs:
-      - linux-catalogue:
+      - linux-catalogue: &trixie
           name: debian13-x86_64
           target: trixie
           image: debian:trixie
@@ -137,33 +179,33 @@ workflows:
               ignore: [devel, tmp]
             tags:
               ignore: /.*/
-      - linux-catalogue:
+      - linux-catalogue: &bookworm
           name: debian12-x86_64
           target: bookworm
           image: debian:bookworm
           filters: *validation-filters
-      - linux-catalogue:
+      - linux-catalogue: &jammy
           name: ubuntu22.04-x86_64
           target: jammy
           image: ubuntu:22.04
           dockerfile: ci/Dockerfile.jammy
           filters: *validation-filters
-      - linux-catalogue:
+      - linux-catalogue: &noble
           name: ubuntu24.04-x86_64
           target: noble
           image: ubuntu:24.04
           filters: *validation-filters
-      - linux-catalogue:
+      - linux-catalogue: &arm64
           name: debian12-arm64
           target: bookworm-arm64
           image: arm64v8/debian:bookworm
           resource_class: arm.medium
           filters: *validation-filters
-      - flatpak:
+      - flatpak: &flatpak-x86
           name: flatpak25.08-x86_64
           arch: x86_64
           filters: *validation-filters
-      - flatpak:
+      - flatpak: &flatpak-arm
           name: flatpak25.08-aarch64
           arch: aarch64
           resource_class: arm.medium
@@ -172,3 +214,33 @@ workflows:
           filters: *validation-filters
       - macos-universal:
           filters: *validation-filters
+
+  deploy_reviewed_alpha:
+    when: << pipeline.parameters.run_workflow_deploy >>
+    jobs:
+      - linux-catalogue: *trixie
+      - linux-catalogue: *bookworm
+      - linux-catalogue: *jammy
+      - linux-catalogue: *noble
+      - linux-catalogue: *arm64
+      - flatpak: *flatpak-x86
+      - flatpak: *flatpak-arm
+      - windows-x86:
+          filters: *validation-filters
+      - macos-universal:
+          filters: *validation-filters
+      - hold-for-alpha-approval:
+          type: approval
+          requires:
+            - debian13-x86_64
+            - debian12-x86_64
+            - ubuntu22.04-x86_64
+            - ubuntu24.04-x86_64
+            - debian12-arm64
+            - flatpak25.08-x86_64
+            - flatpak25.08-aarch64
+            - windows-x86
+            - macos-universal
+      - deploy-alpha:
+          context: xweather-routing-deployment
+          requires: [hold-for-alpha-approval]

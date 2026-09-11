@@ -32,14 +32,11 @@ set(CMLOC "CMakeLists: ")
 
 # Option to enable/disable testing
 option(OCPN_BUILD_TEST "Build plugin tests" OFF)
-set(_xweather_identity_default OFF)
-if("$ENV{CIRCLE_PROJECT_REPONAME}" STREQUAL "xweather_routing_pi")
-  set(_xweather_identity_default ON)
-endif()
+# This repository publishes the standalone variant. GitHub App CircleCI jobs
+# and nested Docker/Flatpak builds do not reliably expose the repository name.
 option(WEATHER_ROUTING_XWEATHER_IDENTITY
        "Build the separately installable xWeatherRouting variant"
-       ${_xweather_identity_default})
-unset(_xweather_identity_default)
+       ON)
 
 # define minimum cmake version
 cmake_minimum_required(VERSION 3.10)
@@ -121,8 +118,8 @@ else()
   set(PLUGIN_GIT_REPOSITORY "pob220/weather_routing_pi")
 endif()
 
-# Keep validation independent of the OpenCPN publishing repositories.  Alpha
-# publication remains a separate, explicitly approved later step.
+# The gated deployment job substitutes pob220/xweather-routing-alpha into
+# generated metadata. Ordinary validation never receives upload credentials.
 set(CLOUDSMITH_USER "opencpn")
 
 set(XML_INFO_URL "https://github.com/${PLUGIN_GIT_REPOSITORY}")
