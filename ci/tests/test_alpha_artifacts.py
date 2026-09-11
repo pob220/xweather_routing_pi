@@ -36,6 +36,7 @@ class AlphaArtifacts(unittest.TestCase):
         root = ET.Element("plugin", version="1")
         for key, text in {
             "name": plugin, "version": version, "api-version": "1.21",
+            "summary": " Upgraded weather routing with departure and arrival planning. ",
             "source": "https://github.com/pob220/xweather_routing_pi",
             "target": name, "target-version": "13", "target-arch": "x86_64",
             "tarball-url": "https://dl.cloudsmith.io/public/--pkg_repo--/raw/--name--",
@@ -47,6 +48,14 @@ class AlphaArtifacts(unittest.TestCase):
     def test_standalone_pair(self):
         directory, archive, _ = self.pair()
         self.assertEqual(prepare.inspect_pair(directory)[0], archive)
+
+    def test_reject_overlong_catalogue_summary(self):
+        directory, _, metadata = self.pair()
+        root = ET.parse(metadata)
+        root.find("summary").text = " " + "a" * 71 + " "
+        root.write(metadata)
+        with self.assertRaisesRegex(ValueError, "summary exceeds 72"):
+            prepare.inspect_pair(directory)
 
     def test_flatpak_pair(self):
         directory, _, _ = self.pair(flatpak=True)

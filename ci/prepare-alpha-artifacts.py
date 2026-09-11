@@ -46,6 +46,9 @@ def inspect_pair(directory):
     root = ET.parse(metadata).getroot()
     if root.tag != "plugin" or value(root, "name") != "xWeatherRouting":
         raise ValueError(f"Wrong plugin name: {metadata}")
+    value(root, "summary")
+    if len(root.findtext("summary")) > 72:
+        raise ValueError(f"Catalogue summary exceeds 72 characters: {metadata}")
     if value(root, "api-version") != "1.21":
         raise ValueError(f"Unexpected stock API requirement: {metadata}")
     if value(root, "source") != "https://github.com/pob220/xweather_routing_pi":

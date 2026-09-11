@@ -5,7 +5,8 @@ The optional hardened-OpenCPN planning-provider boundary is documented in
 Stock OpenCPN remains supported through the unchanged plug-in API 1.21.
 
 This repository builds the separately installable **xWeatherRouting** variant
-of Weather Routing 1.17.1, including the route-table lifetime fix. Its library
+of Weather Routing 1.17.2, including the route-table lifetime fix, Climatology
+wind-atlas initialisation and longitude-difference fixes. Its library
 and catalogue identity are `xweather_routing_pi` / `xWeatherRouting`; it does
 not replace the standard WeatherRouting package. Alpha publication status and
 the release process are documented in [docs/alpha-publication.md](docs/alpha-publication.md).

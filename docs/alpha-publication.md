@@ -7,7 +7,10 @@ xGRIB's repository, context contents/settings and packages are not changed.
 ## Status, 11 September 2026
 
 The official `OpenCPN/plugins` Alpha catalogue has no xWeatherRouting entry.
-The standalone source includes Weather Routing 1.17.1's route-table lifetime fix.
+The standalone source is now Weather Routing 1.17.2, including 1.17.1's
+route-table lifetime fix and the new Climatology wind-atlas initialisation and
+longitude-difference fixes. PR https://github.com/OpenCPN/plugins/pull/1406
+remains a draft until the final 1.17.2 downloads are verified.
 The earlier green CircleCI run at `9d55de5` is not release evidence for standalone
 packages: its Linux containers built the standard WeatherRouting identity.
 The default now selects xWeatherRouting without relying on CircleCI's legacy
@@ -27,6 +30,25 @@ Ubuntu 22.04's `ubuntu-wx32-x86_64` ABI), and Flatpak metadata must use
 `flatpak-<architecture>`, not `flatpak-32-<architecture>`. The same fixes are
 now applied to xWeatherRouting without editing xGRIB. Publication preflight
 rejects these legacy labels.
+
+The 1.17.1 publication workflow `de675612-bff2-46ae-bb57-339873b38f4d`
+passed all nine builds and its approval gate. Deploy job 353 attached the
+workspace and validated all nine pairs, but Cloudsmith rejected creation of
+the first raw package with HTTP 403. No package was published. The screenshots
+show identical repository access controls, but xGRIB is an Open-Source
+repository whereas xWeatherRouting was created as Public. Cloudsmith's Raw
+documentation excludes ordinary Core (Free) repositories; this is a likely
+plan/type restriction, not yet confirmed by a successful corrected upload.
+Do not broaden permissions, rotate xGRIB's key, or buy a plan as a workaround.
+The repository owner must check the Open-Source hosting settings in the web UI.
+
+References:
+- https://docs.cloudsmith.com/formats/raw-repository
+- https://docs.cloudsmith.com/resources/open-source-hosting-policy
+
+The catalogue summary is now within the schema's 72-character limit, including
+XML whitespace. Publication preflight includes a regression guard for this.
+The 1.17.2 binaries require fresh builds; do not retry publication of 1.17.1.
 
 ## Credentials and destinations
 
