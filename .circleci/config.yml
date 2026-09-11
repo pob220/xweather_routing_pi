@@ -35,6 +35,7 @@ jobs:
     parameters:
       target: {type: string}
       image: {type: string}
+      build_env: {type: string}
       dockerfile: {type: string, default: ci/Dockerfile.linux}
       resource_class: {type: string, default: medium}
     machine:
@@ -43,6 +44,7 @@ jobs:
     environment:
       OCPN_TARGET: << parameters.target >>
       DOCKER_IMAGE: << parameters.image >>
+      BUILD_ENV: << parameters.build_env >>
       DOCKERFILE: << parameters.dockerfile >>
       BUILD_GTK3: "true"
       WX_VER: "32"
@@ -174,6 +176,7 @@ workflows:
           name: debian13-x86_64
           target: trixie
           image: debian:trixie
+          build_env: debian
           filters: &validation-filters
             branches:
               ignore: [devel, tmp]
@@ -183,22 +186,26 @@ workflows:
           name: debian12-x86_64
           target: bookworm
           image: debian:bookworm
+          build_env: debian
           filters: *validation-filters
       - linux-catalogue: &jammy
           name: ubuntu22.04-x86_64
           target: jammy
           image: ubuntu:22.04
+          build_env: ubuntu
           dockerfile: ci/Dockerfile.jammy
           filters: *validation-filters
       - linux-catalogue: &noble
           name: ubuntu24.04-x86_64
           target: noble
           image: ubuntu:24.04
+          build_env: ubuntu
           filters: *validation-filters
       - linux-catalogue: &arm64
           name: debian12-arm64
           target: bookworm-arm64
           image: arm64v8/debian:bookworm
+          build_env: debian
           resource_class: arm.medium
           filters: *validation-filters
       - flatpak: &flatpak-x86

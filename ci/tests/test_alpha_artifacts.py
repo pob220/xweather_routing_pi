@@ -88,6 +88,23 @@ class AlphaArtifacts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "version mismatch"):
             prepare.inspect_pair(directory)
 
+    def test_reject_legacy_flatpak_target(self):
+        directory, _, metadata = self.pair()
+        root = ET.parse(metadata)
+        root.find("target").text = "flatpak-32-x86_64"
+        root.write(metadata)
+        with self.assertRaisesRegex(ValueError, "Flatpak catalogue target"):
+            prepare.inspect_pair(directory)
+
+    def test_reject_missing_jammy_wx_abi(self):
+        directory, _, metadata = self.pair()
+        root = ET.parse(metadata)
+        root.find("target").text = "ubuntu-x86_64"
+        root.find("target-version").text = "22.04"
+        root.write(metadata)
+        with self.assertRaisesRegex(ValueError, "wxWidgets ABI marker"):
+            prepare.inspect_pair(directory)
+
     def test_reject_path_traversal(self):
         directory, _, _ = self.pair(library="../../../libxweather_routing_pi.so")
         with self.assertRaisesRegex(ValueError, "Unsafe archive"):
