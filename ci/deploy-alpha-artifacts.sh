@@ -4,7 +4,7 @@ set -euo pipefail
 set +x
 
 if [[ -z "${CLOUDSMITH_API_KEY:-}" ]]; then
-  echo "CLOUDSMITH_API_KEY is not configured in xweather-routing-deployment." >&2
+  echo "CLOUDSMITH_API_KEY is not available from the shared deployment context." >&2
   exit 2
 fi
 

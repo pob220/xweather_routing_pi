@@ -242,5 +242,5 @@ workflows:
             - windows-x86
             - macos-universal
       - deploy-alpha:
-          context: xweather-routing-deployment
+          context: xgrib-deployment
           requires: [hold-for-alpha-approval]

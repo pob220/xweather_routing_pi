@@ -1,7 +1,8 @@
 # xWeatherRouting Alpha publication
 
-This follows xGRIB's documented, proven CircleCI/Cloudsmith procedure without
-changing xGRIB's repository, deployment context or packages.
+This follows xGRIB's documented, proven CircleCI/Cloudsmith procedure. With the
+owner's approval, the upload job reuses the existing `xgrib-deployment` context;
+xGRIB's repository, context contents/settings and packages are not changed.
 
 ## Status, 11 September 2026
 
@@ -23,11 +24,12 @@ Do not publish the Windows archive from `1e168fc`; require the corrected rerun.
 ## Credentials and destinations
 
 - Public Cloudsmith raw repository: `pob220/xweather-routing-alpha`.
-- CircleCI context in the existing project organisation:
-  `xweather-routing-deployment`, containing `CLOUDSMITH_API_KEY` scoped to upload
-  there. Do not copy credentials into source, commands, logs or issues.
-- Ordinary validation has no deployment context. Neither xGRIB's context nor
-  the standard Weather Routing publishing repository is changed.
+- Existing CircleCI context: `xgrib-deployment`, containing the working
+  `CLOUDSMITH_API_KEY`. The key must allow uploads to the new repository; this
+  must be verified during publication, not assumed. No secret retrieval or
+  rotation is required. Do not copy credentials into source, commands or logs.
+- Ordinary validation has no deployment context. Only the approval-gated upload
+  job accesses it. The destination is fixed to xWeatherRouting's own repository.
 - Do not change the CircleCI plan, add paid capacity, or bypass an approval gate.
 
 ## Procedure
@@ -44,7 +46,7 @@ Do not publish the Windows archive from `1e168fc`; require the corrected rerun.
    normal branch.
 3. The publication workflow rebuilds all nine targets and then pauses at
    `hold-for-alpha-approval`. Review the new results before approving it.
-4. `deploy-alpha` uses a shared workspace and the dedicated context. It checks
+4. `deploy-alpha` uses a shared workspace and the existing context. It checks
    all nine archive/XML pairs before uploading anything, rejecting wrong names,
    standard plugin libraries, incomplete matrices, mixed versions and ambiguous
    Flatpak metadata. It retains resolved XML, an upload manifest and SHA-256s.
