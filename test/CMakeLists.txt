@@ -15,6 +15,10 @@ message(STATUS "Downloading and building gtest from source (if required)")
 include(FetchContent)
 find_package(GTest 1.16 QUIET)
 if(NOT GTest_FOUND)
+    # GoogleTest is a build/test dependency, not part of a plugin installation.
+    # Windows runs CPack from its tested build tree; the upstream default would
+    # otherwise install GoogleTest DLLs, headers and CMake files into the tarball.
+    set(INSTALL_GTEST OFF CACHE BOOL "Do not package test dependencies" FORCE)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git

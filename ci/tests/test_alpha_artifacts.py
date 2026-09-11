@@ -21,15 +21,16 @@ class AlphaArtifacts(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def pair(self, name="trixie", plugin="xWeatherRouting", version="1.17.1.0",
-             library="libxweather_routing_pi.so", flatpak=False):
+             library="libxweather_routing_pi.so", flatpak=False, extras=()):
         directory = self.root / "artifacts" / name / "package"
         directory.mkdir(parents=True)
         archive = directory / f"xweather_routing_pi-{version}-{name}.tar.gz"
         with tarfile.open(archive, "w:gz") as out:
             data = b"fixture"
-            item = tarfile.TarInfo(f"plugin/lib/{library}")
-            item.size = len(data)
-            out.addfile(item, io.BytesIO(data))
+            for filename in (library, *extras):
+                item = tarfile.TarInfo(f"plugin/lib/{filename}")
+                item.size = len(data)
+                out.addfile(item, io.BytesIO(data))
         metadata = directory / (f"xweather_routing_pi-{version}-metadata-{name}.xml"
                                 if flatpak else archive.name[:-7] + ".xml")
         root = ET.Element("plugin", version="1")
@@ -59,6 +60,12 @@ class AlphaArtifacts(unittest.TestCase):
     def test_reject_standard_library(self):
         directory, _, _ = self.pair(library="libweather_routing_pi.so")
         with self.assertRaises(ValueError):
+            prepare.inspect_pair(directory)
+
+    def test_reject_windows_test_dependencies(self):
+        directory, _, _ = self.pair(library="xweather_routing_pi.dll",
+                                    extras=("gtest.dll", "gmock.dll"))
+        with self.assertRaisesRegex(ValueError, "test library included"):
             prepare.inspect_pair(directory)
 
     def test_reject_multiple_archives(self):

@@ -13,6 +13,13 @@ The default now selects xWeatherRouting without relying on CircleCI's legacy
 repository-name environment variable, and desktop archive checks handle both
 identities. Fresh hosted builds must pass before publication.
 
+All nine jobs passed at `1e168fc`, and downloaded artifacts confirmed the corrected
+standalone identity. However, full publication preflight rejected the Windows
+tarball: Google's default `INSTALL_GTEST=ON` had included test DLLs, headers and
+CMake package files. GoogleTest installation is now disabled for fetched test
+dependencies, with an explicit Windows archive guard and regression test.
+Do not publish the Windows archive from `1e168fc`; require the corrected rerun.
+
 ## Credentials and destinations
 
 - Public Cloudsmith raw repository: `pob220/xweather-routing-alpha`.

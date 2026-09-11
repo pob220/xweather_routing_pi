@@ -152,6 +152,11 @@ if not "%METADATA_COUNT%"=="1" (
 )
 for %%F in (%PLUGIN_PACKAGE%-*.tar.gz) do tar -tzf "%%F" > package-contents.txt
 if errorlevel 1 exit /b %errorlevel%
+findstr /i /c:"/gtest" /c:"/gmock" /c:"/libgtest" /c:"/libgmock" package-contents.txt >nul
+if not errorlevel 1 (
+  echo Package contains GoogleTest development files
+  exit /b 1
+)
 findstr /i /c:"plugins/%PLUGIN_PACKAGE%.dll" package-contents.txt >nul
 if errorlevel 1 (
   echo Package does not contain the WeatherRouting DLL
