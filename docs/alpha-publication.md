@@ -23,3 +23,14 @@ Linux/Flatpak ARM64 remain direct-testing downloads pending device validation.
 The deployment-default switch belongs only on this isolated branch. Do not
 merge it into the regular source branch. Installing catalogue entries in the
 official Alpha catalogue still requires maintainer review/merge of PR 1406.
+
+## Debian 13 bootstrap recovery
+
+Publication workflow e028b273-3360-4a51-8611-600b86c086dc built from 01877da7e4c0c7d414ef29ced0c443e00bab756a hit a Debian 13 HTTPS CA discovery failure before compilation.
+A disposable Debian 13 reproduction failed with the original configuration
+and succeeded with APT's documented explicit CAInfo path. TLS peer and host
+verification remain enabled. The recovery workflow rebuilds only Debian 13,
+verifies unchanged runtime/package sources against 01877da7e4c0c7d414ef29ced0c443e00bab756a, and collects the
+other eight exact successful 1.17.4 builds. Per-file revisions, workflows and
+checksums accompany deployment. The collector rejects failures or mismatched
+provenance and still pauses at a separate approval gate before uploading.
