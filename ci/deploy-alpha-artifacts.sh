@@ -4,12 +4,12 @@ set -euo pipefail
 set +x
 
 if [[ -z "${CLOUDSMITH_API_KEY:-}" ]]; then
-  echo "CLOUDSMITH_API_KEY is not configured in xweather-routing-deployment." >&2
+  echo "CLOUDSMITH_API_KEY is not available from the shared deployment context." >&2
   exit 2
 fi
 
 python3 ci/prepare-alpha-artifacts.py artifacts alpha-publication \
-  "$(git rev-parse HEAD)" "${CIRCLE_BUILD_NUM:?CircleCI build number required}"
+  "${XWEATHER_ARTIFACT_REVISION:-$(git rev-parse HEAD)}" "${CIRCLE_BUILD_NUM:?CircleCI build number required}"
 
 # Fixed destination: never deploy to xGRIB's repo or the standard WR repo.
 python3 - <<'PY'
@@ -23,6 +23,6 @@ for item in uploads:
         "cloudsmith", "push", "raw", "--republish", "--no-wait-for-sync",
         "--name", item["name"], "--version", item["version"],
         "--summary", "xWeatherRouting OpenCPN Alpha preview",
-        "pob220/xweather-routing-alpha", item["file"],
+        "pob220/xweather-routing-alpha-oss", item["file"],
     ], check=True)
 PY

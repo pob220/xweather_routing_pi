@@ -18,7 +18,7 @@ TARGETS = {
     "flatpak-x86_64", "flatpak-aarch64", "windows-x86", "macos-arm64",
 }
 PACKAGE = "xweather_routing_pi"
-REPOSITORY = "pob220/xweather-routing-alpha"
+REPOSITORY = "pob220/xweather-routing-alpha-oss"
 
 
 def value(root, field):
@@ -46,6 +46,9 @@ def inspect_pair(directory):
     root = ET.parse(metadata).getroot()
     if root.tag != "plugin" or value(root, "name") != "xWeatherRouting":
         raise ValueError(f"Wrong plugin name: {metadata}")
+    value(root, "summary")
+    if len(root.findtext("summary")) > 72:
+        raise ValueError(f"Catalogue summary exceeds 72 characters: {metadata}")
     if value(root, "api-version") != "1.21":
         raise ValueError(f"Unexpected stock API requirement: {metadata}")
     if value(root, "source") != "https://github.com/pob220/xweather_routing_pi":
@@ -56,6 +59,10 @@ def inspect_pair(directory):
     target = tuple(value(root, key) for key in ("target", "target-version", "target-arch"))
     if any(not re.fullmatch(r"[\w.+-]+", item) for item in target):
         raise ValueError(f"Invalid target: {target}")
+    if target[0].startswith("flatpak-") and target[0] not in {"flatpak-x86_64", "flatpak-aarch64"}:
+        raise ValueError(f"Invalid Flatpak catalogue target: {target[0]}")
+    if target[1] == "22.04" and target[0] != "ubuntu-wx32-x86_64":
+        raise ValueError(f"Missing Ubuntu 22.04 wxWidgets ABI marker: {target[0]}")
     library_names = {f"lib{PACKAGE}.so", f"lib{PACKAGE}.dylib", f"{PACKAGE}.dll"}
     with tarfile.open(archive, "r:gz") as package:
         members = package.getmembers()

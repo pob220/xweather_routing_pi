@@ -1,8 +1,11 @@
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# The CI wrapper supplies the runner's public CA bundle before the first APT
+# request. TLS verification stays enabled, including during bootstrap.
+COPY ubuntu-archive-ca.crt /etc/ssl/certs/ca-certificates.crt
+COPY apt-network.conf /etc/apt/apt.conf.d/80-ci-network
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list
 RUN printf '%s\n' \
     'deb [trusted=yes] https://ppa.launchpadcontent.net/opencpn/opencpn/ubuntu jammy main' \
     > /etc/apt/sources.list.d/opencpn.list
