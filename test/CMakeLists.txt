@@ -43,6 +43,7 @@ aui
 REQUIRED)
 
 set(TEST_SRC
+    RoutingProgressState_tests.cpp
     ProcessAddressSpace_tests.cpp
     AppendOnlyCache_tests.cpp
     ChartSafetyCache_tests.cpp
