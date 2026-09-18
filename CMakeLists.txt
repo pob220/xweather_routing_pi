@@ -85,7 +85,7 @@ else()
 endif()
 set(PACKAGE_CONTACT "Sean d'Epagnier; Weather Routing Plugin Team")
 set(SHORT_DESCRIPTION
-    "Advanced deterministic weather routing with departure and arrival planning.")
+    "Weather routing with Main/Quick engines and arrival planning.")
 set(LONG_DESCRIPTION
     "WeatherRouting offers Main and Quick engines with independent saved settings and explicit search presets. It computes land-aware sailing routes using deterministic forward isochrones, reverse recovery, graph fallback, concurrent departure optimisation, and planned-arrival routing. Stock OpenCPN uses GSHHS land checks; optional chart-backed safety is available only when the host provides it.")
 
