@@ -20,7 +20,7 @@ jobs:
           name: Validate complete publication matrix without uploading
           command: >-
             python3 ci/prepare-alpha-artifacts.py artifacts dry-publication
-            ac541342b73191e065ead7354f113d80aae3b7b0 "${CIRCLE_BUILD_NUM}"
+            60179c18c9d0cec2567408bac32e3e6efc7e6853 "${CIRCLE_BUILD_NUM}"
       - store_artifacts:
           path: dry-publication
       - persist_to_workspace:
@@ -32,7 +32,7 @@ jobs:
       - image: cimg/python:3.13
     resource_class: small
     environment:
-      XWEATHER_ARTIFACT_REVISION: "ac541342b73191e065ead7354f113d80aae3b7b0"
+      XWEATHER_ARTIFACT_REVISION: "60179c18c9d0cec2567408bac32e3e6efc7e6853"
     steps:
       - checkout
       - attach_workspace:

@@ -13,12 +13,12 @@ import time
 import urllib.request
 
 PROJECT = "circleci/K9DC7cYmiJNgi5mJSq9gdA/GBpPDRQdh2Wv6WHqtEcfyn"
-WORKFLOW = "03531061-68fa-4345-b646-2e96a8260d96"
-REVISION = "ac541342b73191e065ead7354f113d80aae3b7b0"
+WORKFLOW = "d929ccc4-3477-413c-8308-ff860b16c5ac"
+REVISION = "60179c18c9d0cec2567408bac32e3e6efc7e6853"
 JOBS = {
-    "trixie": 573, "bookworm": 572, "jammy": 578, "noble": 575,
-    "bookworm-arm64": 574, "flatpak-x86_64": 576,
-    "flatpak-aarch64": 571, "windows-x86": 577, "macos-arm64": 579,
+    "trixie": 587, "bookworm": 583, "jammy": 590, "noble": 585,
+    "bookworm-arm64": 586, "flatpak-x86_64": 588,
+    "flatpak-aarch64": 582, "windows-x86": 589, "macos-arm64": 584,
 }
 
 
