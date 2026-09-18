@@ -1,174 +1,58 @@
 version: 2.1
 
-# Validation only. Publishing to an OpenCPN catalogue remains a separate,
-# explicitly approved operation and is intentionally absent from this file.
-
-orbs:
-  win: circleci/windows@5.1.0
-
-commands:
-  retain-linux-artifacts:
-    steps:
-      - run:
-          name: Prepare retained evidence
-          when: always
-          command: |
-            rm -rf test-results
-            mkdir -p test-results
-            if test -d artifacts; then
-              find artifacts -type f -name '*ctest.xml' \
-                -exec cp -f '{}' test-results/ \;
-            fi
-      - store_test_results:
-          path: test-results
-      - store_artifacts:
-          path: artifacts
-
+# Deployment-only collection of the exact 1.17.3 artifacts. No build jobs.
+# Isolated publication branch: never merge this workflow into the source branch.
 jobs:
-  linux-catalogue:
-    parameters:
-      target: {type: string}
-      image: {type: string}
-      dockerfile: {type: string, default: ci/Dockerfile.linux}
-      resource_class: {type: string, default: medium}
-    machine:
-      image: ubuntu-2404:current
-    resource_class: << parameters.resource_class >>
-    environment:
-      OCPN_TARGET: << parameters.target >>
-      DOCKER_IMAGE: << parameters.image >>
-      DOCKERFILE: << parameters.dockerfile >>
-      BUILD_GTK3: "true"
-      WX_VER: "32"
-      CMAKE_BUILD_PARALLEL_LEVEL: "3"
-    steps:
-      - checkout
-      - run: chmod a+x ci/*.sh
-      - run:
-          name: Stock-API tests, clean package and archive validation
-          command: ci/circleci-build-ubuntu-docker.sh
-          no_output_timeout: 45m
-      - retain-linux-artifacts
-
-  flatpak:
-    parameters:
-      arch: {type: string}
-      resource_class: {type: string, default: medium}
-    machine:
-      image: ubuntu-2404:current
-    resource_class: << parameters.resource_class >>
-    environment:
-      OCPN_TARGET: flatpak
-      BUILD_ARCH: << parameters.arch >>
-      FLATPAK_BRANCH: stable
-      CLOUDSMITH_PKG_EXT: gz
-      SDK_VER: "25.08"
-      WX_VER: "32"
-    steps:
-      - checkout
-      - run: chmod a+x ci/*.sh
-      - run:
-          name: Flatpak build and package
-          command: ci/circleci-build-flatpak.sh
-          no_output_timeout: 45m
-      - run:
-          name: Retain Flatpak package
-          when: always
-          command: |
-            mkdir -p artifacts/flatpak-<< parameters.arch >>/package
-            find build -maxdepth 2 -type f \
-              \( -name '*.tar.gz' -o -name '*.xml' -o -name '*.log' \) \
-              -exec cp -f '{}' artifacts/flatpak-<< parameters.arch >>/package/ \; \
-              || true
-      - retain-linux-artifacts
-
-  windows-x86:
-    executor:
-      name: win/server-2022
-      shell: bash.exe
-    environment:
-      OCPN_TARGET: MSVC
-      MSVC_VERSION: "2022"
-      WX_VER: "32"
+  collect-reviewed-artifacts:
+    docker:
+      - image: cimg/python:3.13
+    resource_class: small
     steps:
       - checkout
       - run:
-          privileged: false
-          shell: cmd.exe
-          name: Native Windows build, tests and package
-          command: ci\circleci-build-msvc.bat
-          no_output_timeout: 45m
-      - store_test_results:
-          path: build/test-results
+          name: Test publication and provenance guards
+          command: python3 -m unittest discover -s ci/tests -v
+      - run:
+          name: Wait for and validate existing 1.17.3 builds
+          command: python3 ci/collect-reviewed-1.17.3.py artifacts
+          no_output_timeout: 50m
+      - run:
+          name: Validate complete publication matrix without uploading
+          command: >-
+            python3 ci/prepare-alpha-artifacts.py artifacts dry-publication
+            0f7f8a0db0682d468a2d93c933ea6eb8a37948fb "${CIRCLE_BUILD_NUM}"
       - store_artifacts:
-          path: build
-          destination: windows-x86
+          path: dry-publication
+      - persist_to_workspace:
+          root: .
+          paths: [artifacts]
 
-  macos-universal:
-    macos:
-      xcode: "16.4.0"
-    resource_class: m4pro.medium
+  deploy-alpha:
+    docker:
+      - image: cimg/python:3.13
+    resource_class: small
     environment:
-      OCPN_TARGET: macos
-      CMAKE_BUILD_PARALLEL_LEVEL: "3"
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      WX_VER: "32"
+      XWEATHER_ARTIFACT_REVISION: "0f7f8a0db0682d468a2d93c933ea6eb8a37948fb"
     steps:
       - checkout
-      - run: chmod a+x ci/*.sh cmake/*.sh
+      - attach_workspace:
+          at: .
       - run:
-          name: Native Apple-Silicon stock-API build, tests and package
-          command: ci/circleci-build-macos-universal.sh
-          no_output_timeout: 45m
-      - store_test_results:
-          path: artifacts/macos-arm64/tests
+          name: Install deployment client
+          command: python -m pip install --user cloudsmith-cli
+      - run:
+          name: Test publication guards
+          command: python3 -m unittest discover -s ci/tests -v
+      - run:
+          name: Upload reviewed 1.17.3 packages to Open-Source repository
+          command: bash ci/deploy-alpha-artifacts.sh
       - store_artifacts:
-          path: artifacts/macos-arm64
+          path: alpha-publication
 
 workflows:
-  validate:
+  publish-existing-1-17-3:
     jobs:
-      - linux-catalogue:
-          name: debian13-x86_64
-          target: trixie
-          image: debian:trixie
-          filters: &validation-filters
-            branches:
-              ignore: [devel, tmp]
-            tags:
-              ignore: /.*/
-      - linux-catalogue:
-          name: debian12-x86_64
-          target: bookworm
-          image: debian:bookworm
-          filters: *validation-filters
-      - linux-catalogue:
-          name: ubuntu22.04-x86_64
-          target: jammy
-          image: ubuntu:22.04
-          dockerfile: ci/Dockerfile.jammy
-          filters: *validation-filters
-      - linux-catalogue:
-          name: ubuntu24.04-x86_64
-          target: noble
-          image: ubuntu:24.04
-          filters: *validation-filters
-      - linux-catalogue:
-          name: debian12-arm64
-          target: bookworm-arm64
-          image: arm64v8/debian:bookworm
-          resource_class: arm.medium
-          filters: *validation-filters
-      - flatpak:
-          name: flatpak25.08-x86_64
-          arch: x86_64
-          filters: *validation-filters
-      - flatpak:
-          name: flatpak25.08-aarch64
-          arch: aarch64
-          resource_class: arm.medium
-          filters: *validation-filters
-      - windows-x86:
-          filters: *validation-filters
-      - macos-universal:
-          filters: *validation-filters
+      - collect-reviewed-artifacts
+      - deploy-alpha:
+          context: xgrib-deployment
+          requires: [collect-reviewed-artifacts]
