@@ -84,8 +84,16 @@ cmake --build "$build_package" --target package \
   2>&1 | tee "$log_dir/package.log"
 
 shopt -s nullglob
-archives=("$build_package"/weather_routing_pi-*.tar.gz)
-metadata_files=("$build_package"/weather_routing_pi-*.xml)
+package_name=weather_routing_pi
+plugin_name=WeatherRouting
+other_package_name=xweather_routing_pi
+if grep -q '^WEATHER_ROUTING_XWEATHER_IDENTITY:BOOL=ON$' "$build_package/CMakeCache.txt"; then
+  package_name=xweather_routing_pi
+  plugin_name=xWeatherRouting
+  other_package_name=weather_routing_pi
+fi
+archives=("$build_package"/"$package_name"-*.tar.gz)
+metadata_files=("$build_package"/"$package_name"-*.xml)
 test "${#archives[@]}" -eq 1
 test "${#metadata_files[@]}" -eq 1
 archive_source=${archives[0]}
@@ -97,19 +105,19 @@ cp -f "$archive_source" "$metadata_source" "$package_dir/"
 archive="$package_dir/$(basename "$archive_source")"
 metadata="$package_dir/$(basename "$metadata_source")"
 tar -tzf "$archive" >"$test_dir/archive-contents.txt"
-grep -q 'OpenCPN.app/Contents/PlugIns/libweather_routing_pi.dylib$' \
+grep -q "OpenCPN.app/Contents/PlugIns/lib${package_name}\\.dylib$" \
   "$test_dir/archive-contents.txt"
-grep -q 'OpenCPN.app/Contents/SharedSupport/plugins/weather_routing_pi/data/' \
+grep -q "OpenCPN.app/Contents/SharedSupport/plugins/${package_name}/data/" \
   "$test_dir/archive-contents.txt"
-if grep -Eqi 'libg(test|mock)|libxweather_routing_pi\.dylib|opencpn-xweather_routing_pi\.mo' \
+if grep -Eqi "libg(test|mock)|lib${other_package_name}\\.dylib|opencpn-${other_package_name}\\.mo" \
     "$test_dir/archive-contents.txt"; then
-  echo "Archive contains a test library or preview plugin identity" >&2
+  echo "Archive contains a test library or the other plugin identity" >&2
   exit 1
 fi
-grep -q '<name> WeatherRouting </name>' "$metadata"
+grep -q "<name> ${plugin_name} </name>" "$metadata"
 grep -q '<api-version> 1.21 </api-version>' "$metadata"
 grep -q '<target>darwin-wx32</target>' "$metadata"
-grep -q '<source> https://github.com/pob220/weather_routing_pi </source>' \
+grep -q "<source> https://github.com/pob220/${package_name} </source>" \
   "$metadata"
 
 package_version=$(sed -n \
