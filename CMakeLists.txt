@@ -32,10 +32,10 @@ set(CMLOC "CMakeLists: ")
 
 # Option to enable/disable testing
 option(OCPN_BUILD_TEST "Build plugin tests" OFF)
-set(_xweather_identity_default OFF)
-if("$ENV{CIRCLE_PROJECT_REPONAME}" STREQUAL "xweather_routing_pi")
-  set(_xweather_identity_default ON)
-endif()
+# This release branch is built in the dedicated xweather_routing_pi repository.
+# GitHub App CircleCI projects may not expose CIRCLE_PROJECT_REPONAME, so the
+# standalone catalogue identity must not depend on that legacy variable.
+set(_xweather_identity_default ON)
 option(WEATHER_ROUTING_XWEATHER_IDENTITY
        "Build the separately installable xWeatherRouting variant"
        ${_xweather_identity_default})
