@@ -122,7 +122,14 @@ if errorlevel 1 exit /b %errorlevel%
 if exist stage rmdir /s /q stage
 cmake --install . --config %CONFIGURATION% --prefix stage
 if errorlevel 1 exit /b %errorlevel%
-if not exist stage\plugins\weather_routing_pi.dll (
+set "PLUGIN_PACKAGE=weather_routing_pi"
+set "OTHER_PACKAGE=xweather_routing_pi"
+findstr /x /c:"WEATHER_ROUTING_XWEATHER_IDENTITY:BOOL=ON" CMakeCache.txt >nul
+if not errorlevel 1 (
+  set "PLUGIN_PACKAGE=xweather_routing_pi"
+  set "OTHER_PACKAGE=weather_routing_pi"
+)
+if not exist stage\plugins\%PLUGIN_PACKAGE%.dll (
   echo Staged WeatherRouting DLL is missing
   exit /b 1
 )
@@ -133,26 +140,31 @@ rem directly so packaging does not depend on a generated convenience project.
 cpack -G TGZ -C %CONFIGURATION% --config CPackConfig.cmake
 if errorlevel 1 exit /b %errorlevel%
 
-for /f %%C in ('dir /b /a:-d weather_routing_pi-*.tar.gz 2^>nul ^| find /c /v ""') do set "ARCHIVE_COUNT=%%C"
+for /f %%C in ('dir /b /a:-d %PLUGIN_PACKAGE%-*.tar.gz 2^>nul ^| find /c /v ""') do set "ARCHIVE_COUNT=%%C"
 if not "%ARCHIVE_COUNT%"=="1" (
   echo Expected exactly one WeatherRouting archive, found %ARCHIVE_COUNT%
   exit /b 1
 )
-for /f %%C in ('dir /b /a:-d weather_routing_pi-*.xml 2^>nul ^| find /c /v ""') do set "METADATA_COUNT=%%C"
+for /f %%C in ('dir /b /a:-d %PLUGIN_PACKAGE%-*.xml 2^>nul ^| find /c /v ""') do set "METADATA_COUNT=%%C"
 if not "%METADATA_COUNT%"=="1" (
   echo Expected exactly one WeatherRouting metadata file, found %METADATA_COUNT%
   exit /b 1
 )
-for %%F in (weather_routing_pi-*.tar.gz) do tar -tzf "%%F" > package-contents.txt
+for %%F in (%PLUGIN_PACKAGE%-*.tar.gz) do tar -tzf "%%F" > package-contents.txt
 if errorlevel 1 exit /b %errorlevel%
-findstr /i /c:"plugins/weather_routing_pi.dll" package-contents.txt >nul
+findstr /i /c:"/gtest" /c:"/gmock" /c:"/libgtest" /c:"/libgmock" package-contents.txt >nul
+if not errorlevel 1 (
+  echo Package contains GoogleTest development files
+  exit /b 1
+)
+findstr /i /c:"plugins/%PLUGIN_PACKAGE%.dll" package-contents.txt >nul
 if errorlevel 1 (
   echo Package does not contain the WeatherRouting DLL
   exit /b 1
 )
-findstr /i /c:"plugins/xweather_routing_pi.dll" package-contents.txt >nul
+findstr /i /c:"plugins/%OTHER_PACKAGE%.dll" package-contents.txt >nul
 if not errorlevel 1 (
-  echo Package contains the preview xWeatherRouting DLL identity
+  echo Package contains the other plugin DLL identity
   exit /b 1
 )
 
