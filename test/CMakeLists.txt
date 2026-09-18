@@ -15,6 +15,8 @@ message(STATUS "Downloading and building gtest from source (if required)")
 include(FetchContent)
 find_package(GTest 1.16 QUIET)
 if(NOT GTest_FOUND)
+    # GoogleTest is a test dependency and must not enter Windows plugin archives.
+    set(INSTALL_GTEST OFF CACHE BOOL "Do not package test dependencies" FORCE)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
