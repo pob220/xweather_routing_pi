@@ -91,7 +91,12 @@ set(LONG_DESCRIPTION
 
 set(VERSION_MAJOR "1")
 set(VERSION_MINOR "17")
-set(VERSION_PATCH "3")
+if(WEATHER_ROUTING_XWEATHER_IDENTITY)
+  set(VERSION_PATCH "3")
+else()
+  # The Alpha identity uses 1.17.3 for the same desktop 1.17.11 sources.
+  set(VERSION_PATCH "11")
+endif()
 set(VERSION_TWEAK "0")
 # Keep all five approved source archives for verification and regression tests.
 # Packages ship only Crude, Low and Intermediate; High and Full are optional
@@ -424,6 +429,8 @@ if (NOT OCPN_FLATPAK_CONFIG)
     add_subdirectory(opencpn-libs/WindowsHeaders)
     target_link_libraries(${PACKAGE_NAME} windows::headers)
   endif (WIN32)
+
+  include(cmake/Windows64.cmake)
 
   if(NOT OCPN_IN_TREE_SOURCE_DIR)
     get_filename_component(OCPN_IN_TREE_SOURCE_DIR
