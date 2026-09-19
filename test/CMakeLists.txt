@@ -166,7 +166,8 @@ set(TEST_SRC
            ocpn::jsonlib
    )
 
-   if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+   if(WIN32)
+     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
        # zlib1.lib is an import library. Keep its matching x86 DLL beside the
        # x86 test executable so GoogleTest discovery cannot select an
        # unrelated zlib1.dll from the executor PATH.
@@ -174,6 +175,10 @@ set(TEST_SRC
            COMMAND ${CMAKE_COMMAND} -E copy_if_different
                "${WEATHER_ROUTING_SOURCE_DIR}/opencpn-libs/zlib/win/zlib1.dll"
                "$<TARGET_FILE_DIR:weather_routing_pi_tests>"
+       )
+     endif()
+       # GoogleTest is shared by the plugin template on both architectures.
+       add_custom_command(TARGET weather_routing_pi_tests POST_BUILD
            COMMAND ${CMAKE_COMMAND} -E copy_if_different
                "$<TARGET_FILE:GTest::gtest>"
                "$<TARGET_FILE:GTest::gtest_main>"
