@@ -127,6 +127,30 @@ jobs:
       - store_artifacts:
           path: artifacts/macos-arm64
 
+  windows-x64:
+    executor:
+      name: win/server-2022
+      shell: bash.exe
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - windows64-wx328-v1-{{ checksum "ci/windows64-sdk.json" }}
+      - run:
+          privileged: false
+          shell: cmd.exe
+          name: Build and test xWeatherRouting and WeatherRouting for native x64 OpenCPN
+          command: ci\circleci-build-windows64.bat
+          no_output_timeout: 45m
+      - save_cache:
+          key: windows64-wx328-v1-{{ checksum "ci/windows64-sdk.json" }}
+          paths: [.windows64/cache]
+      - store_test_results:
+          path: test-results/windows-x64
+      - store_artifacts:
+          path: artifacts/windows-x64
+          destination: windows-x64
+
 workflows:
   validate:
     jobs:
@@ -176,6 +200,8 @@ workflows:
           resource_class: arm.medium
           filters: *validation-filters
       - windows-x86:
+          filters: *validation-filters
+      - windows-x64:
           filters: *validation-filters
       - macos-universal:
           filters: *validation-filters
