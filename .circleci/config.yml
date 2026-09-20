@@ -5,13 +5,15 @@ version: 2.1
 parameters:
   run_workflow_deploy:
     type: boolean
-    default: false
+    # This isolated branch publishes only after the matrix and approval gate.
+    default: true
   run_windows_only:
     type: boolean
     default: false
   build_xweather_identity:
     type: boolean
-    default: false
+    # GitHub App projects do not expose CIRCLE_PROJECT_REPONAME reliably.
+    default: true
 
 orbs:
   win: circleci/windows@5.1.0
