@@ -5,7 +5,9 @@ version: 2.1
 parameters:
   run_workflow_deploy:
     type: boolean
-    default: false
+    # This isolated publication branch intentionally enters the approved
+    # release workflow. Source/review branches keep this false.
+    default: true
   run_windows_only:
     type: boolean
     default: false
