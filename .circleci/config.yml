@@ -11,13 +11,13 @@ parameters:
     default: false
   build_xweather_identity:
     type: boolean
-    default: false
+    default: true
   recover_alpha_deploy:
     type: boolean
-    default: false
+    default: true
   recover_alpha_workflow_id:
     type: string
-    default: ""
+    default: "f8a748f0-2f7e-4872-93ae-a9843d0f4ccf"
 
 orbs:
   win: circleci/windows@5.1.0
