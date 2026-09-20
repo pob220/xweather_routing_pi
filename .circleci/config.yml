@@ -8,7 +8,7 @@ parameters:
     default: false
   run_windows_only:
     type: boolean
-    default: false
+    default: true
 
 orbs:
   win: circleci/windows@5.1.0
