@@ -385,8 +385,14 @@ endif ()
 message(STATUS "${CMLOC}PACKAGING_NAME: ${PACKAGING_NAME}")
 message(STATUS "${CMLOC}PACKAGING_NAME_XML: ${PACKAGING_NAME_XML}")
 
-set(PKG_TARGET_FULL
-    "${PKG_TARGET}${PKG_TARGET_GTK}${PKG_TARGET_WX_VER}${PKG_TARGET_ARCH}")
+# Flatpak catalogue targets identify the architecture, not the wxWidgets ABI.
+# WX_VER still selects the build ABI and remains part of package filenames.
+if (OCPN_FLATPAK_CONFIG OR OCPN_FLATPAK_BUILD)
+  set(PKG_TARGET_FULL "${PKG_TARGET}${PKG_TARGET_ARCH}")
+else ()
+  set(PKG_TARGET_FULL
+      "${PKG_TARGET}${PKG_TARGET_GTK}${PKG_TARGET_WX_VER}${PKG_TARGET_ARCH}")
+endif ()
 message(STATUS "${CMLOC}PKG_TARGET_FULL: ${PKG_TARGET_FULL}")
 message(STATUS "${CMLOC}PKG_BUILD_TARGET: ${PKG_BUILD_TARGET}")
 message(STATUS "${CMLOC}PKG_BUILD_GTK: ${PKG_TARGET_GTK}")
