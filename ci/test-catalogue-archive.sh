@@ -30,8 +30,8 @@ if nm -D --undefined-only "$plugin" |
   exit 1
 fi
 if nm -D --undefined-only "$plugin" | c++filt |
-    grep -F 'typeinfo for HostApi122'; then
-  echo "Plugin requires API 1.22 RTTI and cannot load on an API 1.21 host" >&2
+    grep -F 'typeinfo for HostApi123'; then
+  echo "Plugin has a direct dependency on optional HostApi123 RTTI" >&2
   exit 1
 fi
 
@@ -41,5 +41,5 @@ mapfile -t metadata < <(
 )
 test "${#metadata[@]}" -eq 1
 grep -q '<name> xWeatherRouting </name>' "${metadata[0]}"
-grep -q '<api-version> 1.21 </api-version>' "${metadata[0]}"
+grep -q '<api-version> 1.22 </api-version>' "${metadata[0]}"
 echo "Catalogue archive and stock-host ABI contract validated: $archive"

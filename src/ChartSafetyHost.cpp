@@ -29,7 +29,7 @@ namespace {
 
 struct HostFunctions {
   std::unique_ptr<HostApi> owner;
-  HostApi122* api{nullptr};
+  HostApi123* api{nullptr};
   std::string plugin_name;
   bool available{false};
   bool registered{false};
@@ -281,7 +281,7 @@ bool Initialize(ChartSafetyCache* cache, const std::string& plugin_name) {
 #ifdef XWEATHER_ROUTING_TEST_HOST_STUB
   g_host.api = nullptr;
 #else
-  g_host.api = dynamic_cast<HostApi122*>(g_host.owner.get());
+  g_host.api = dynamic_cast<HostApi123*>(g_host.owner.get());
 #endif
   g_host.plugin_name = plugin_name;
   g_host.available = cache && g_host.api && !plugin_name.empty();

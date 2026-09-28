@@ -90,7 +90,7 @@ extern "C" DECL_EXP void destroy_pi(opencpn_plugin* p) { delete p; }
 #include "ExternalPlanningProvider.h"
 
 weather_routing_pi::weather_routing_pi(void* ppimgr)
-    : opencpn_plugin_121(ppimgr) {
+    : opencpn_plugin_122(ppimgr) {
   // Create the PlugIn icons
   initialize_images();
 

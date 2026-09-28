@@ -79,13 +79,13 @@ set(VERSION_MINOR "1")
 set(VERSION_PATCH "0")
 set(VERSION_TWEAK "0")
 set(VERSION_DATE  "30/07/2026") # DD/MM/YYYY format
-set(OCPN_MIN_VERSION "ov511")
+set(OCPN_MIN_VERSION "ov514")
 
 set(OCPN_API_VERSION_MAJOR "1")
-set(OCPN_API_VERSION_MINOR "21")
+set(OCPN_API_VERSION_MINOR "22")
 # Compile against the open development API for optional chart-safety feature
-# detection while retaining API 1.21 as the plugin's loadable minimum.
-set(OCPN_HEADER_API_VERSION_MINOR "22")
+# detection while requiring published API 1.22 for its parent interface RTTI.
+set(OCPN_HEADER_API_VERSION_MINOR "23")
 set(TP_COMMENT "  * Release using CI")
 
 set(PARENT "opencpn")
