@@ -107,7 +107,7 @@ if grep -Eqi 'libg(test|mock)|libweather_routing_pi\.dylib|opencpn-weather_routi
   exit 1
 fi
 grep -q '<name> xWeatherRouting </name>' "$metadata"
-grep -q '<api-version> 1.21 </api-version>' "$metadata"
+grep -q '<api-version> 1.22 </api-version>' "$metadata"
 grep -q '<target>darwin-wx32</target>' "$metadata"
 grep -q '<source> https://github.com/pob220/xweather_routing_pi </source>' \
   "$metadata"
