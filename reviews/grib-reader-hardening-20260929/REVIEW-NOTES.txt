@@ -1,0 +1,260 @@
+GRIB READER AND RECORD HARDENING - REVIEW CANDIDATE
+29 September 2026
+
+STATUS AND SCOPE
+These are separate review sources. No production plugin, installed package,
+active PR, catalogue, release or OpenCPN installation has been changed.
+The earlier qualified GribRecord.cpp/.h pair is included byte-for-byte.
+The additional work fixes the parsers and their ownership/file-reading path.
+This package is suitable for source review; it is not an assertion that no
+possible bug remains, or permission to incorporate it without acceptance tests.
+
+START HERE
+revised/ contains all 13 matching source files in one folder.
+12 files are changed or new; GribVectorPolicy.h is included unchanged to match
+its revised implementation. reader/ and candidate/ are the same files arranged
+for the standalone build. SHA256SUMS verifies every file in this package.
+
+FILE MAP
+GribRecord.cpp / GribRecord.h:
+  Shared record ownership, bitmap bounds and interpolation implementation.
+  This is the unchanged pair qualified on 28 September. Its original patch
+  is against the exact Weather Routing baseline. Private helper functions
+  add no fields or virtual functions; 56 field offsets were checked on five
+  compiler ABIs. See prior-record-results/ for the earlier qualification.
+GribV1Record.cpp / GribV1Record.h:
+  GRIB1 section bounds, bitmap/payload validation, safe grid allocation,
+  constant fields, packed widths, exception-safe copies and faster decoding.
+GribV2Record.cpp / GribV2Record.h:
+  GRIB2 message/section/template validation, bounded packed decoding,
+  bitmap reuse, ownership/continuation handling and JPEG wrapper checks.
+GribReader.cpp / GribReader.h:
+  Safe unopened destruction, allocation-failure ownership, file cleanup,
+  cumulative retained-record budget and an explicit resource-limit status.
+zuFile.cpp / zuFile.h:
+  Compression/file-handle cleanup, read/seek error contracts, bounded
+  offsets, negative relative compressed seeks and Unicode-safe opening.
+GribDecodeLimits.h:
+  NEW shared, compile-time-overridable resource limits and bit primitives.
+GribVectorPolicy.cpp / GribVectorPolicy.h:
+  xGRIB-specific current-vector validation; guards invalid geometry and
+  traverses contiguous rows. This extension is not required by stock GRIB.
+
+WHERE THE FILES BELONG
+Weather Routing normally contains only the shared GribRecord pair. The
+additional reader, GRIB1/GRIB2 and compressed-file sources belong in the GRIB
+provider: xGRIB or OpenCPN's bundled GRIB plugin. Do not add all these files
+blindly to Weather Routing's build.
+
+The reader patch is against the exact xGRIB source snapshot in baseline-reader/.
+Provider checkouts differ: xGRIB has Unicode opening, exposed GRIB2 metadata
+helpers and additional wave/current handling. Merge the relevant changes into
+other providers and preserve their own extensions. Rebuild each provider with
+its matching headers and sources. GribReader's private layout changes and its
+owning copy operations are deleted; this requires rebuilding users of that
+class. Changing only a header or mixing old/new binary class layouts is unsafe.
+
+PATCHES
+reader-hardening-xgrib-baseline.patch:
+  Paths a/src/... and b/src/...; includes the new GribDecodeLimits.h.
+  Against the INCLUDED xGRIB baseline, use patch -p1 from its repository root.
+GribRecord-weather-routing-baseline.patch:
+  Paths a/GribRecord.cpp and a/GribRecord.h. A flat staging directory with
+  the included GribRecord.before.cpp/.h renamed is the exact baseline.
+  Weather Routing uses src/ for cpp and include/ for h; merge accordingly.
+Both patches were applied to disposable copies and the results compared
+byte-for-byte with the final sources. Review differences before applying to
+another checkout; there is deliberately no automatic installation script.
+
+PRINCIPAL FIXES
+- A 16-byte GRIB2 reproducer caused a real heap over-read in the old IDS parser.
+  The final reader rejects it before template access. The original 1298-byte
+  crash also replays cleanly; its valid GRIB1 prefix remains usable, preserving
+  the reader's prefix semantics.
+- GRIB2 validates whole-message framing, section progress/order/end marker and
+  template lengths before field access. Legal repeated field sections remain
+  supported. Header lengths use unsigned arithmetic, avoiding signed shifts.
+- Message data is read incrementally before the final buffer is allocated;
+  tiny truncated input cannot force the entire advertised message allocation.
+- Grid products, bitmap population, packed bit capacity, complex group widths,
+  lengths and sums are validated before decoding. Boundary validation allows
+  unchecked bit extraction inside the proven valid loop. Unaligned 32-bit
+  extraction reads its fifth byte correctly from padded input.
+- Explicit/reused bitmaps handle missing cells and padding correctly; a 255
+  unmasked field does not erase the preceding bitmap needed by a later 254.
+- GRIB2 copies own independent data and never implicitly share parser state.
+  Only explicit next-dataset transfer moves continuation state; discipline and
+  forecast metadata are preserved. Buffers are cleared after release.
+- IEEE values preserve signed zero/subnormals; non-finite cells become the
+  canonical missing marker. Spatial differences avoid signed overflow and
+  unnecessary float rounding. Column-adjacent data becomes row-major output.
+- GRIB1 checks section extents before reads/seeks, bitmap extent/predefined
+  masks, widths up to 32, scale validity and packed capacity. Width-zero
+  constants and valid 0..15-bit GRIB1 bitmap padding are supported. The complex
+  packing flag is checked correctly. Invalid dimensions cannot allocate grids.
+- Owning records, synthetic fields and files are cleaned up if C++ allocation
+  fails. Rejected budget insertions remain owned, set failure status and stop
+  retries so fallback compression paths do not duplicate a valid prefix.
+- Compressed read failures return -1 without corrupting logical position.
+  Negative BZIP relative seeks rewind and move forward safely; forward seeks
+  stop on error or no progress. Filename/handle ownership covers failed opens.
+- JPEG SOC/SIZ geometry, single-component layout, precision, tile geometry and
+  tile count are bounded before invoking the codec. Output dimensions/capacity
+  are checked before copying and all codec wrapper allocations use RAII.
+
+RESOURCE POLICY - EXPLICIT LIMITS, NOT TOTAL PROCESS RAM GUARANTEES
+Defaults, override consistently across translation units:
+  GRIB_MAX_MESSAGE_BYTES       128 MiB encoded message
+  GRIB_MAX_GRID_POINTS         16,777,216 points (128 MiB doubles per field)
+  GRIB_MAX_READER_BYTES        512 MiB estimated retained records
+  GRIB_MAX_HEADER_SCAN_BYTES   1 MiB padding/junk before the next header
+
+The retained estimate includes a double field, worst-case bitmap, derived
+record object and 512 bytes of metadata allowance per record. It is a
+conservative policy estimate, not measurement of every allocator/map/string.
+Transient message buffers, copies, codec workspace, application caches and
+sanitizer quarantine are additional. This is not a 512 MiB process RSS limit.
+The embedded host can choose smaller limits for constrained Android devices
+and should explain isResourceLimitExceeded() in its UI. Ordinary allocation
+failure remains exception-safe. No automatic downsampling or RAM detector was
+introduced into these review files. Large inputs beyond limits are rejected.
+Files larger than representable legacy offsets are rejected; this does not
+claim unlimited >4 GiB GRIB1 or 32-bit long-offset support.
+
+PERFORMANCE - VALIDATE ON YOUR OWN REPRESENTATIVE FILES TOO
+Six 512x128 full-reader workloads, nine alternating trials, 1500 full reads per
+trial, CPU affinity 19, uninstrumented optimized binaries. Both baseline and
+candidate use the SAME hardened record pair, isolating parser overhead.
+All checksums match; median candidate/baseline elapsed ratios:
+  GRIB1 simple, dense     0.670  (~33% less elapsed time)
+  GRIB1 simple, bitmap    0.820  (~18%)
+  GRIB2 simple, dense     0.917  (~8%)
+  GRIB2 simple, bitmap    0.945  (~6%)
+  GRIB2 complex, dense    0.917  (~8%)
+  GRIB2 complex, bitmap   0.975  (~2%; small enough to be noise-sensitive)
+
+GRIB1 caches immutable scales and decodes contiguous rows, with an aligned
+16-bit fast path and exact unit-divisor specialization. GRIB2 complex decode
+avoids an extra conversion pass where spatial differencing is absent. There
+are no new locks, general-purpose per-cell checked wrappers or extra owning
+copies in those hot paths. These are six measured workloads, not a guarantee
+for all packing types, machines or files. JPEG was compiled out of these
+benchmarks; the final JPEG compatibility checks do not change these paths.
+The earlier record-only ten-workload results are preserved separately.
+
+FINAL QUALIFICATION
+See FINAL-RESULTS.json/.txt and results/ for the exact logs and hashes.
+- Native Clang 22.1.8, wxWidgets 3.2.11, ecCodes 2.47.0, JasPer 4.2.9.
+  All 26 tests pass with ASan/LSan/UBSan, unsigned-overflow and float-cast
+  checks in the deterministic targets. Reader libFuzzer uses ASan/UBSan.
+- 28 ecCodes comparison fixtures: 24 packing/bitmap/constant combinations
+  plus four independent column-order cases. GRIB1 simple; GRIB2 simple,
+  complex, spatial differences, IEEE64 and JPEG. Every decoded/missing cell
+  matches reference values within the test tolerance. Non-JPEG platforms
+  compare 24 fixtures; codec-enabled platforms compare all 28.
+- 3755+ malformed/truncated cases; packed width/alignment combinations;
+  repeated field sections and bitmap reuse; plain/gzip/bzip reads/seeks;
+  copying and 109 C++ allocation-failure positions across three files.
+- 16 KiB retained-budget test rejects the third field, preserves ownership
+  of the first two and reports the resource limit without fallback duplicates.
+- Samsung SM-X210, Android 15: standalone HWASan and full static UBSan,
+  allocation/copy/malformed/compression/numerical cases and frozen corpus
+  replay (1285 cases under each runtime). No app/plugin was installed or edited.
+- Additional Android legacy JasPer 1.900.1 wrapper test: all 28 numerical
+  fixtures and malformed suite pass under HWASan without jas_init(). This
+  verifies compatibility with the old host's direct decoder entry point.
+- 32-bit Linux GCC ASan/UBSan: same non-JPEG groups and 24 numerical fixtures.
+- Valgrind 3.19: copies, malformed and compressed groups, zero errors and
+  zero blocks at exit. No suppressions. A system wx/glibc AVX2 shutdown report
+  was reproduced in an empty wx-linked main; the final run disables that glibc
+  SIMD path with GLIBC_TUNABLES, as recorded in results/.
+- C++11 static analysis: no memory findings, three existing dead-store warnings.
+  zuFile.h also compiles as a C11 interface.
+
+FUZZ CAMPAIGN NOTES
+Several iterative 5/10-minute campaigns ran while defects, budgets and decode
+paths were corrected. They are not represented as a 24-hour campaign on one
+unchanged source. The final exact reader source has a separate 301-second
+campaign; its run count and peak RSS are in FINAL-RESULTS.json and its log.
+One earlier five-second timeout input completed on replay (about one second
+on the final run), without sanitizer findings. It creates a large constant
+field and the harness additionally copies/interpolates it. The final run
+uses a 20-second per-input timeout and completes cleanly. Preserve that input
+as a resource-policy regression; it is not dismissed as proof of no CPU risk.
+The unchanged record pair retains its earlier 14,735,137-input/601-second run.
+
+JPEG DEPENDENCY AND REMAINING ACCEPTANCE WORK
+JasPer itself was not modified or comprehensively sanitized/fuzzed here. The
+system JasPer and the legacy Android codec are external, uninstrumented
+libraries in these tests. Sanitized wrappers and correct fixture output do
+not certify those codecs. The bundled 1.900.1 is old: use a maintained/pinned
+codec before claiming a secure full file-to-display pipeline. Modern JasPer
+requires the embedding application's normal library/thread initialization;
+legacy 1.900.1 retains its historical direct jpc_decode entry point.
+
+Before production incorporation: review source/provider differences, run a
+24-48 hour exact-source campaign and a broader real-world GRIB corpus, rebuild
+all hosts/providers and test live plugin integration. Native MSVC and macOS
+acceptance of these additional readers is not completed. The earlier Windows
+Wine tests and five-ABI layout results apply to the shared record pair only.
+Unsupported projections, reduced grids and alternating row scans were not
+redesigned or certified. External concurrent mutation still needs host
+synchronization. getValue/setValue remain unchecked valid-index hot accessors;
+producers must maintain valid buffers/dimensions, as the hardened readers do.
+
+BUILD AND REPEAT
+Linux dependencies: C++17 test compiler, CMake, wxWidgets dev (base/core), zlib,
+bzip2, ecCodes and optional JasPer development packages. Production sources
+remain C++11; C++17 is used by the standalone tests. Example from this folder:
+  bash qualification/run-native.sh
+Optional no JPEG build:
+  GRIB_TEST_JASPER=OFF bash qualification/run-native.sh
+24-hour reader campaign (requires a machine with adequate sanitizer memory):
+  GRIB_READER_FUZZ_SECONDS=86400 bash qualification/run-native.sh
+Optional record campaign:
+  GRIB_RECORD_FUZZ_SECONDS=86400 bash qualification/run-native.sh
+Performance comparison:
+  bash qualification/build-reader-benchmarks.sh
+  (Optionally pass --cpu N for an allowed CPU affinity.)
+
+Included fixtures and sidecars avoid needing generation for ordinary tests.
+To regenerate packing fixtures: compile qualification/GenerateFixtures.cpp
+with -leccodes; run with reader-fixtures, or performance-fixtures plus a second
+argument for larger performance fields. Then compile/run GenerateScanFixtures.cpp
+with -leccodes and reader-fixtures to add column-order reference fixtures.
+
+Android standalone build requires a BUILT OpenCPN Android checkout with its
+matching wxQt, Qt headers, bzip2 and JasPer archives, plus NDK r26b:
+  ANDROID_CORE_ROOT=/path/to/OpenCPN-android \
+  ANDROID_NDK_ROOT=/path/to/ndk/26.1.10909125 \
+  bash qualification/build-android-reader.sh
+The script builds standalone arm64/API34 executables only; it does not install
+anything. Push them, libc++_shared.so, reader-fixtures and reader-corpus-android
+into /data/local/tmp/<your-review-folder>; chmod the executables and set
+LD_LIBRARY_PATH to that folder. Invoke tests with 'reader-fixtures copies',
+'allocations', 'malformed', 'compressed' and 'numeric <fixture paths>'. Invoke
+the budget binary with 'reader-fixtures budget'; invoke corpus binaries with
+'reader-corpus-android'. Test all numeric paths except *grid_jpeg* in non-codec
+binaries. The legacy-jpeg binary can test all paths.
+
+NDK r26b shared UBSan's vptr runtime has a reproduced toolchain false positive
+with valid wx RTTI. Android HWASan therefore disables only vptr, while the
+separate static UBSan binary retains full vptr checks. The previous pair's
+standalone detector controls and probe logs are included for this distinction.
+The AndroidConsoleTraits shim resolves an unused GUI/event-loop hook for the
+console harness; it is not a change to plugin or OpenCPN GUI code.
+
+PRIMARY FORMAT/TOOL REFERENCES
+https://codes.ecmwf.int/grib/format/grib2/overview/
+https://codes.ecmwf.int/grib/format/grib2/sections/1/
+https://codes.ecmwf.int/grib/format/grib2/sections/6/
+https://codes.ecmwf.int/grib/format/grib2/templates/5/2/
+https://codes.ecmwf.int/grib/format/grib2/templates/5/3/
+https://codes.ecmwf.int/grib/format/grib2/templates/7/3/
+https://codes.ecmwf.int/grib/format/grib1/sections/4/
+https://codes.ecmwf.int/grib/format/grib2/ftables/3/4/
+https://github.com/jasper-software/jasper
+https://clang.llvm.org/docs/AddressSanitizer.html
+https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
+https://llvm.org/docs/LibFuzzer.html
+https://developer.android.com/ndk/guides/hwasan

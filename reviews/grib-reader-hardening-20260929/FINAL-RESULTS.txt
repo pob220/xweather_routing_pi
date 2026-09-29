@@ -1,0 +1,37 @@
+GRIB READER/RECORD REVIEW RESULTS - 29 SEPTEMBER 2026
+
+Review sources only. No plugin, OpenCPN installation, PR or release changed.
+All 16 production source files checked remain byte-identical to baseline.
+
+Included: 13 matching files in revised/, 12 changed/new. The previously
+qualified GribRecord.cpp/.h pair is unchanged. Extra GRIB1/GRIB2, reader and
+file-handling fixes belong in the GRIB provider, not all in Weather Routing.
+
+Passed on the final reader sources:
+- 26 native sanitizer tests; 28 ecCodes numerical fixtures with JPEG,
+  or 24 without JPEG, including four independent column-order cases.
+- 3755+ malformed/truncation cases, packed bit widths/alignment, bitmap reuse,
+  independent copies, compression/seek checks and 109 allocation-failure
+  positions across three fixture files.
+- Explicit 16 KiB retained-budget rejection/status/ownership test.
+- Final reader fuzz campaign: 51,946 inputs / 301 seconds, no findings.
+- Both original memory-error reproducers replay cleanly; earlier five-second
+  timeout input also finishes cleanly with the final 20-second timeout.
+- Attached Android tablet: HWASan/full static UBSan groups and 1285-case corpus
+  replay under both runtimes. Legacy JPEG wrapper works without new init calls.
+- 32-bit Linux ASan/UBSan; Valgrind zero errors and zero blocks at exit.
+- C++11 static analysis: no memory findings; three existing dead stores.
+- Both patches apply to included baselines and reconstruct final sources.
+
+Performance: all six measured full-reader median timings lower, with matching
+checksums. GRIB1 ~18-33% less elapsed time; GRIB2 ~2-8% (the 2% result is
+noise-sensitive). These results do not guarantee speed for every input.
+The record pair retains its earlier 14.7M-input qualification and ten-workload
+performance improvements; see prior-record-results/.
+
+Read REVIEW-NOTES.txt before incorporation. Remaining work includes a longer
+exact-source campaign, broader real GRIB corpus, native Windows/macOS reader
+acceptance and live plugin integration. External JasPer libraries were not
+hardened or comprehensively instrumented; update the old bundled codec before
+making a full-pipeline security claim. This is a tested review candidate,
+not proof that no possible bug remains.

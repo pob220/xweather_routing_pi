@@ -1,0 +1,14 @@
+patching file src/GribDecodeLimits.h
+patching file src/GribReader.cpp
+patching file src/GribReader.h
+patching file src/GribV1Record.cpp
+patching file src/GribV1Record.h
+patching file src/GribV2Record.cpp
+patching file src/GribV2Record.h
+patching file src/GribVectorPolicy.cpp
+patching file src/zuFile.cpp
+patching file src/zuFile.h
+PASS reader patch reconstructs all 11 matching reader files
+patching file GribRecord.cpp
+patching file GribRecord.h
+PASS record patch reconstructs the qualified pair

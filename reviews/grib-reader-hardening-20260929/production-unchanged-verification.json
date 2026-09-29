@@ -1,0 +1,70 @@
+{
+  "record_pair": {
+    "plugins/weather_routing_pi/src/GribRecord.cpp": {
+      "expected": "1abe5e69d215b2b79951d77f5d767a196c9bbb49dcf243790be75c65db3500c9",
+      "actual": "1abe5e69d215b2b79951d77f5d767a196c9bbb49dcf243790be75c65db3500c9"
+    },
+    "plugins/weather_routing_pi/include/GribRecord.h": {
+      "expected": "658eb9ac82a04e294bec97f63f7e9e6676a785d2174cd9475cc6b7f71ef981be",
+      "actual": "658eb9ac82a04e294bec97f63f7e9e6676a785d2174cd9475cc6b7f71ef981be"
+    },
+    "plugins/xgrib_pi/src/GribRecord.cpp": {
+      "expected": "a96012c2f4f7f4c320c03c5ae03c761ade511795fe97f3892411e721036fe05f",
+      "actual": "a96012c2f4f7f4c320c03c5ae03c761ade511795fe97f3892411e721036fe05f"
+    },
+    "plugins/xgrib_pi/src/GribRecord.h": {
+      "expected": "202a169cb5aefc38f655d434214a53c00485a8092011829d2a37d8889a8bf722",
+      "actual": "202a169cb5aefc38f655d434214a53c00485a8092011829d2a37d8889a8bf722"
+    },
+    "/home/paul/src/OpenCPN-runtime-host-plugin/plugins/grib_pi/src/GribRecord.cpp": {
+      "expected": "6fb9968b669a7834f992424c56cfe18393fd498fb0571f9b7016dea4f8225897",
+      "actual": "6fb9968b669a7834f992424c56cfe18393fd498fb0571f9b7016dea4f8225897"
+    },
+    "/home/paul/src/OpenCPN-runtime-host-plugin/plugins/grib_pi/src/GribRecord.h": {
+      "expected": "9860f3d2c2063a545e0a3d071e3ac2af0f61f857dc39ae53ee47414d755a3473",
+      "actual": "9860f3d2c2063a545e0a3d071e3ac2af0f61f857dc39ae53ee47414d755a3473"
+    }
+  },
+  "xgrib_reader": {
+    "zuFile.h": {
+      "production_sha256": "29d3fde43c0279e987bb8d91695cfc1477f3673be5dbb11a2f9e16b0041c5ab7",
+      "baseline_sha256": "29d3fde43c0279e987bb8d91695cfc1477f3673be5dbb11a2f9e16b0041c5ab7"
+    },
+    "GribReader.h": {
+      "production_sha256": "6716fd62c70b71a3c8016553cc64471d634bec6caaa691f0f51db8487e96b0f1",
+      "baseline_sha256": "6716fd62c70b71a3c8016553cc64471d634bec6caaa691f0f51db8487e96b0f1"
+    },
+    "GribV1Record.h": {
+      "production_sha256": "5a84a1b812194a5b2e56813988fd967679e9f6280238dafae1aa6fc8f3001997",
+      "baseline_sha256": "5a84a1b812194a5b2e56813988fd967679e9f6280238dafae1aa6fc8f3001997"
+    },
+    "GribVectorPolicy.cpp": {
+      "production_sha256": "a6386ba7f68b21fab1ad4de6c363b0b2d5db26f86576dfb4dd62ee8a36ecc051",
+      "baseline_sha256": "a6386ba7f68b21fab1ad4de6c363b0b2d5db26f86576dfb4dd62ee8a36ecc051"
+    },
+    "GribV2Record.h": {
+      "production_sha256": "1f264701c3bb58ecd2ecd6f08c42c260847042298663ab0bfaacaaa9b4e82d24",
+      "baseline_sha256": "1f264701c3bb58ecd2ecd6f08c42c260847042298663ab0bfaacaaa9b4e82d24"
+    },
+    "GribV2Record.cpp": {
+      "production_sha256": "830b2dfb930135dd8bede39995594ef93a2d15bda96567bca1ec3304f53df3fa",
+      "baseline_sha256": "830b2dfb930135dd8bede39995594ef93a2d15bda96567bca1ec3304f53df3fa"
+    },
+    "GribVectorPolicy.h": {
+      "production_sha256": "bdff390e0cb85f5ddf0fbd3b732d61b185887e0cd58eb972c03c2014af903cd2",
+      "baseline_sha256": "bdff390e0cb85f5ddf0fbd3b732d61b185887e0cd58eb972c03c2014af903cd2"
+    },
+    "GribReader.cpp": {
+      "production_sha256": "acb4ee2b41c62c237b05e096de0426ec2cd30e8585cd1ff304d5509aee1807d9",
+      "baseline_sha256": "acb4ee2b41c62c237b05e096de0426ec2cd30e8585cd1ff304d5509aee1807d9"
+    },
+    "zuFile.cpp": {
+      "production_sha256": "5f31a553803ab2276e9448e79f5da550ca68a8768c9da3ab564a2016c3f0de01",
+      "baseline_sha256": "5f31a553803ab2276e9448e79f5da550ca68a8768c9da3ab564a2016c3f0de01"
+    },
+    "GribV1Record.cpp": {
+      "production_sha256": "4e6923c7272c2cf1675de1cbd0ef04f62f5d25c6ea6d6fab28f8afaa0715a7d8",
+      "baseline_sha256": "4e6923c7272c2cf1675de1cbd0ef04f62f5d25c6ea6d6fab28f8afaa0715a7d8"
+    }
+  }
+}

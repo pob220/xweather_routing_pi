@@ -1,0 +1,329 @@
+{
+  "scope": "Combined standalone review candidate; no production incorporation",
+  "date": "2026-09-29",
+  "source_sha256": {
+    "candidate/GribRecord.cpp": "937fa437b89e10e08ab48fd0f989648cc211004f68d47647b0de799fa0ee9120",
+    "candidate/GribRecord.h": "b74cce87f46d318a6236d99b6858276a72179555c24f6fbaa52306e236d89b82",
+    "reader/GribDecodeLimits.h": "6a1c32e2fe1e434ee8366ba84fa3c15becd8b146052d0d1903d6d3c478cda4b9",
+    "reader/GribReader.cpp": "71e26a01fc60f5ffbfecdf53c33ad0dfbd2905d69cab868f0ca031d37064feae",
+    "reader/GribReader.h": "16cc828a677a9d8d0167e4967b411c6bdfb9ca3bef00f1005dd9ce7f1b6759d3",
+    "reader/GribV1Record.cpp": "eb19dcb7b6ca0c8d9f248f103967ab7b276581277848c98342173e089b35bfac",
+    "reader/GribV1Record.h": "a93eefca56d23dc4ab80682bd62b82e0f5045988ada089dbdd46fab9bdb61a9e",
+    "reader/GribV2Record.cpp": "4dd6d75d954dfa9d59d42438b960ba4b5ef5750611832a0a06974eaff4e5d001",
+    "reader/GribV2Record.h": "6458e3e869d38702669a389c10f8a6fe6e4af28297edb83708a0d9b2e65d117e",
+    "reader/GribVectorPolicy.cpp": "938a1cf9ab961d4c5645caabcd79e92a0c7c22263d42353c8d571c4ff971b60c",
+    "reader/GribVectorPolicy.h": "bdff390e0cb85f5ddf0fbd3b732d61b185887e0cd58eb972c03c2014af903cd2",
+    "reader/zuFile.cpp": "abfb1943889a8d1a600834e06ecbd5d1724a651844d38a2dca6dcc2662c036ef",
+    "reader/zuFile.h": "e27fd671df75a2a00dfcb606c64b0b45499e1676581ff4e962e0a3c9e90976fa"
+  },
+  "unchanged_record_pair": true,
+  "changed_or_new_files": 12,
+  "included_matching_files": 13,
+  "native": {
+    "tests_passed": 26,
+    "compiler": "Clang 22.1.8",
+    "wxWidgets": "3.2.11",
+    "ecCodes": "2.47.0",
+    "JasPer": "4.2.9",
+    "deterministic_sanitizers": [
+      "ASan",
+      "LSan",
+      "UBSan",
+      "unsigned-integer-overflow",
+      "float-cast-overflow"
+    ]
+  },
+  "numeric": {
+    "reference": "ecCodes",
+    "with_jpeg_fixtures": 28,
+    "without_jpeg_fixtures": 24,
+    "column_order_fixtures": 4,
+    "comparison_tolerance": "1e-8 * max(1, abs(reference)); canonical missing exact"
+  },
+  "malformed_cases_at_least": 3755,
+  "cpp_allocation_failure_positions": {
+    "combined-known.grb2": 72,
+    "eccodes-1-grid_simple-b1-c0.grb": 14,
+    "eccodes-2-grid_complex_spatial_differencing-b1-c0.grb": 23
+  },
+  "budget_test_bytes": 16384,
+  "reader_fuzz": {
+    "final_source": true,
+    "runs": 51946,
+    "seconds": 301,
+    "peak_rss_mb": 1004,
+    "max_len": 65536,
+    "per_input_timeout_seconds": 20,
+    "rss_limit_mb": 2048,
+    "sanitizers": [
+      "ASan",
+      "LSan",
+      "UBSan"
+    ],
+    "findings": 0,
+    "earlier_5_second_timeout_replayed_cleanly": true,
+    "24_hour_campaign_completed": false
+  },
+  "android": {
+    "device": "Samsung SM-X210",
+    "android_version": 15,
+    "hardware_memory_checks": "HWASan + UBSan excluding vptr",
+    "full_undefined_checks": "static UBSan including vptr",
+    "frozen_corpus_cases_per_runtime": 1285,
+    "numeric_non_jpeg_fixtures": 24,
+    "legacy_jasper": "1.900.1 (external uninstrumented codec)",
+    "legacy_codec_initialization": "No jas_init; original direct entry point compatibility",
+    "legacy_codec_numeric_fixtures": 28,
+    "installed_apps_changed": false
+  },
+  "linux32": {
+    "compiler": "GCC in Debian 12 multilib container",
+    "sanitizers": [
+      "ASan",
+      "LSan",
+      "UBSan"
+    ],
+    "non_jpeg_fixtures": 24,
+    "groups": [
+      "copies",
+      "allocations",
+      "malformed",
+      "compressed",
+      "numeric"
+    ]
+  },
+  "valgrind": {
+    "version": "3.19",
+    "groups": [
+      "copies",
+      "malformed",
+      "compressed"
+    ],
+    "errors": 0,
+    "blocks_at_exit": 0,
+    "suppressions": 0,
+    "environment_workaround": "GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX2,-AVX512F,-AVX512VL,-BMI2; empty wx-linked main reproduces original system-library SIMD report"
+  },
+  "static_analysis": {
+    "cpp_standard": 11,
+    "memory_findings": 0,
+    "existing_dead_store_warnings": 3,
+    "zufile_c11_interface_compiles": true
+  },
+  "performance": {
+    "cpu": 19,
+    "iterations": 1500,
+    "binary_sha256": {
+      "old": "14981d175ce18f3076ca6c6e6fe697cd9dc5765e9a17cbca6cef80ab2d24bc4c",
+      "new": "41051bd2cc7c04a6d7e537ed647e07a92e8c89e00ab793cab59725808536d663"
+    },
+    "results": {
+      "eccodes-1-grid_simple-b0-c0.grb": {
+        "old": 0.496897917,
+        "new": 0.332792679,
+        "ratio": 0.6697405394838876,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.495531551,
+            0.496888868,
+            0.497740703,
+            0.496026102,
+            0.496351238,
+            0.497268519,
+            0.496897917,
+            0.50103721,
+            0.497237048
+          ],
+          "new": [
+            0.331794571,
+            0.332792679,
+            0.331601005,
+            0.334930454,
+            0.332846619,
+            0.3322077,
+            0.336730368,
+            0.335531918,
+            0.33255742
+          ]
+        }
+      },
+      "eccodes-1-grid_simple-b1-c0.grb": {
+        "old": 0.65699224,
+        "new": 0.538824841,
+        "ratio": 0.8201388208177315,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.65699224,
+            0.658305879,
+            0.655994803,
+            0.659147297,
+            0.655439514,
+            0.656757049,
+            0.655147559,
+            0.659072535,
+            0.658861828
+          ],
+          "new": [
+            0.539800611,
+            0.540499539,
+            0.529925589,
+            0.538436183,
+            0.540640845,
+            0.541018862,
+            0.530136767,
+            0.531201922,
+            0.538824841
+          ]
+        }
+      },
+      "eccodes-2-grid_simple-b0-c0.grb": {
+        "old": 0.521544235,
+        "new": 0.478080692,
+        "ratio": 0.9166637456935939,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.527167103,
+            0.520166751,
+            0.520668242,
+            0.520432934,
+            0.522947213,
+            0.525496257,
+            0.522055481,
+            0.521544235,
+            0.519366814
+          ],
+          "new": [
+            0.478080692,
+            0.478602919,
+            0.476406107,
+            0.475767487,
+            0.479454897,
+            0.484426582,
+            0.474809909,
+            0.475624778,
+            0.479965487
+          ]
+        }
+      },
+      "eccodes-2-grid_simple-b1-c0.grb": {
+        "old": 0.620031154,
+        "new": 0.585680213,
+        "ratio": 0.9445980403107292,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.620576701,
+            0.619373374,
+            0.619237989,
+            0.6254727,
+            0.628130485,
+            0.620031154,
+            0.6191138,
+            0.619956417,
+            0.621405351
+          ],
+          "new": [
+            0.587127102,
+            0.589248267,
+            0.5804084,
+            0.589844473,
+            0.59343509,
+            0.585680213,
+            0.580042029,
+            0.580325339,
+            0.585225574
+          ]
+        }
+      },
+      "eccodes-2-grid_complex-b0-c0.grb": {
+        "old": 0.83734205,
+        "new": 0.767683132,
+        "ratio": 0.9168094830541474,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.835348211,
+            0.844792773,
+            0.843160495,
+            0.844809722,
+            0.844575369,
+            0.837246004,
+            0.83734205,
+            0.834145398,
+            0.8332804
+          ],
+          "new": [
+            0.767683132,
+            0.767089909,
+            0.769572971,
+            0.804547543,
+            0.774638994,
+            0.76880526,
+            0.75507794,
+            0.760948232,
+            0.745554608
+          ]
+        }
+      },
+      "eccodes-2-grid_complex-b1-c0.grb": {
+        "old": 0.883209608,
+        "new": 0.861473044,
+        "ratio": 0.9753891218991358,
+        "checksum_match": true,
+        "trials": {
+          "old": [
+            0.880282646,
+            0.878808521,
+            0.880368769,
+            0.881207592,
+            0.883209608,
+            0.887175877,
+            0.889099835,
+            0.890239679,
+            0.887105438
+          ],
+          "new": [
+            0.861794311,
+            0.859164232,
+            0.853769159,
+            0.856072318,
+            0.853605144,
+            0.861473044,
+            0.884686733,
+            0.8798336,
+            0.865765078
+          ]
+        }
+      }
+    }
+  },
+  "previous_record_fuzz": {
+    "runs": 14735137,
+    "seconds": 601,
+    "record_sources_unchanged": true
+  },
+  "production_files_verified_unchanged": 16,
+  "patches_applied_and_byte_verified": true,
+  "remaining_acceptance": [
+    "Extended exact-source fuzzing and broader real-world corpus",
+    "Native MSVC and macOS reader acceptance",
+    "Live provider/plugin integration",
+    "Maintained JPEG codec adoption and separate codec security qualification"
+  ],
+  "binary_sha256": {
+    "grib-reader-android-budget-hwasan": "94f322956b01fc3c23d48ffa1bc4fa5f0c310854bf2ac29a7bb054557afee959",
+    "grib-reader-android-hwasan": "7a6862d7f8928902eb132de72b27b024ceea10b06c0f30b73bb5dadc6227a874",
+    "grib-reader-android-legacy-jpeg-hwasan": "75158ebfbaa8dadb5fa3b46046928d5018c5486e4266eebf98dfbdc10993edda",
+    "grib-reader-android-tests-hwasan": "672715770f667dbc1c789bdbcd3fca6dd53fd8274a1ecc8769eb07c1bc93de40",
+    "grib-reader-android-tests-ubsan-static": "39bfc8d0aefabc9aa913559660985d89247bc034ffa139d19770b0d4c349bbe3",
+    "grib-reader-android-ubsan-static": "2a51a2473c15a0c1ac94311707170ea46f04157690e06026c9210591a93283b2",
+    "native/grib_reader_fuzz": "fa1f242bafd07e30d8c0cf8e672fc8d88ba01e227a27592d4d28462bf431331c",
+    "native/grib_reader_hardening": "93a5ee61f5b45f25e20f3def20e03fa9b5bc6cd7515d93c1e5dfea056fcfbda6",
+    "native/grib_reader_budget": "8fa5daa3efa77e0a7ce9085d0d65bfe5cbdddcf82924d0649969733b7b77fcc9",
+    "native/grib_reader_tests": "14f1c2644d8cbbfd412223a6f6c4d84be1c973e9f7c8431cae71e946cf81e3fd",
+    "native/grib_record_tests": "ff586dadbdc55e7b516800b90cdcce728a9971ca363a963d91e197f31a093b9b"
+  }
+}
