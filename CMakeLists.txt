@@ -565,6 +565,8 @@ add_definitions(-DTIXML_USE_STL)
 # Needed for android builds
 if (QT_ANDROID)
   include_directories(BEFORE ${qt_android_include})
+  target_link_options(${PACKAGE_NAME} PRIVATE
+    "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
 endif (QT_ANDROID)
 
 ## Needed for all builds Do not change - needed to build app -------------##
