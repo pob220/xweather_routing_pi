@@ -73,9 +73,9 @@ contract tests, 19 real-chart checks, eight unchanged routing-result comparisons
 stock-host routing, concurrent chart-aware departures, and the unchanged native
 route workflow when the checker is skipped. Android arm64 is compiled against
 the stock OpenCPN core library; packages include manual-import metadata and
-verified bundled shoreline data. Physical Android and Windows execution are
-not newly qualified by this local pass; the existing platform CI remains
-required before publication.
+verified bundled shoreline data. Physical Android execution was qualified in
+the subsequent pass below. Physical Windows execution is not newly qualified;
+the platform CI remains required before publication.
 
 The earlier performance binaries and import packages were prepared locally.
 Those packages require rebuilding after the clearance correction before alpha
@@ -171,3 +171,35 @@ Fresh platform bundles and their qualification are still required before
 publication. Earlier performance timings are not new measurements of this
 clearance-corrected candidate. Auto continues to use Quick, Standard and
 Professional; no Alternative fallback has been added.
+
+## Final follow-up evidence
+
+Alternative was tested separately against all five failed GUI departure times,
+with cold and warmed chart caches. It recovered none within the bounded test
+budgets. One cold run subsequently completed through Professional frontier
+recovery; that is not an Alternative recovery. Warmed Alternative searches were
+cancelled after approximately 522–535 seconds of engine time. These concurrent
+outcome checks are not sequential performance benchmarks. The additional cost
+and absence of recovered routes do not justify adding Alternative to Auto.
+
+The final clearance-corrected Hawaiian passage differs from the earlier timing
+benchmark: 220.951 NM and 275,819 seconds of passage time, compared with
+205.791 NM and 237,296 seconds for 1.25. Both select Standard. Independent
+checks using the unchanged checker find all 918 corrected-route sections and
+all 835 baseline-route sections clear, with no unknown sections. The cause of
+the route-choice difference is not established by that audit. This is a material
+route-quality difference, so the earlier 2.73-times cold speedup must not be
+presented as a measurement of the final corrected release, or as a guarantee
+of unchanged route quality. A corrected cold run overlapped other tests and
+does not provide a controlled final speed comparison.
+
+Physical Android acceptance is recorded in
+[android-1.26-acceptance.md](android-1.26-acceptance.md). The existing mobile
+controls are retained, all five ordinary routing modes reproduce the 1.25
+route fingerprints and passage times, and coastal access, departure
+optimisation, comfort exploration, cancellation, rotation, setting persistence
+and normal plugin reimport were exercised. The tested stock Android host
+correctly rejects chart-depth requests; real chart-depth operation there still
+requires an enhanced host. The 16 KiB ELF layout is verified statically on a
+device with a 4 KiB kernel. Fresh platform CI and publication checks remain
+required before releasing the canonical alpha packages.
