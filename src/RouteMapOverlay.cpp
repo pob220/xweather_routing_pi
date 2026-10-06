@@ -2522,11 +2522,14 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
       }
       wxString failure_reason;
       RouteMapConfiguration segment_configuration = validationConfiguration;
-      if (m_UsesModernNativeResult && previous_leg_coastal_egress)
-        segment_configuration.SafetyMarginLand = 0.0;
       if (!ConstraintChecker::CheckFinalRouteLandConstraint(
               segment_configuration, prev_lat, prev_lon, it->lat, it->lon,
-              bearing, &failure_reason)) {
+              bearing, &failure_reason,
+              m_UsesModernNativeResult && previous_leg_coastal_egress,
+              m_UsesModernNativeResult &&
+                  std::abs(it->lat - configuration.EndLat) < 1e-8 &&
+                  std::abs(std::remainder(it->lon - configuration.EndLon,
+                                          360.0)) < 1e-8)) {
         configuration.land_crossing = true;
         if (failure_reason.IsEmpty())
           failure_reason = _("Chart land crossing in final route");
@@ -2579,11 +2582,11 @@ bool RouteMapOverlay::ValidatePlottedDestinationRouteLand(
     }
     wxString failure_reason;
     RouteMapConfiguration segment_configuration = validationConfiguration;
-    if (m_UsesModernNativeResult && previous_leg_coastal_egress)
-      segment_configuration.SafetyMarginLand = 0.0;
     if (!ConstraintChecker::CheckFinalRouteLandConstraint(
             segment_configuration, prev_lat, prev_lon, configuration.EndLat,
-            configuration.EndLon, bearing, &failure_reason)) {
+            configuration.EndLon, bearing, &failure_reason,
+            m_UsesModernNativeResult && previous_leg_coastal_egress,
+            m_UsesModernNativeResult)) {
       configuration.land_crossing = true;
       if (failure_reason.IsEmpty())
         failure_reason = _("Chart land crossing in final route");

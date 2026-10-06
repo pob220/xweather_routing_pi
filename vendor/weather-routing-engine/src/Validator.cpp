@@ -1,4 +1,5 @@
 #include "supercpn/weather_routing/Engine.h"
+#include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -174,13 +175,19 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
           requireDestination && request.constraints.landSafetyMarginNm > 0.0 &&
           legIndex + 1 == legs.size();
       const double destinationIngressRadiusNm =
-          std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
+          coastalEndpointReachNm(request.constraints.landSafetyMarginNm);
       const double chordSafetyMarginNm =
           departureEgress ? 0.0 : request.constraints.landSafetyMarginNm;
-      bool chordForbidden =
-          environment.landAndBoundaries
-              ->validationSegmentFromKnownSafeForbiddenAt(
-                  leg.start, leg.end, leg.startTime, chordSafetyMarginNm);
+      const auto chordForbiddenAt = [&](GeoPoint a, GeoPoint b, double margin) {
+        return environment.landAndBoundaries
+            ->validationSegmentFromKnownSafeForbiddenAt(a, b, leg.startTime,
+                                                         margin);
+      };
+      bool chordForbidden = departureEgress
+          ? coastalDepartureChordForbidden(request.start, leg.start, leg.end,
+                                           request.constraints.landSafetyMarginNm,
+                                           chordForbiddenAt)
+          : chordForbiddenAt(leg.start, leg.end, chordSafetyMarginNm);
       if (chordForbidden && destinationIngressLeg && !departureEgress) {
         const double chordDistance = distanceNm(leg.start, leg.end);
         const double bearing = initialBearingDegrees(leg.start, leg.end);
@@ -398,9 +405,14 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       if (environment.landAndBoundaries) {
         if (diagnostics) ++diagnostics->landChecks;
         if (departureEgress) {
-          if (environment.landAndBoundaries
-                  ->validationSegmentFromKnownSafeForbiddenAt(
-                      replayPoint, next, leg.startTime + elapsed, 0.0))
+          if (coastalDepartureChordForbidden(
+                  request.start, replayPoint, next,
+                  request.constraints.landSafetyMarginNm,
+                  [&](GeoPoint a, GeoPoint b, double margin) {
+                    return environment.landAndBoundaries
+                        ->validationSegmentFromKnownSafeForbiddenAt(
+                            a, b, leg.startTime + elapsed, margin);
+                  }))
             return fail(std::move(result),
                         "forward replay intersects land or an exclusion zone");
           const double nextClearance =
@@ -425,7 +437,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
               request.constraints.landSafetyMarginNm > 0.0 &&
               legIndex + 1 == legs.size();
           const double destinationIngressRadiusNm =
-              std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
+              coastalEndpointReachNm(request.constraints.landSafetyMarginNm);
           const double nextDestinationDistance =
               distanceNm(next, request.destination);
           if (forbidden && finalIngressLeg &&
@@ -477,9 +489,19 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
           departureEgress || destinationIngress
               ? 0.0
               : request.constraints.landSafetyMarginNm;
-      if (environment.landAndBoundaries
-              ->validationSegmentFromKnownSafeForbiddenAt(
-                  replayPoint, leg.end, leg.endTime, reconciliationMarginNm))
+      const auto reconciliationForbidden = [&](GeoPoint a, GeoPoint b,
+                                                double margin) {
+        return environment.landAndBoundaries
+            ->validationSegmentFromKnownSafeForbiddenAt(a, b, leg.endTime,
+                                                         margin);
+      };
+      if (departureEgress
+              ? coastalDepartureChordForbidden(
+                    request.start, replayPoint, leg.end,
+                    request.constraints.landSafetyMarginNm,
+                    reconciliationForbidden)
+              : reconciliationForbidden(replayPoint, leg.end,
+                                         reconciliationMarginNm))
         return fail(
             std::move(result),
             "forward replay endpoint reconciliation intersects land or an "

@@ -14,7 +14,9 @@
 #include "engine/native/WeatherCoverage.h"
 #include "original_routing/Engine.h"
 #include "supercpn/weather_routing/Engine.h"
+#include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 #include "supercpn/weather_routing/QuickEngine.h"
+#include "supercpn/weather_routing/AlternativeEngine.h"
 
 namespace {
 using namespace supercpn::weather_routing;
@@ -1644,6 +1646,7 @@ TEST(QuickNativeEngine, RejectsInvalidBudgetWithoutSearching) {
   }
 }
 
+
 }  // namespace
 
 TEST(ModernNativeWeatherCoverage, IntersectsWindComponentsAndNormalizesLongitude) {
@@ -1950,4 +1953,200 @@ TEST(ComfortAlternatives, ThrowingSolverStopsUnaccountedWorkAndPreservesBaseline
   EXPECT_TRUE(report.alternatives.empty());
   EXPECT_TRUE(alternatives::AcceptedRoute(baseline));
 }
+// Mirrors the OpenCPN adapter's binary inside/clear result. It cannot provide
+// genuine clearance progress, so the engine must independently bound access.
+class BinaryCoastalMarginProvider final : public LandAndBoundaryProvider {
+public:
+  explicit BinaryCoastalMarginProvider(GeoPoint start,
+                                      double clearAfterNm = 100.0)
+      : start_(start), clearAfterNm_(clearAfterNm) {}
+  bool pointForbidden(GeoPoint) const override { return false; }
+  bool segmentForbidden(GeoPoint a, GeoPoint b, double margin) const override {
+    if (margin <= 0.0) { ++zeroChecks; return rejectZeroMargin; }
+    ++fullChecks;
+    return distanceNm(start_, a) < clearAfterNm_ - 1e-6 ||
+           distanceNm(start_, b) < clearAfterNm_ - 1e-6;
+  }
+  double distanceToForbiddenNm(GeoPoint p) const override {
+    return distanceNm(start_, p) < clearAfterNm_ - 1e-6
+        ? 0.0 : std::numeric_limits<double>::infinity();
+  }
+  std::string identity() const override { return "binary-coastal-margin"; }
+  std::optional<double> depthMetres(GeoPoint) const override { return depth; }
+  mutable unsigned zeroChecks{}, fullChecks{};
+  bool rejectZeroMargin{};
+  double depth{10.0};
+private:
+  GeoPoint start_;
+  double clearAfterNm_;
+};
+
+static std::vector<RouteLeg> ConstantEastwardLegs(const RoutingRequest& request,
+                                               unsigned count) {
+  std::vector<RouteLeg> legs;
+  GeoPoint point = request.start;
+  TimePoint time = request.departure;
+  for (unsigned i = 0; i < count; ++i) {
+    RouteLeg leg;
+    leg.start = point;
+    leg.end = destinationPoint(point, 90.0, 2.0 / 3.0);
+    leg.startTime = time;
+    leg.endTime = time + std::chrono::minutes{5};
+    leg.headingDegrees = leg.courseThroughWaterDegrees =
+        leg.courseOverGroundDegrees = 90.0;
+    leg.speedThroughWaterKnots = leg.speedOverGroundKnots = 8.0;
+    leg.profileIdentity = "constant";
+    leg.integrationMaximumSlice = std::chrono::minutes{5};
+    leg.coastalDepartureEgress = true; // deliberately cannot be trusted
+    legs.push_back(leg);
+    point = leg.end;
+    time = leg.endTime;
+  }
+  return legs;
+}
+
+TEST(CoastalEndpointPolicy, ReachIsLocalAndDisabledWithoutMargin) {
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(0.0), 0.0);
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(0.1), 0.5);
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(1.0), 1.5);
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(50.0), 2.0);
+}
+
+TEST(CoastalEndpointPolicy, ForgedLongEgressChordNeedsFullMarginOutsideReach) {
+  const GeoPoint origin{53.34, -4.62};
+  auto boundaries = BinaryCoastalMarginProvider(origin);
+  EXPECT_TRUE(coastalDepartureChordForbidden(
+      origin, origin, destinationPoint(origin, 90.0, 12.0), 1.0,
+      [&](GeoPoint a, GeoPoint b, double margin) {
+        return boundaries.segmentForbidden(a, b, margin);
+      }));
+  EXPECT_GT(boundaries.fullChecks, 0U);
+}
+
+TEST(CoastalEndpointPolicy, LocalAccessNeverWaivesActualHazards) {
+  const GeoPoint origin{53.34, -4.62};
+  auto boundaries = BinaryCoastalMarginProvider(origin);
+  boundaries.rejectZeroMargin = true;
+  EXPECT_TRUE(coastalDepartureChordForbidden(
+      origin, origin, destinationPoint(origin, 90.0, 0.25), 1.0,
+      [&](GeoPoint a, GeoPoint b, double margin) {
+        return boundaries.segmentForbidden(a, b, margin);
+      }));
+}
+
+TEST(CoastalEndpointPolicy, LocalArrivalCannotWaiveTheOffshorePrefix) {
+  const GeoPoint destination{53.34, -4.62};
+  auto boundaries = BinaryCoastalMarginProvider(destination);
+  const GeoPoint offshore = destinationPoint(destination, 90.0, 12.0);
+  // Arrival uses the same partition backwards, restoring the callback's
+  // original route direction. The offshore prefix must still be rejected.
+  EXPECT_TRUE(coastalDepartureChordForbidden(
+      destination, destination, offshore, 1.0,
+      [&](GeoPoint a, GeoPoint b, double margin) {
+        return boundaries.segmentForbidden(b, a, margin);
+      }));
+  EXPECT_GT(boundaries.fullChecks, 0U);
+}
+
+TEST(ModernNativeEngine, BinaryClearanceCannotValidateTwelveMilesOfCoastalEgress) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  auto legs = ConstantEastwardLegs(request, 18);
+  request.destination = legs.back().end;
+  auto boundaries = std::make_shared<BinaryCoastalMarginProvider>(request.start);
+  const auto validation = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_FALSE(validation.passed);
+  EXPECT_GT(boundaries->fullChecks, 0U);
+  EXPECT_LT(validation.acceptedPrefixLegs, legs.size());
+}
+
+TEST(ModernNativeEngine, LocalBinaryEgressResumesFullMarginForOffshorePassage) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  auto legs = ConstantEastwardLegs(request, 18);
+  request.destination = legs.back().end;
+  auto boundaries =
+      std::make_shared<BinaryCoastalMarginProvider>(request.start, 0.5);
+  const auto validation = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_TRUE(validation.passed) << validation.failureReason;
+  EXPECT_GT(boundaries->fullChecks, 0U);
+}
+
+TEST(ModernNativeEngine, LocalCoastalAccessStillRequiresThreeMetresDepth) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  request.constraints.minimumDepthMetres = 3.0;
+  auto legs = ConstantEastwardLegs(request, 1);
+  request.destination = legs.back().end;
+  auto boundaries =
+      std::make_shared<BinaryCoastalMarginProvider>(request.start, 0.5);
+  boundaries->depth = 2.0;
+  const auto shallow = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_FALSE(shallow.passed);
+  EXPECT_NE(shallow.failureReason.find("depth"), std::string::npos);
+  boundaries->depth = 3.0;
+  const auto deep = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_TRUE(deep.passed) << deep.failureReason;
+}
+
+TEST(ModernNativeEngine, DeliveredLongCoastalChordCannotBorrowDepartureWaiver) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  auto legs = ConstantEastwardLegs(request, 18);
+  RouteLeg chord = legs.front();
+  chord.end = legs.back().end;
+  chord.endTime = legs.back().endTime;
+  request.destination = chord.end;
+  auto boundaries = std::make_shared<BinaryCoastalMarginProvider>(request.start);
+  const auto validation = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{},
+      std::span<const RouteLeg>(&chord, 1));
+  EXPECT_FALSE(validation.passed);
+  EXPECT_EQ(validation.acceptedPrefixLegs, 0U);
+  EXPECT_GT(boundaries->fullChecks, 0U);
+}
+
+class CoastalEngineClearance : public testing::TestWithParam<int> {};
+TEST_P(CoastalEngineClearance, BinaryMarginCannotProduceCoastFollowingSuccess) {
+  auto request = AlternativesRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  request.limits.maximumGeneratedStates = 3000;
+  request.limits.maximumRetainedStates = 1000;
+  request.limits.maximumCoastalEndpointGeneratedStates = 500;
+  request.options.retryStages = 1;
+  auto boundaries = std::make_shared<BinaryCoastalMarginProvider>(request.start);
+  auto environment = TestEnvironment(boundaries);
+  environment.performance = std::make_shared<ConstantSpeedPerformance>();
+  RoutingResult result;
+  switch (GetParam()) {
+    case 0: {
+      original_routing::Options options;
+      options.allowCoastalEndpointLeeway = true;
+      result = original_routing::Engine{}.route(request, environment, options);
+      break;
+    }
+    case 1:
+      result = QuickRoutingEngine{}.route(request, environment).route;
+      break;
+    case 2:
+      result = ProfessionalEngine{}.route(request, environment);
+      break;
+    case 3: {
+      AlternativeRoutingOptions options;
+      options.maximumGeneratedStates = 3000;
+      result = AlternativeRoutingEngine{}.route(request, environment, options).route;
+      break;
+    }
+  }
+  EXPECT_FALSE(Successful(result.status)) << result.message;
+  EXPECT_FALSE(result.validation.passed);
+  EXPECT_GT(boundaries->fullChecks, 0U);
+}
+INSTANTIATE_TEST_SUITE_P(AllFourSolvers, CoastalEngineClearance,
+                        testing::Values(0, 1, 2, 3));
+
 }  // namespace

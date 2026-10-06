@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Contour.h"
+#include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 #include "RoutingInternal.h"
 #include "original_routing/VisualizationSampler.h"
 #include <array>
@@ -401,12 +402,17 @@ public:
     if (forbidden && options.allowCoastalEndpointLeeway &&
         request.constraints.landSafetyMarginNm > 0.0) {
       const double margin = request.constraints.landSafetyMarginNm;
-      const double radius = std::max(0.5, margin * 1.5);
+      const double radius = wr::coastalEndpointReachNm(margin);
       const double startClearance =
           environment.landAndBoundaries->distanceToForbiddenNm(a);
       if (wr::distanceNm(a, request.start) <= radius + 1e-6 &&
           startClearance + 1e-6 < margin &&
-          !environment.landAndBoundaries->segmentForbiddenAt(a, b, t, 0.0)) {
+          !wr::coastalDepartureChordForbidden(
+              request.start, a, b, margin,
+              [&](wr::GeoPoint from, wr::GeoPoint to, double standOff) {
+                return environment.landAndBoundaries->segmentForbiddenAt(
+                    from, to, t, standOff);
+              })) {
         const double endClearance =
             environment.landAndBoundaries->distanceToForbiddenNm(b);
         if (endClearance + 1e-6 >= startClearance) {

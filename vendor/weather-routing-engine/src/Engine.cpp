@@ -1,4 +1,5 @@
 #include "supercpn/weather_routing/Engine.h"
+#include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 
 #include <algorithm>
 #include <array>
@@ -512,17 +513,21 @@ bool nodeMotionForbidden(const RoutingRequest& request,
       distanceNm(node.position, request.destination) <= 1e-6 &&
       request.constraints.landSafetyMarginNm > 0.0;
   const double destinationIngressRadiusNm =
-      std::max(0.5, request.constraints.landSafetyMarginNm * 1.5);
+      coastalEndpointReachNm(request.constraints.landSafetyMarginNm);
   const double margin = searchLandMarginNm(request);
   bool ingressStarted = false;
   double priorDestinationDistance =
       distanceNm(node.incomingLeg.start, request.destination);
   for (const auto& segment : node.incomingMotionSegments) {
     ++diagnostics.landChecks;
-    bool forbidden =
-        environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
-            segment.start, segment.end, segment.startTime,
-            departureEgress || ingressStarted ? 0.0 : margin);
+    const auto forbiddenAt = [&](GeoPoint a, GeoPoint b, double standOff) {
+      return environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+          a, b, segment.startTime, standOff);
+    };
+    bool forbidden = departureEgress
+        ? coastalDepartureChordForbidden(request.start, segment.start,
+                                         segment.end, margin, forbiddenAt)
+        : forbiddenAt(segment.start, segment.end, ingressStarted ? 0.0 : margin);
     if (forbidden && destinationIngress && !departureEgress &&
         !ingressStarted) {
       const double nextDistance = distanceNm(segment.end, request.destination);
@@ -571,11 +576,15 @@ bool nodeMotionForbidden(const RoutingRequest& request,
   // chord, while chronological replay follows the integrated slices above.
   // Both geometries must therefore be safe before the state is admitted.
   ++diagnostics.landChecks;
-  bool chordForbidden =
-      environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
-          node.incomingLeg.start, node.incomingLeg.end,
-          node.incomingLeg.startTime,
-          chordStartsInDepartureEgress ? 0.0 : margin);
+  const auto chordForbiddenAt = [&](GeoPoint a, GeoPoint b, double standOff) {
+    return environment.landAndBoundaries->segmentFromKnownSafeForbiddenAt(
+        a, b, node.incomingLeg.startTime, standOff);
+  };
+  bool chordForbidden = chordStartsInDepartureEgress
+      ? coastalDepartureChordForbidden(request.start, node.incomingLeg.start,
+                                       node.incomingLeg.end, margin,
+                                       chordForbiddenAt)
+      : chordForbiddenAt(node.incomingLeg.start, node.incomingLeg.end, margin);
   if (chordForbidden && destinationIngress &&
       !chordStartsInDepartureEgress) {
     const double chordDistance =

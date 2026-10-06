@@ -66,6 +66,7 @@
 #include "ChartSafetyDefaults.h"
 #include "AboutDialog.h"
 #include "ConstraintChecker.h"
+#include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 #include "ChartSafetyAtlas.h"
 #include "ChartSafetyHost.h"
 #include "ChartLongitude.h"
@@ -10564,7 +10565,8 @@ static void SetChartSafetyScoutEndpointReach(
   // slices, so a tightly bounded local reach is sufficient; every relaxed
   // slice must still pass a separate authoritative zero-margin chart check.
   const double maximum_endpoint_reach_nm =
-      wxMin(2.0, wxMax(0.5, 2.5 * configuration->SafetyMarginLand));
+      supercpn::weather_routing::coastalEndpointReachNm(
+          configuration->SafetyMarginLand);
   configuration->chart_safety_start_endpoint_reach_nm =
       wxMin(configuration->chart_safety_start_endpoint_reach_nm,
             maximum_endpoint_reach_nm);

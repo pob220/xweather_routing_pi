@@ -319,7 +319,10 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   m_sSafetyMarginLand->SetToolTip(
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
                            "to maintain from land during routing "
-                           "calculations."));
+                           "calculations. Coastal departure/arrival access is "
+                           "local: at most 1.5 times this margin from the "
+                           "endpoint (minimum 0.5 NM, maximum 2 NM). Land and "
+                           "minimum-depth checks still apply there."));
   m_sMinimumDepthMeters->SetToolTip(
       _("Reject chart-aware routes through water charted shallower than this "
         "depth in metres. Zero disables the depth constraint. A positive "

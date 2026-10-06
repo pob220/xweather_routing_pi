@@ -724,16 +724,8 @@ public:
     // state. While inside the buffer, dense replay uses zero-margin chart
     // checks and may switch back to the full margin only after these probes
     // clear.
-    // CheckLandConstraint deliberately treats the configured route start as a
-    // known-safe endpoint and may relax its margin. Using radial probes from
-    // that exact point would therefore always report it clear and prevent the
-    // engine's bounded departure-egress phase from starting. Mark only the
-    // exact configured start as inside the stand-off; subsequent lineage
-    // points are probed normally and must prove that they have cleared it.
-    const wr::GeoPoint configuredStart{configuration_.StartLat,
-                                       configuration_.StartLon};
-    if (wr::distanceNm(point, configuredStart) <= 1e-6) return 0.0;
-
+    // Probe the actual departure too, with endpoint relaxation disabled.
+    // An already offshore start must not acquire a coastal-access waiver.
     auto pointClearAtConfiguredMargin = [&]() {
       RouteMapConfiguration configuration = configuration_;
       configuration.time = configuration.StartTime;
@@ -1250,12 +1242,14 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
           for (const auto& leg : candidateResult.legs) {
             auto segment = candidateConfiguration;
             segment.time = ToWx(leg.startTime);
-            if (leg.coastalDepartureEgress) segment.SafetyMarginLand = 0.0;
             wxString reason;
             if (!ConstraintChecker::CheckFinalRouteLandConstraint(
                     segment, leg.start.latitude, leg.start.longitude,
                     leg.end.latitude, leg.end.longitude,
-                    wr::initialBearingDegrees(leg.start, leg.end), &reason)) {
+                    wr::initialBearingDegrees(leg.start, leg.end), &reason,
+                    leg.coastalDepartureEgress,
+                    wr::distanceNm(leg.end, candidateRequest.destination) <=
+                        1e-6)) {
               candidateResult.status = wr::RoutingStatus::ValidationFailure;
               candidateResult.validation.passed = false;
               candidateResult.message =
@@ -1423,10 +1417,11 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
     for (const auto& leg : candidate.legs) {
       auto segment = c;
       segment.time = ToWx(leg.startTime);
-      if (leg.coastalDepartureEgress) segment.SafetyMarginLand = 0;
       if (!ConstraintChecker::CheckFinalRouteLandConstraint(
               segment, leg.start.latitude, leg.start.longitude, leg.end.latitude, leg.end.longitude,
-              wr::initialBearingDegrees(leg.start, leg.end)))
+              wr::initialBearingDegrees(leg.start, leg.end), nullptr,
+              leg.coastalDepartureEgress,
+              wr::distanceNm(leg.end, request.destination) <= 1e-6))
         return false;
     }
     return true;
