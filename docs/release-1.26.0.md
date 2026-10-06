@@ -190,8 +190,16 @@ all 835 baseline-route sections clear, with no unknown sections. The cause of
 the route-choice difference is not established by that audit. This is a material
 route-quality difference, so the earlier 2.73-times cold speedup must not be
 presented as a measurement of the final corrected release, or as a guarantee
-of unchanged route quality. A corrected cold run overlapped other tests and
-does not provide a controlled final speed comparison.
+of unchanged route quality. The first corrected cold run overlapped other
+tests and is excluded from the controlled comparison below.
+
+A subsequent sequential, unprofiled comparison with fresh private caches
+completed in 346.527 seconds for 1.25 / previous core and 129.414 seconds for
+corrected 1.26 / companion core: approximately 2.68 times faster. Forecast,
+polar, CM93, full GSHHG, 1.5 m minimum depth and 0.1 NM clearance are fixed.
+Both runs reproduce the exact route points independently audited above.
+This is one cold run per version, not a statistical benchmark or a general
+performance guarantee; the route-quality difference remains as disclosed.
 
 Physical Android acceptance is recorded in
 [android-1.26-acceptance.md](android-1.26-acceptance.md). The existing mobile
@@ -203,3 +211,10 @@ correctly rejects chart-depth requests; real chart-depth operation there still
 requires an enhanced host. The 16 KiB ELF layout is verified statically on a
 device with a 4 KiB kernel. Fresh platform CI and publication checks remain
 required before releasing the canonical alpha packages.
+
+The macOS CI gettext smoke check remains enforced. If the runner's existing
+gettext bottle crashes, its source-rebuild repair now downloads through bounded
+GNU mirror fallbacks and checks the archive against Homebrew's recorded
+SHA-256 before populating the source cache. Four integrity tests cover valid
+caches, corrupt mirror responses, fallback and rejection of unexpected sources.
+This addresses dependency-server timeouts encountered during qualification.

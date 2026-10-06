@@ -84,3 +84,22 @@ comparison and preservation reports record hashes and results. The platform CI
 matrix, canonical package checks and publication hold still apply before alpha
 publication. These tests do not qualify a new S-57/S-63 provider or real
 chart-depth operation on this stock Android host.
+
+## Actual CI package follow-up
+
+The API 1.21 arm64 package from source
+`b5e40bc1e8489e57eda53785eea9fe3f09c9e6f6` was imported through Plugin Manager
+and cold-started on the same tablet. Its library SHA-256 is
+`bf8615b43a80cd393827ef71ca3ede965bbe275d6ffd64d209471252bc717bcb`.
+All five modes again reproduce the baseline passage times and fingerprints.
+The 1 NM coastal control reproduces the validated 1:22:27 Professional result
+and Quick's explicit buffer refusal. A 3 m depth request is explicitly rejected
+on the unsupported host. The process maps confirm the imported library is
+loaded, and the post-import/test crash buffer is empty.
+
+Preferences, six routes and all 749 original routing files were restored and
+verified again, preserving the other plugins and leaving the CI 1.26 library
+installed. Task staging files and the superseded local import archive were
+removed. Subsequent source changes repair only the macOS CI dependency
+download and update qualification documentation; final publication still
+requires the fresh platform matrix and archive review.
