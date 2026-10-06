@@ -1384,10 +1384,12 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   int confVersion;
   pConf->Read(_T ( "ConfigVersion" ), &confVersion, 0);
-  // v1.25 adds a route checker; its bundled boats and polars are unchanged
-  // from v1.24. Do not offer to overwrite existing user data for this upgrade.
-  if (confVersion == 124 && PLUGIN_VERSION_MAJOR == 1 && PLUGIN_VERSION_MINOR == 25) {
-    confVersion = 125;
+  // v1.25 and v1.26 retain the v1.24 bundled boats and polars. A feature-only
+  // upgrade must not prompt to overwrite existing user data.
+  if ((confVersion == 124 || confVersion == 125) &&
+      PLUGIN_VERSION_MAJOR == 1 &&
+      (PLUGIN_VERSION_MINOR == 25 || PLUGIN_VERSION_MINOR == 26)) {
+    confVersion = PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR;
     pConf->Write(_T("ConfigVersion"), confVersion);
   }
 
@@ -8529,6 +8531,10 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   int gribRequests = 0;
   int chartSafetyRequestsServiced = 0;
   long chartSafetyRequestMs = 0;
+  // All waiting routes share one host queue and one per-update GUI budget.
+  bool chartSafetyServiceAttempted = false;
+  PlugInSegmentSafetyRequestServiceResult chartSafetyService = {};
+  chartSafetyService.struct_size = sizeof(chartSafetyService);
   bool completedBatchLimitHit = false;
   long deleteThreadMs = 0;
   long finalValidationMs = 0;
@@ -8704,13 +8710,15 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
      * provisional current layer when these requests complete. */
     if (routemapoverlay->NeedsChartSafetyData() &&
         !routemapoverlay->Finished()) {
-      wxStopWatch chartRequestTimer;
-      PlugInSegmentSafetyRequestServiceResult service = {};
-      service.struct_size = sizeof(service);
-      weather_routing::chart_safety_host::ServicePendingRequests(
-          16, 50, &service);
-      chartSafetyRequestMs += chartRequestTimer.Time();
-      chartSafetyRequestsServiced += service.requests_serviced;
+      if (!chartSafetyServiceAttempted) {
+        chartSafetyServiceAttempted = true;
+        wxStopWatch chartRequestTimer;
+        weather_routing::chart_safety_host::ServicePendingRequests(
+            16, 50, &chartSafetyService);
+        chartSafetyRequestMs += chartRequestTimer.Time();
+        chartSafetyRequestsServiced += chartSafetyService.requests_serviced;
+      }
+      const auto& service = chartSafetyService;
       if (service.pending_after == 0) {
         routemapoverlay->ChartSafetyDataServiced();
         wxLogMessage(

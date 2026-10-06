@@ -27,8 +27,9 @@ EXPECTED_TARGETS = {
 TARGETS = set(EXPECTED_TARGETS)
 PACKAGE = "xweather_routing_pi"
 REPOSITORY = "pob220/xweather-routing-alpha-oss"
-SUMMARY = "Weather routing, passage planning and existing-route chart checks."
-PREVIOUS_SUMMARY = "Advanced weather routing with departure and arrival planning."
+SUMMARY = "Weather routing, faster optional chart awareness and route checks."
+PREVIOUS_SUMMARY = "Weather routing, passage planning and existing-route chart checks."
+OLDER_SUMMARY = "Advanced weather routing with departure and arrival planning."
 LEGACY_SUMMARY = "Advanced deterministic weather routing with departure and arrival planning."
 
 
@@ -57,7 +58,7 @@ def inspect_pair(directory):
     if root.tag != "plugin" or value(root, "name") != "xWeatherRouting":
         raise ValueError(f"Wrong plugin name: {metadata}")
     summary = value(root, "summary")
-    if summary not in {SUMMARY, PREVIOUS_SUMMARY, LEGACY_SUMMARY}:
+    if summary not in {SUMMARY, PREVIOUS_SUMMARY, OLDER_SUMMARY, LEGACY_SUMMARY}:
         raise ValueError(f"Unexpected catalogue summary: {metadata}")
     root.find("summary").text = SUMMARY
     if len(SUMMARY) > 72:
