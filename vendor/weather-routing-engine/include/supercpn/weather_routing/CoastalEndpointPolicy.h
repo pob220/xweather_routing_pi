@@ -10,9 +10,11 @@ namespace supercpn::weather_routing {
 
 // Endpoint access is local, never permission to follow the coast. Keep the
 // same bound in search, chronological replay and delivered-geometry checks.
+// The 2 NM ceiling is independent of margin. The earlier 1.5 multiplier
+// could end local access before a coastal waypoint reached clear water.
 inline double coastalEndpointReachNm(double marginNm) {
   if (!std::isfinite(marginNm) || marginNm <= 0.0) return 0.0;
-  return std::min(2.0, std::max(0.5, 1.5 * marginNm));
+  return std::min(2.0, std::max(0.5, 2.0 * marginNm));
 }
 
 // Check the full plotted chord, including the part outside local departure

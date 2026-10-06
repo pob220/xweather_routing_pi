@@ -320,7 +320,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
                            "to maintain from land during routing "
                            "calculations. Coastal departure/arrival access is "
-                           "local: at most 1.5 times this margin from the "
+                           "local: at most twice this margin from the "
                            "endpoint (minimum 0.5 NM, maximum 2 NM). Land and "
                            "minimum-depth checks still apply there."));
   m_sMinimumDepthMeters->SetToolTip(

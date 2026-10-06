@@ -34,7 +34,7 @@ handling are retained. Land-clearance enforcement is corrected: a binary
 inside/clear adapter result could keep departure access active while following
 the coast, and final checks trusted the resulting leg flag. Search, independent
 chronological replay and delivered plotting chords now enforce the same local
-endpoint bound: 1.5 times the clearance, with a 0.5 NM minimum and 2 NM maximum.
+endpoint bound: twice the clearance, with a 0.5 NM minimum and 2 NM maximum.
 Outside that local access area the full configured clearance is required. An
 endpoint flag cannot waive an arbitrarily long chord; actual land, exclusions
 and depth remain checked inside the local access area. An offshore departure
@@ -82,7 +82,7 @@ Those packages require rebuilding after the clearance correction before alpha
 publication. The corrected native build is qualified separately below.
 Provider expansion remains separate.
 
-## Clearance regression qualification
+## Initial clearance regression qualification
 
 The clearance fix includes a reproduction of a synthetic 12 NM route which
 remains entirely inside a 1 NM buffer and previously passed independent replay.
@@ -118,3 +118,56 @@ control results and regression logs.
 The separate offshore-to-Conwy arrival control also exhausts the graph state
 allowance. Independent engine coastal-arrival regressions pass, but a successful
 real-chart arrival into this Conwy waypoint is not claimed by this pass.
+
+## Holyhead–Conwy correction and qualification
+
+The initial 1.5-times endpoint bound above was too short for this Conwy
+waypoint: an exhaustive chart-grid survey found no fully clear cell within
+approximately 1.51 NM. Repeating the survey with the previous OpenCPN core
+returned identical section results. This does not implicate the core
+performance changes as the cause of that obstruction.
+
+The revised local bound is twice the margin, retaining the hard 2 NM ceiling.
+Actual land, minimum depth and exclusions remain checked inside that area;
+full clearance applies outside it. Continuous chart-grid traversal also replaces
+rounded-endpoint Bresenham traversal in the plugin, so a plotted chord cannot
+skip an intersected cell merely because its endpoints round to other cells.
+Corner and boundary contacts are included conservatively. New regression tests
+for missed land/depth cells fail against the previous traversal implementation
+and pass against the correction.
+
+With the confirmed combined GRIB, Nicholson 35 boat, full GSHHG and installed
+o-charts, the isolated 19 October 12:00 UTC Holyhead–Conwy test now completes
+at 1 NM clearance and 3 m minimum depth when Max Diverted Course is increased
+from 120 to 180 degrees. Max Search Angle remains 117 degrees. This setting
+allows the route to turn away from the destination to clear the coast; the
+plugin does not increase it automatically. Reducing clearance to 0.4 NM alone
+did not resolve the original failure.
+
+The corrected single-departure test takes 39.139 seconds wall time and returns
+a 7 h 42 min 10 s passage. Independent checks using the unchanged installed
+checker find all 145 sections outside the 2 NM endpoint areas clear at
+1 NM / 3 m, and all 162 sections of the full passage clear of land and below-
+minimum-depth hazards with the margin disabled. Neither audit has unverified
+sections. This is bounded endpoint access, not a claim of full 1 NM clearance
+right up to either waypoint. It is also not a reproduction of the full GUI
+departure-optimisation batch.
+
+The complete corrected standalone suite passes 416 tests from 59 suites.
+The corrected library is installed in the working wrapper profile and its
+loaded file identity has been verified. A complete GUI batch of 25 hourly
+departures returns 20 validated routes and five failed searches: two exhausted
+search stages and three resource limits. These failures do not establish that
+no safe passage exists. All departures retain the 1 NM clearance, 3 m minimum
+depth and bounded endpoint policy. Full-batch independent chart audits have
+not been performed; the separate single-route audits above remain the
+independent evidence.
+
+A fresh comparison of the corrected native build against the saved 1.25
+ordinary-routing fixtures reproduces the seven successful engine, comfort and
+departure results. The eighth, impossible-wind case still fails without a
+route; its failure text adds the intended Max Diverted Course advice.
+Fresh platform bundles and their qualification are still required before
+publication. Earlier performance timings are not new measurements of this
+clearance-corrected candidate. Auto continues to use Quick, Standard and
+Professional; no Alternative fallback has been added.

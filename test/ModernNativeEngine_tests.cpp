@@ -2008,7 +2008,8 @@ static std::vector<RouteLeg> ConstantEastwardLegs(const RoutingRequest& request,
 TEST(CoastalEndpointPolicy, ReachIsLocalAndDisabledWithoutMargin) {
   EXPECT_DOUBLE_EQ(coastalEndpointReachNm(0.0), 0.0);
   EXPECT_DOUBLE_EQ(coastalEndpointReachNm(0.1), 0.5);
-  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(1.0), 1.5);
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(0.4), 0.8);
+  EXPECT_DOUBLE_EQ(coastalEndpointReachNm(1.0), 2.0);
   EXPECT_DOUBLE_EQ(coastalEndpointReachNm(50.0), 2.0);
 }
 
@@ -2150,3 +2151,61 @@ INSTANTIATE_TEST_SUITE_P(AllFourSolvers, CoastalEngineClearance,
                         testing::Values(0, 1, 2, 3));
 
 }  // namespace
+
+TEST(CoastalEndpointPolicy, BoundedAccessCanReachClearWaterAtOnePointSevenMiles) {
+  const GeoPoint origin{53.34, -4.62};
+  auto boundaries = BinaryCoastalMarginProvider(origin, 1.7);
+  EXPECT_FALSE(coastalDepartureChordForbidden(
+      origin, origin, destinationPoint(origin, 90.0, 2.5), 1.0,
+      [&](GeoPoint a, GeoPoint b, double margin) {
+        return boundaries.segmentForbidden(a, b, margin);
+      }));
+  EXPECT_GT(boundaries.zeroChecks, 0U);
+  EXPECT_GT(boundaries.fullChecks, 0U);
+}
+
+TEST(ModernNativeEngine, BinaryDepartureEstablishesFullMarginAfterOnePointSevenMiles) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  request.constraints.minimumDepthMetres = 3.0;
+  auto legs = ConstantEastwardLegs(request, 18);
+  request.destination = legs.back().end;
+  auto boundaries =
+      std::make_shared<BinaryCoastalMarginProvider>(request.start, 1.7);
+  const auto validation = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_TRUE(validation.passed) << validation.failureReason;
+  EXPECT_GT(boundaries->fullChecks, 0U);
+}
+
+TEST(ModernNativeEngine, BinaryArrivalHasBoundedOnePointSevenMileIngress) {
+  auto request = TestRequest();
+  request.constraints.landSafetyMarginNm = 1.0;
+  request.constraints.minimumDepthMetres = 3.0;
+  auto legs = ConstantEastwardLegs(request, 18);
+  request.destination = legs.back().end;
+  // A final explicit connection contains the complete local arrival suffix.
+  auto arrival = legs[15];
+  arrival.end = legs.back().end;
+  arrival.endTime = legs.back().endTime;
+  legs.resize(15);
+  legs.push_back(arrival);
+  for (auto& leg : legs) leg.coastalDepartureEgress = false;
+  auto boundaries =
+      std::make_shared<BinaryCoastalMarginProvider>(request.destination, 1.7);
+  const auto validation = RouteValidator{}.validate(
+      request, TestEnvironment(boundaries), ConstantSpeedPerformance{}, legs);
+  EXPECT_TRUE(validation.passed) << validation.failureReason;
+  EXPECT_GT(boundaries->fullChecks, 0U);
+}
+
+TEST(CoastalEndpointPolicy, AccessCannotGrowPastTwoMilesWhenClearWaterIsFurtherAway) {
+  const GeoPoint origin{53.34, -4.62};
+  auto boundaries = BinaryCoastalMarginProvider(origin, 2.2);
+  EXPECT_TRUE(coastalDepartureChordForbidden(
+      origin, origin, destinationPoint(origin, 90.0, 3.0), 1.0,
+      [&](GeoPoint a, GeoPoint b, double margin) {
+        return boundaries.segmentForbidden(a, b, margin);
+      }));
+  EXPECT_GT(boundaries.fullChecks, 0U);
+}

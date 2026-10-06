@@ -1821,6 +1821,19 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       else if (result.status == wr::RoutingStatus::WindForecastRequired)
         error = _("Quick requires wind coverage for this route and time. Extend the GRIB coverage or configure an available climatology provider.");
     }
+    const bool searchFailed = result.status == wr::RoutingStatus::NoFeasibleRoute ||
+        result.status == wr::RoutingStatus::SearchIncomplete ||
+        result.status == wr::RoutingStatus::ResourceLimitReached;
+    if (searchFailed && configuration.DetectLand &&
+        configuration.MaxDivertedCourse < 180.0 &&
+        configuration.MaxSearchAngle <= configuration.MaxDivertedCourse) {
+      error += wxString::Format(
+          _(". Max Diverted Course (%d°) is a hard route-geometry limit. "
+            "A coastal departure may need to turn away from the destination. "
+            "Try increasing Max Diverted Course to permit that detour; "
+            "land clearance and minimum depth remain enforced"),
+          static_cast<int>(configuration.MaxDivertedCourse));
+    }
     if (configuration.MaxSearchAngle > configuration.MaxDivertedCourse) {
       error += wxString::Format(
           _(". Max Diverted Course (%d°) is a separate hard route-geometry "
