@@ -1,6 +1,6 @@
 # Weather Routing integration branch
 
-See [1.25 changes](docs/release-1.25.0.md) and [Quick, Standard and Professional settings](docs/quick-routing.md).
+See [1.27 changes and stock-host compatibility](docs/release-1.27.0.md) and [Quick, Standard and Professional settings](docs/quick-routing.md).
 
 The optional hardened-OpenCPN planning-provider boundary is documented in
 [docs/external_control_provider_preview_b.md](docs/external_control_provider_preview_b.md).
@@ -50,8 +50,10 @@ safety service and reports that checking is unavailable; ordinary routing and
 its GSHHG land checks remain available.
 The checker does not evaluate traffic rules, restricted-area conditions,
 bridge clearance or tide height. Reports become outdated when the route,
-chart selection or chart identity changes. This v1.25 release does not include
-the separate, pending S-57/S-63 provider upgrade planned for v1.26.
+chart selection or chart identity changes. Version 1.27 pairs the existing
+plugin with the optional geometry-based core improvements described in its
+release notes. Real S-63 cells still require separate qualification; this
+release does not claim a new S-63 provider integration.
 
 Fresh installations leave both optional chart/depth controls unchecked.
 Users of an enhanced OpenCPN host can opt in; explicit choices made by
