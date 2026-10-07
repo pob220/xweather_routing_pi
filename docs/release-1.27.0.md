@@ -14,12 +14,17 @@ resolved dynamically and are never required imports.
 On a stock host, ordinary weather routing and plugin-managed GSHHG shoreline
 checks remain available. Chart-awareness and chart-depth controls are disabled,
 and the chart-based route checker reports that the host service is unavailable.
-Saved enhanced-host preferences must not force chart queries or prevent routing
-when the same configuration is opened on a stock host. These guards are shared
-by desktop and Android; the existing mobile workspace is retained.
+Saved chart-awareness preferences do not force chart queries on a stock host.
+Ordinary routes with no minimum-depth requirement use GSHHG. A saved route that
+explicitly requires minimum charted depth is refused with an explanation until
+that requirement is removed or a capable host is used; it is never silently
+downgraded to shoreline-only safety. These guards are shared by desktop and
+Android; the existing mobile workspace is retained.
 
 No user-data migration or reset is required. Existing boats, polars, routing
-settings and optional chart-safety choices retain the 1.26 data layout.
+settings and optional chart-safety choices retain the 1.26 data layout. The
+feature-only upgrade recognises 1.24–1.26's unchanged bundled data and advances
+the version marker without offering to overwrite boats, polars or route examples.
 
 ## Companion-core changes
 
