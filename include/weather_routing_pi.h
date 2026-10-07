@@ -127,7 +127,7 @@ class WeatherRouting;
  */
 class weather_routing_pi : public wxEvtHandler,
                            public wxEventFilter,
-                           public opencpn_plugin_121 {
+                           public opencpn_plugin_122 {
 public:
   weather_routing_pi(void* ppimgr);
   ~weather_routing_pi();

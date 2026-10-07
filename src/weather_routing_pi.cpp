@@ -52,12 +52,12 @@
 #include "WeatherDataProvider.h"
 #include "weather_routing_pi.h"
 
-static_assert(API_VERSION_MINOR == WEATHER_ROUTING_API_HEADER_MINOR,
+static_assert(API_VERSION_MINOR == 22,
               "The selected stock API headers were not used");
-static_assert(OCPN_API_VERSION_MINOR == 21,
-              "Compatibility builds must retain minimum host API 1.21");
-static_assert(std::is_base_of<opencpn_plugin_121, weather_routing_pi>::value,
-              "Compatibility builds must retain the API 1.21 plugin base");
+static_assert(OCPN_API_VERSION_MINOR == 22,
+              "Compatibility builds must retain minimum host API 1.22");
+static_assert(std::is_base_of<opencpn_plugin_122, weather_routing_pi>::value,
+              "Compatibility builds must retain the API 1.22 plugin base");
 
 Json::Value g_ReceivedJSONMsg;
 wxString g_ReceivedMessage;
@@ -123,7 +123,7 @@ extern "C" DECL_EXP void destroy_pi(opencpn_plugin* p) { delete p; }
 #include "ExternalPlanningProvider.h"
 
 weather_routing_pi::weather_routing_pi(void* ppimgr)
-    : opencpn_plugin_121(ppimgr) {
+    : opencpn_plugin_122(ppimgr) {
   // Create the PlugIn icons
   initialize_images();
 
@@ -1048,7 +1048,8 @@ bool weather_routing_pi::LoadConfig() {
   m_chart_safety_cache.SetMaximumDiskMiB(
       m_chart_safety_atlas_max_disk_mib);
   const bool enhanced =
-      weather_routing::chart_safety_host::Initialize(&m_chart_safety_cache);
+      weather_routing::chart_safety_host::Initialize(&m_chart_safety_cache,
+          GetCommonName().ToStdString());
   if (enhanced) {
     // Preserve explicit user choices, but keep fresh standard-plugin installs
     // stock-safe. Users opt into the optional enhanced host capability.

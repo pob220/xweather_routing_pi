@@ -28,7 +28,7 @@ class ChartSafetyCache;
 namespace chart_safety_host {
 
 /** Detect and attach to the optional enhanced OpenCPN chart-safety service. */
-bool Initialize(ChartSafetyCache* cache);
+bool Initialize(ChartSafetyCache* cache, const std::string& plugin_name);
 void Shutdown();
 bool Available();
 std::string Status();

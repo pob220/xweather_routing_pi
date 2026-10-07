@@ -8,7 +8,7 @@ namespace {
 TEST(ChartSafetyHost, StockHostWithoutOptionalSymbolsRemainsUsable) {
   weather_routing::ChartSafetyCache cache;
 
-  ASSERT_FALSE(weather_routing::chart_safety_host::Initialize(&cache));
+  ASSERT_FALSE(weather_routing::chart_safety_host::Initialize(&cache, "xWeatherRouting"));
   EXPECT_FALSE(weather_routing::chart_safety_host::Available());
   EXPECT_EQ(weather_routing::chart_safety_host::Status(),
             "Enhanced chart-safety host capability is unavailable.");

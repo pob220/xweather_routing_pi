@@ -117,22 +117,9 @@ set(VERSION_DATE  "07/10/2026") # DD/MM/YYYY format
 set(OCPN_MIN_VERSION "ov511")
 
 set(OCPN_API_VERSION_MAJOR "1")
-set(OCPN_API_VERSION_MINOR "21")
-# Header selection is independent of the minimum host API. Both builds retain
-# the opencpn_plugin_121 base class and advertise API 1.21 to older hosts.
-set(_wr_api_headers "1.21")
-if(DEFINED ENV{WEATHER_ROUTING_API_HEADER_VERSION})
-  set(_wr_api_headers "$ENV{WEATHER_ROUTING_API_HEADER_VERSION}")
-endif()
-set(WEATHER_ROUTING_API_HEADER_VERSION "${_wr_api_headers}" CACHE STRING
-    "Stock OpenCPN headers used for compatibility validation: 1.21 or 1.22")
-set_property(CACHE WEATHER_ROUTING_API_HEADER_VERSION PROPERTY STRINGS "1.21" "1.22")
-if(NOT WEATHER_ROUTING_API_HEADER_VERSION MATCHES "^1\\.(21|22)$")
-  message(FATAL_ERROR "WEATHER_ROUTING_API_HEADER_VERSION must be 1.21 or 1.22")
-endif()
-string(REGEX REPLACE "^1\\." "" WEATHER_ROUTING_API_HEADER_MINOR
-       "${WEATHER_ROUTING_API_HEADER_VERSION}")
-unset(_wr_api_headers)
+set(OCPN_API_VERSION_MINOR "22")
+# API1.22 is the published loading floor; chart safety is optional HostApi123.
+set(WEATHER_ROUTING_API_HEADER_MINOR "23")
 set(TP_COMMENT "  * Release using CI")
 
 set(PARENT "opencpn")
