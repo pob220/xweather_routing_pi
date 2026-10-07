@@ -63,6 +63,10 @@ corrected runs had identical aggregate arrival and distance. Safety corrections
 changed the published baseline route, so these are observed same-input timings,
 not identical-path timing or a general performance guarantee.
 
-The 1.27 desktop build requires its own stock-host loading/routing check and
-enhanced-host check before local installation. A version bump alone does not
-constitute new Android or Windows runtime qualification.
+The 1.27 native build passes all 420 plugin tests, loads and completes a full
+GSHHG route on stock OpenCPN 5.14, and completes the enhanced-host Hawaiian
+route with the same aggregate arrival and distance as the qualified prototype.
+Customised boats and polars survive the upgrade. Physical Android checks are
+recorded in [android-1.27-acceptance.md](android-1.27-acceptance.md); the existing
+mobile controls and stock-host capability guards are retained. The full
+platform/API matrix and review of its exact packages still gate publication.
