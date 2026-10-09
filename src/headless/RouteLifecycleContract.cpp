@@ -49,7 +49,7 @@ bool WeatherRouting::RunRouteLifecycleContract(RouteMapOverlay* route) {
   vp.pix_width = 640;
   vp.pix_height = 480;
   vp.rv_rect = wxRect(0, 0, 640, 480);
-  vp.m_projection_type = 0;
+  vp.m_projection_type = 1;  // Mercator
   vp.lat_min = vp.clat - 1;
   vp.lat_max = vp.clat + 1;
   vp.lon_min = vp.clon - 1;
@@ -113,7 +113,9 @@ bool WeatherRouting::RunRouteLifecycleContract(RouteMapOverlay* route) {
 
   auto otherConfiguration = original;
   otherConfiguration.EndLon += 0.5;
-  otherConfiguration.End = "Lifecycle second route";
+  wxString pass;
+  wxGetEnv("WR_HEADLESS_LIFECYCLE_CONTRACT", &pass);
+  otherConfiguration.End = "Lifecycle second route " + pass;
   AddPosition(otherConfiguration.EndLat, otherConfiguration.EndLon,
               otherConfiguration.End);
   if (!AddConfiguration(otherConfiguration)) return false;
