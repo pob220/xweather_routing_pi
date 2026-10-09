@@ -385,9 +385,16 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   WR_AddAndroidDoneHeader(this, _("Route setup"), [this]() {
     // wxQt does not always emit a spin update when a value is typed with the
     // Android keyboard. Commit the visible editor values before closing.
-    for (auto* spin : GetHandle()->findChildren<QAbstractSpinBox*>())
+    bool typedSpinValue = false;
+    for (auto* spin : GetHandle()->findChildren<QAbstractSpinBox*>()) {
+      if (auto* editor = spin->findChild<QLineEdit*>())
+        typedSpinValue |= editor->isModified();
       spin->interpretText();
-    Update();
+    }
+    // Display choices use their own presentation setter. An unchanged Done
+    // must not apply all hidden controls (including rounded/clamped values)
+    // and invalidate an already computed departure candidate.
+    if (typedSpinValue || !m_edited_controls.empty()) Update();
     Hide();
   });
   auto* navigation = new wxPanel(this, wxID_ANY);

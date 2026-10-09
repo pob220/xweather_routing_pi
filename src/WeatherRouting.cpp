@@ -6033,7 +6033,13 @@ void WeatherRouting::UpdateComputeState() {
 
 static wxChoice* AddDepartureChartChoice(wxWindow* parent,
                                          wxBoxSizer* topSizer) {
-  auto* row = new wxBoxSizer(wxHORIZONTAL);
+  auto* row = new wxBoxSizer(
+#ifdef __OCPN__ANDROID__
+      wxVERTICAL
+#else
+      wxHORIZONTAL
+#endif
+  );
   row->Add(new wxStaticText(parent, wxID_ANY, _("Show on chart")), 0,
             wxALL | wxALIGN_CENTER_VERTICAL, 5);
   auto* choice = new wxChoice(parent, wxID_ANY);
@@ -6046,7 +6052,27 @@ static wxChoice* AddDepartureChartChoice(wxWindow* parent,
       "Selected departure follows the highlighted candidate. All departures "
       "shows this optimisation group. Manual keeps individual eye choices. "
       "Changing the display does not recompute routes."));
+#ifdef __OCPN__ANDROID__
+  row->Add(choice, 0, wxEXPAND | wxALL, 5);
+  auto* help = new wxStaticText(parent, wxID_ANY, _(
+      "Selected departure follows the highlighted candidate. All departures "
+      "shows the group. Use Visible on chart on route cards for a Manual subset."));
+  wxFont font = help->GetFont();
+  font.SetPointSize(16);
+  help->SetFont(font);
+  const auto wrapHelp = [parent, help]() {
+    WR_WrapAndroidText(help, help->GetLabel(),
+        wxMax(200, parent->GetClientSize().x - 72));
+  };
+  wrapHelp();
+  parent->Bind(wxEVT_SIZE, [wrapHelp](wxSizeEvent& event) {
+    wrapHelp();
+    event.Skip();
+  });
+  row->Add(help, 0, wxEXPAND | wxALL, 5);
+#else
   row->Add(choice, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+#endif
   topSizer->Add(row, 0, wxEXPAND);
   return choice;
 }

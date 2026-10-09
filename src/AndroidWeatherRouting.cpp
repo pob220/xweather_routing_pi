@@ -202,10 +202,23 @@ void WeatherRouting::ShowAndroidRouteOnChart(RouteMapOverlay* route) {
           item == *owned ? wxLIST_STATE_SELECTED : 0, wxLIST_STATE_SELECTED);
     }
     OnWeatherRouteSelected();
+    SelectDepartureOnChart(route, true, false);
   }
   const auto selected = CurrentRouteMaps();
-  for (auto* map : selected)
-    SetRouteVisibility(map, true);
+  for (auto* map : selected) {
+    const auto configuration = map->GetConfiguration();
+    if (configuration.DepartureTimeOptimizationCandidate &&
+        configuration.DepartureTimeOptimizationChartDisplay !=
+            RouteMapConfiguration::MANUAL_DEPARTURES) {
+      // Returning from a comparison to the chart is navigation, not an
+      // individual visibility choice. Retain Selected/All and their group
+      // visibility; only the card checkbox switches the group to Manual.
+      ApplyDepartureChartDisplay(
+          configuration.DepartureTimeOptimizationGroupId);
+    } else {
+      SetRouteVisibility(map, true);
+    }
+  }
   if (!selected.empty()) {
     wxCommandEvent event;
     OnGoTo(event);
@@ -607,6 +620,8 @@ void WeatherRouting::RefreshAndroidWorkspace() {
                       route->Distance + TabletRouteTiming(
                           route->routemapoverlay->GetConfiguration(), m_SettingsDialog) +
                       wxString::Format("%d", route->routemapoverlay->m_bEndRouteVisible) +
+                      wxString::Format("%d", route->routemapoverlay->GetConfiguration()
+                          .DepartureTimeOptimizationChartDisplay) +
                       wxString::Format("%d", (m_panel->m_lWeatherRoutes->GetItemState(
                           i, wxLIST_STATE_SELECTED) & wxLIST_STATE_SELECTED) != 0);
   }
@@ -682,6 +697,16 @@ void WeatherRouting::RefreshAndroidWorkspace() {
       if (configuration.IsMultiLegGenerated)
         cardDetail += wxString::Format(_("\nPassage leg %d of %d"),
             configuration.MultiLegLegIndex, configuration.MultiLegLegCount);
+      if (configuration.DepartureTimeOptimizationCandidate) {
+        const wxString display =
+            configuration.DepartureTimeOptimizationChartDisplay ==
+                RouteMapConfiguration::SELECTED_DEPARTURE
+                ? _("Selected departure")
+                : configuration.DepartureTimeOptimizationChartDisplay ==
+                      RouteMapConfiguration::ALL_DEPARTURES
+                      ? _("All departures") : _("Manual");
+        cardDetail += _("\nShow on chart: ") + display;
+      }
       cardDetail += _("\nEngine: ") + wxString::FromUTF8(
           weather_routing::EngineTitle(configuration.EngineSettings.engine));
       cardDetail += "\n" + TabletRouteTiming(configuration, m_SettingsDialog);
@@ -731,6 +756,7 @@ void WeatherRouting::RefreshAndroidWorkspace() {
       actions->Add(edit, 1, wxEXPAND);
       layout->Add(actions, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 9);
       auto* visibility = new wxCheckBox(card, wxID_ANY, _("Visible on chart"));
+      visibility->SetName("RouteChartVisibility");
       visibility->SetValue(route->routemapoverlay->m_bEndRouteVisible);
       SetTabletFont(visibility, 16);
       visibility->SetMinSize(wxSize(0, 72));
