@@ -55,6 +55,7 @@ src/RoutePoint.cpp
 src/Position.cpp
 src/IsoRoute.cpp
 src/headless/HeadlessRouteRunner.cpp
+src/headless/RouteLifecycleContract.cpp
 src/headless/RoutingScenarioJson.cpp
 src/engine/StabilityCorridorCalculator.cpp
 vendor/weather-routing-engine/src/ArrivalPlanner.cpp

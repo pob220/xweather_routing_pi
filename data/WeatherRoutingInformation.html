@@ -12,6 +12,21 @@ a certain time.  By merging the results of many calculations,
 it is possible to form a map determining routes
 to any given location within the map.
 
+<h3>Route visibility and computed results (1.28)</h3>
+<p>The eye in the route list controls whether that route is visible on the
+chart. Selecting a hidden route lets you inspect its settings and results
+without showing its course, isochrones or other route overlays. On Android,
+use the <b>Visible on chart</b> checkbox.</p>
+<p>Starting a computation shows the route by default. You can hide it while
+it computes; completion keeps your visibility choice. Hiding is immediate
+and reversible and keeps the computed results in memory.</p>
+<p><b>Clear computed results</b> releases the selected routes' courses, search
+contours and result data, preserving their settings for recomputation.
+<b>Clear all computed results</b> does this for every route, including filtered
+routes. Stop a route before clearing its results. You can clear a finished
+route while another route computes. Clearing is separate from hiding and
+does not remove routes or tracks already saved to OpenCPN.</p>
+
 <h3>Routing engines (1.18.4)</h3>
 <p>Basic offers <b>Quick</b> (Hardened Original contour search),
 <b>Standard</b> (the former Quick engine), and <b>Professional</b> (the former

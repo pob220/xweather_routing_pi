@@ -283,6 +283,10 @@ public:
   void OnRightUp(wxMouseEvent& event);
 
   void Reset();
+  void SetRouteVisibility(RouteMapOverlay* route, bool visible);
+  bool CanClearComputedResults(const std::list<RouteMapOverlay*>& routes);
+  bool ClearComputedResults(const std::list<RouteMapOverlay*>& routes);
+  bool RouteComputationActive(RouteMapOverlay* route);
 
   void Render(piDC& dc, PlugIn_ViewPort& vp);
   bool ShowStabilityCorridor(
@@ -536,6 +540,7 @@ private:
   void OnComputeAll(wxCommandEvent& event);
   void OnStop(wxCommandEvent& event);
   void OnResetAll(wxCommandEvent& event);
+  void OnClearResults(wxCommandEvent& event);
   void OnPositions(wxCommandEvent& event);
   void OnBatch(wxCommandEvent& event);
   void OnEditConfiguration(wxCommandEvent& event) { OnEditConfiguration(); }
@@ -815,6 +820,7 @@ private:
   struct HeadlessRouteTestState;
   void OnHeadlessRouteTestTimer(wxTimerEvent&);
   void CompleteHeadlessSingleRouteTest(bool timedOut, long elapsedMs);
+  bool RunRouteLifecycleContract(RouteMapOverlay* route);
   void CompleteHeadlessMultiLegTest(bool timedOut, long elapsedMs);
 
   wxTimer m_tHeadlessRouteTest;
@@ -977,6 +983,8 @@ private:
   std::vector<wxButton*> m_androidAnyPositionButtons;
   std::vector<wxButton*> m_androidPickButtons;
   std::vector<wxButton*> m_androidStopButtons;
+  std::vector<wxButton*> m_androidClearResultButtons;
+  std::vector<wxButton*> m_androidClearAllResultButtons;
   wxSimplebook* m_androidBook{nullptr};
   wxStaticText* m_androidPlanStatus{nullptr};
   wxStaticText* m_androidResultStatus{nullptr};

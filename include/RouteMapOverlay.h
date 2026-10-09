@@ -329,6 +329,7 @@ public:
    * Resets the route map to its initial state.
    */
   virtual void Clear();
+  bool HasComputedResults();
 
   /**
    * Locks the route map for thread-safe access.
@@ -415,6 +416,7 @@ public:
   bool m_UpdateOverlay;
 
   /** Flag indicating if the end route should be visible. */
+  // Master visibility for all chart output, including selection previews.
   bool m_bEndRouteVisible;
 
   /**

@@ -205,8 +205,7 @@ void WeatherRouting::ShowAndroidRouteOnChart(RouteMapOverlay* route) {
   }
   const auto selected = CurrentRouteMaps();
   for (auto* map : selected)
-    if (map->Finished() && map->ReachedDestination())
-      map->m_bEndRouteVisible = true;
+    SetRouteVisibility(map, true);
   if (!selected.empty()) {
     wxCommandEvent event;
     OnGoTo(event);
@@ -282,8 +281,14 @@ wxWindow* WeatherRouting::BuildAndroidWorkspace(wxBoxSizer* root) {
       m_androidPickButtons.push_back(button);
     if (label == _("Stop")) m_androidStopButtons.push_back(button);
     if (label == _("Save all as tracks")) m_androidAnyResultButtons.push_back(button);
-    if (label == _("Compute all") || label == _("Reset all") || label == _("Delete all"))
+    if (label == _("Compute all") || label == _("Delete all"))
       m_androidAnyRouteButtons.push_back(button);
+    if (label == _("Clear computed results")) {
+      m_androidClearResultButtons.push_back(button);
+      button->SetToolTip(_("Release selected routing results; keep their settings for recomputation."));
+    }
+    if (label == _("Clear all computed results"))
+      m_androidClearAllResultButtons.push_back(button);
     if (label == _("Delete all positions")) m_androidAnyPositionButtons.push_back(button);
     if (label == _("Edit selected position") || label == _("Delete selected position"))
       m_androidNeedsPosition.push_back(button);
@@ -454,6 +459,9 @@ wxWindow* WeatherRouting::BuildAndroidWorkspace(wxBoxSizer* root) {
       {_("Export GPX"), command(&WeatherRouting::OnExportRouteAsGPX)},
       {_("Save all as tracks"), command(&WeatherRouting::OnSaveAllAsTracks)},
   });
+  addActions(results, resultsContent, _("Computed results"), {
+      {_("Clear computed results"), command(&WeatherRouting::OnClearResults)},
+  });
 
   wxBoxSizer* toolsContent = nullptr;
   wxScrolledWindow* tools = AddScrollPage(m_androidBook, _("Tools"), toolsContent);
@@ -514,8 +522,7 @@ wxWindow* WeatherRouting::BuildAndroidWorkspace(wxBoxSizer* root) {
       {_("Multi-leg settings"), command(&WeatherRouting::OnEditMultiLegGroupSettings)},
       {_("Compute multi-leg"), command(&WeatherRouting::OnComputeMultiLegSequence)},
       {_("Optimise multi-leg departure"), command(&WeatherRouting::OnOptimizeMultiLegDeparture)},
-      {_("Reset all"), destructive(&WeatherRouting::OnResetAll,
-          _("Reset every routing result?"))},
+      {_("Clear all computed results"), command(&WeatherRouting::OnResetAll)},
       {_("Delete selected"), [this]() {
         const size_t count = CurrentRouteMaps(false).size();
         if (!count) return;
@@ -733,8 +740,8 @@ void WeatherRouting::RefreshAndroidWorkspace() {
       visibility->Bind(wxEVT_CHECKBOX, [this, visibility, route](wxCommandEvent&) {
         if (std::find(m_WeatherRoutes.begin(), m_WeatherRoutes.end(), route)
                 == m_WeatherRoutes.end()) return;
-        route->routemapoverlay->m_bEndRouteVisible = visibility->GetValue();
-        GetParent()->Refresh();
+        SetRouteVisibility(route->routemapoverlay, visibility->GetValue());
+        CallAfter([this]() { RefreshAndroidWorkspace(); });
       });
       layout->Add(visibility, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 9);
       card->SetSizer(layout);
@@ -801,6 +808,12 @@ void WeatherRouting::RefreshAndroidWorkspace() {
   for (auto* button : m_androidAnyRouteButtons)
     button->Enable(!m_WeatherRoutes.empty());
   for (auto* button : m_androidAnyResultButtons) button->Enable(completeCount > 0);
+  for (auto* button : m_androidClearResultButtons)
+    button->Enable(CanClearComputedResults(CurrentRouteMaps(false)));
+  std::list<RouteMapOverlay*> allRoutes;
+  for (auto* route : m_WeatherRoutes) allRoutes.push_back(route->routemapoverlay);
+  for (auto* button : m_androidClearAllResultButtons)
+    button->Enable(CanClearComputedResults(allRoutes));
   const long selected = m_panel->m_lWeatherRoutes->GetNextItem(
       -1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
   bool running = false;

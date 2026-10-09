@@ -139,12 +139,15 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                            wxEmptyString, wxITEM_NORMAL);
   m_mConfiguration->Append(m_mStop);
 
-  wxMenuItem* m_mResetAll;
-  m_mResetAll =
+  m_mClearResults = new wxMenuItem(m_mConfiguration, wxID_ANY,
+      _("Clear computed results"),
+      _("Release selected routing results; keep their settings for recomputation."));
+  m_mConfiguration->Append(m_mClearResults);
+  m_mClearAllResults =
       new wxMenuItem(m_mConfiguration, wxID_ANY,
-                     wxString(_("&Reset All")) + wxT('\t') + wxT("Ctrl+R"),
-                     wxEmptyString, wxITEM_NORMAL);
-  m_mConfiguration->Append(m_mResetAll);
+                     wxString(_("Clear all computed results")) + wxT('\t') + wxT("Ctrl+R"),
+                     _("Release all routing results; keep route settings."), wxITEM_NORMAL);
+  m_mConfiguration->Append(m_mClearAllResults);
 
   m_mConfiguration->AppendSeparator();
 
@@ -314,12 +317,15 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                              wxEmptyString, wxITEM_NORMAL);
   m_mContextMenu->Append(m_mBatch1);
 
-  wxMenuItem* m_mResetAll1;
-  m_mResetAll1 =
+  m_mClearResults1 = new wxMenuItem(m_mContextMenu, wxID_ANY,
+      _("Clear computed results"),
+      _("Release selected routing results; keep their settings for recomputation."));
+  m_mContextMenu->Append(m_mClearResults1);
+  m_mClearAllResults1 =
       new wxMenuItem(m_mContextMenu, wxID_ANY,
-                     wxString(_("&Reset All")) + wxT('\t') + wxT("Ctrl+R"),
-                     wxEmptyString, wxITEM_NORMAL);
-  m_mContextMenu->Append(m_mResetAll1);
+                     wxString(_("Clear all computed results")) + wxT('\t') + wxT("Ctrl+R"),
+                     _("Release all routing results; keep route settings."), wxITEM_NORMAL);
+  m_mContextMenu->Append(m_mClearAllResults1);
 
   m_menu1 = new wxMenu();
   wxMenuItem* m_menu1Item =
@@ -427,7 +433,10 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                          this, m_mStop->GetId());
   m_mConfiguration->Bind(wxEVT_COMMAND_MENU_SELECTED,
                          wxCommandEventHandler(WeatherRoutingBase::OnResetAll),
-                         this, m_mResetAll->GetId());
+      this, m_mClearAllResults->GetId());
+  m_mConfiguration->Bind(wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnClearResults),
+      this, m_mClearResults->GetId());
   m_mConfiguration->Bind(
       wxEVT_COMMAND_MENU_SELECTED,
       wxCommandEventHandler(WeatherRoutingBase::OnSaveAsTrack), this,
@@ -520,7 +529,10 @@ WeatherRoutingBase::WeatherRoutingBase(wxWindow* parent, wxWindowID id,
                        m_mBatch1->GetId());
   m_mContextMenu->Bind(wxEVT_COMMAND_MENU_SELECTED,
                        wxCommandEventHandler(WeatherRoutingBase::OnResetAll),
-                       this, m_mResetAll1->GetId());
+                       this, m_mClearAllResults1->GetId());
+  m_mContextMenu->Bind(wxEVT_COMMAND_MENU_SELECTED,
+      wxCommandEventHandler(WeatherRoutingBase::OnClearResults),
+      this, m_mClearResults1->GetId());
   m_menu1->Bind(wxEVT_COMMAND_MENU_SELECTED,
                 wxCommandEventHandler(WeatherRoutingBase::OnSettings), this,
                 m_mSettings1->GetId());

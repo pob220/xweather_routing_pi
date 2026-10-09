@@ -137,7 +137,7 @@ void* RouteMapOverlayThread::Entry() {
 
 RouteMapOverlay::RouteMapOverlay()
     : m_UpdateOverlay(true),
-      m_bEndRouteVisible(false),
+      m_bEndRouteVisible(true),
       m_Thread(nullptr),
       m_bUpdatingDestination(false),
       last_cursor_lat(0),
@@ -888,6 +888,7 @@ static double GetPlatformScaleFactor() {
 void RouteMapOverlay::Render(wxDateTime time, SettingsDialog& settingsdialog,
                              piDC& dc, PlugIn_ViewPort& vp, bool justendroute,
                              RoutePoint* positionOnRoute) {
+  if (!m_bEndRouteVisible) return;
   dc.SetPen(*wxBLACK);                // reset pen
   dc.SetBrush(*wxTRANSPARENT_BRUSH);  // reset brush
   if (!justendroute) {
@@ -1497,6 +1498,7 @@ void RouteMapOverlay::RenderWindBarbsOnRoute(piDC& dc, PlugIn_ViewPort& vp,
 }
 
 void RouteMapOverlay::RenderWindBarbs(piDC& dc, PlugIn_ViewPort& vp) {
+  if (!m_bEndRouteVisible) return;
   if (origin.size() < 2)  // no map to work with
     return;
 
@@ -1689,6 +1691,7 @@ void RouteMapOverlay::RenderWindBarbs(piDC& dc, PlugIn_ViewPort& vp) {
 }
 
 void RouteMapOverlay::RenderCurrent(piDC& dc, PlugIn_ViewPort& vp) {
+  if (!m_bEndRouteVisible) return;
   if (origin.size() < 2)  // no map to work with
     return;
 
@@ -2294,27 +2297,41 @@ int RouteMapOverlay::Cyclones(int* months) {
   return cyclones;
 }
 
+bool RouteMapOverlay::HasComputedResults() {
+  return Finished() || !GetDiagnosticError().IsEmpty() || !origin.empty() ||
+         m_UsesModernNativeResult || !m_RetainedCandidates.empty();
+}
+
 void RouteMapOverlay::Clear() {
-  m_RetainedCandidates.clear();
+  decltype(m_RetainedCandidates)().swap(m_RetainedCandidates);
   m_SelectedRetainedCandidateId.clear();
   if (m_UsesModernNativeResult) {
     for (Position* position : m_ModernRoutePositions) delete position;
     for (Position* position : m_ModernCursorRoutePositions) delete position;
-    m_ModernRoutePositions.clear();
-    m_ModernCursorRoutePositions.clear();
-    m_ModernIsochrones.clear();
+    decltype(m_ModernRoutePositions)().swap(m_ModernRoutePositions);
+    decltype(m_ModernCursorRoutePositions)().swap(m_ModernCursorRoutePositions);
+    decltype(m_ModernIsochrones)().swap(m_ModernIsochrones);
     m_ModernCursorLayer = std::numeric_limits<std::size_t>::max();
     m_ModernCursorTrace = std::numeric_limits<std::size_t>::max();
     destination_position = nullptr;
     m_UsesModernNativeResult = false;
+  } else {
+    delete destination_position;
   }
   RouteMap::Clear();
+  destination_position = nullptr;
+  m_EndTime = wxInvalidDateTime;
   last_cursor_position = nullptr;
   last_destination_position = nullptr;
   clear_destination_plotdata = false;
   // clear_cursor_plotdata = false;
   last_cursor_plotdata.clear();
   last_destination_plotdata.clear();
+  wind_barb_cache.Clear();
+  wind_barb_route_cache.Clear();
+  climatology_wind_barb_route_cache.Clear();
+  current_cache.Clear();
+  wind_barb_cache_origin_size = current_cache_origin_size = 0;
   m_ModernProgress.Begin();
   m_UpdateOverlay = true;
 }
