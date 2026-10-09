@@ -27,8 +27,7 @@ void WeatherRouting::ApplyDepartureChartDisplay(const wxString& id) {
     if (!configuration.DepartureTimeOptimizationCandidate ||
         configuration.DepartureTimeOptimizationGroupId != id) continue;
     if (configuration.DepartureTimeOptimizationChartDisplay != state.mode) {
-      configuration.DepartureTimeOptimizationChartDisplay = state.mode;
-      route->SetConfigurationPreserveResult(configuration);
+      route->SetDepartureChartDisplayMode(state.mode);
     }
     if (state.mode != RouteMapConfiguration::MANUAL_DEPARTURES)
       SetRouteVisibility(
@@ -41,8 +40,7 @@ void WeatherRouting::ApplyDepartureChartDisplay(const wxString& id) {
     if (!RouteMapIsManaged(route)) continue;
     auto configuration = route->GetConfiguration();
     if (configuration.DepartureTimeOptimizationChartDisplay != state.mode) {
-      configuration.DepartureTimeOptimizationChartDisplay = state.mode;
-      route->SetConfigurationPreserveResult(configuration);
+      route->SetDepartureChartDisplayMode(state.mode);
     }
   }
 }
@@ -96,8 +94,7 @@ void WeatherRouting::SetDepartureChartDisplay(RouteMapOverlay* route, int mode) 
     group->second.userInteracted = true;
     ApplyDepartureChartDisplay(id);
   } else {
-    configuration.DepartureTimeOptimizationChartDisplay = mode;
-    route->SetConfigurationPreserveResult(configuration);
+    route->SetDepartureChartDisplayMode(mode);
   }
   SaveLastUsedConfigurationDefaults(route->GetConfiguration());
   m_tAutoSaveXML.Start(5000, true);
