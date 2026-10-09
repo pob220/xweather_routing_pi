@@ -425,6 +425,7 @@ protected:
    */
   wxButton* m_bCurrentTime;
   wxCheckBox* m_cbDepartureTimeOptimizationEnabled;
+  wxChoice* m_cDepartureChartDisplay;
   wxStaticText* m_staticTextDepartureRange;
   wxSpinCtrl* m_sDepartureTimeOptimizationRangeHours;
   wxStaticText* m_staticTextDepartureRangeHours;

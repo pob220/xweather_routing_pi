@@ -94,6 +94,7 @@ public:
    * and its persisted settings have been loaded.
    */
   void RefreshTimeZoneControls();
+  void RefreshDepartureChartDisplayControls();
 
   wxDateTime m_GribTimelineTime;
 
