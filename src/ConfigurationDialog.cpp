@@ -370,6 +370,15 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   m_cTimeZone->Enable(false);
   UpdateRoutingTimeModeControls();
 
+  m_cDepartureChartDisplay->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+    if (m_bBlockUpdate) return;
+    const int mode = m_cDepartureChartDisplay->GetSelection();
+    if (mode == wxNOT_FOUND) return;
+    for (auto* route : m_WeatherRouting.CurrentRouteMaps())
+      m_WeatherRouting.SetDepartureChartDisplay(route, mode);
+    RefreshDepartureChartDisplayControls();
+  });
+
 #ifdef __OCPN__ANDROID__
   // Route settings keep the shared immediate-save behaviour. Done commits any
   // text still being edited by Qt before returning to the workspace.
@@ -726,6 +735,26 @@ void ConfigurationDialog::OnRoutingTimeMode(wxCommandEvent& event) {
   Update();
 }
 
+void ConfigurationDialog::RefreshDepartureChartDisplayControls() {
+  const auto routes = m_WeatherRouting.CurrentRouteMaps();
+  int mode = wxNOT_FOUND;
+  bool first = true;
+  bool enabled = !routes.empty();
+  for (auto* route : routes) {
+    const auto configuration = route->GetConfiguration();
+    if (first) mode = configuration.DepartureTimeOptimizationChartDisplay;
+    else if (mode != configuration.DepartureTimeOptimizationChartDisplay)
+      mode = wxNOT_FOUND;
+    first = false;
+    enabled &= configuration.TimeMode ==
+                   RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME &&
+               (configuration.DepartureTimeOptimizationEnabled ||
+                configuration.DepartureTimeOptimizationCandidate);
+  }
+  m_cDepartureChartDisplay->SetSelection(mode);
+  m_cDepartureChartDisplay->Enable(enabled);
+}
+
 void ConfigurationDialog::UpdateRoutingTimeModeControls() {
   const bool arrival = m_rbRouteByArrivalTime->GetValue();
   m_staticTextPlannedTime->SetLabel(
@@ -750,6 +779,8 @@ void ConfigurationDialog::UpdateRoutingTimeModeControls() {
 
   m_cbDepartureTimeOptimizationEnabled->Enable(!arrival);
   if (arrival) m_cbDepartureTimeOptimizationEnabled->SetValue(true);
+  m_cDepartureChartDisplay->Enable(
+      !arrival && m_cbDepartureTimeOptimizationEnabled->IsChecked());
   m_staticTextDepartureRange->SetLabel(
 #ifdef __OCPN__ANDROID__
       arrival ? _("Search before arrival") : _("Departure window +/-"));
@@ -1007,6 +1038,11 @@ void ConfigurationDialog::SetConfigurations(
   m_cTimeZone->Enable(m_cbUseLocalTimeZone->GetValue());
   SET_CHECKBOX(UseCurrentTime);
   SET_CHECKBOX(DepartureTimeOptimizationEnabled);
+  int chartDisplay = it->DepartureTimeOptimizationChartDisplay;
+  for (const auto& configuration : configurations)
+    if (configuration.DepartureTimeOptimizationChartDisplay != chartDisplay)
+      chartDisplay = wxNOT_FOUND;
+  m_cDepartureChartDisplay->SetSelection(chartDisplay);
   if (routeByArrival) {
     m_cbUseCurrentTime->SetValue(false);
     m_cbDepartureTimeOptimizationEnabled->SetValue(true);
@@ -1215,6 +1251,7 @@ void ConfigurationDialog::SetConfigurations(
   m_cEnginePreset->SetMinSize(wxSize(220, 72));
 #endif
   RefreshEnginePresetStatus();
+  RefreshDepartureChartDisplayControls();
   m_bBlockUpdate = false;
 }
 

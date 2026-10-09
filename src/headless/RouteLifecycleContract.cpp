@@ -11,6 +11,130 @@
 #include <wx/log.h>
 #include <wx/utils.h>
 
+bool WeatherRouting::RunDepartureChartContract(RouteMapOverlay* route) {
+  if (!route || !route->Finished() || !route->ReachedDestination()) return false;
+  bool passed = true;
+  const auto check = [&](bool condition, const char* name) {
+    wxLogMessage("WR_DEPARTURE_DISPLAY check=%s passed=%d", name, condition);
+    passed &= condition;
+  };
+  const auto original = route->GetConfiguration();
+  const auto end = route->EndTime();
+  const auto plotCount = route->GetPlotData().size();
+  const wxString id = "departure-display-host-contract";
+  Show(true);
+  auto base = original;
+  base.DepartureTimeOptimizationEnabled = true;
+  base.DepartureTimeOptimizationChartDisplay =
+      RouteMapConfiguration::SELECTED_DEPARTURE;
+  if (!AddConfiguration(base)) return false;
+  auto* controller = m_WeatherRoutes.back()->routemapoverlay;
+  auto candidate = original;
+  candidate.DepartureTimeOptimizationCandidate = true;
+  candidate.DepartureTimeOptimizationEnabled = false;
+  candidate.DepartureTimeOptimizationGroupId = id;
+  candidate.DepartureTimeOptimizationNominalStartTime =
+      original.StartTime - wxTimeSpan::Minutes(30);
+  candidate.DepartureTimeOptimizationOffsetMinutes = 30;
+  route->SetConfigurationPreserveResult(candidate);
+  candidate.DepartureTimeOptimizationOffsetMinutes = 0;
+  candidate.StartTime = candidate.DepartureTimeOptimizationNominalStartTime;
+  if (!AddConfiguration(candidate)) return false;
+  auto* nominal = m_WeatherRoutes.back()->routemapoverlay;
+  candidate.DepartureTimeOptimizationOffsetMinutes = -30;
+  candidate.StartTime -= wxTimeSpan::Minutes(30);
+  if (!AddConfiguration(candidate)) return false;
+  auto* earlier = m_WeatherRoutes.back()->routemapoverlay;
+  InitializeDepartureChartGroup(id, {controller},
+                               RouteMapConfiguration::SELECTED_DEPARTURE);
+  check(nominal->m_bEndRouteVisible && !earlier->m_bEndRouteVisible &&
+            !route->m_bEndRouteVisible, "default_shows_nominal_only");
+  UpdateDepartureChartCompletion();
+  check(route->m_bEndRouteVisible && !nominal->m_bEndRouteVisible &&
+            SelectedDepartureOnChart(nominal) == route,
+        "completion_selects_fastest_usable_candidate");
+
+  auto* list = m_panel->m_lWeatherRoutes;
+  const auto selectRow = [&](RouteMapOverlay* selected) {
+    for (long row = 0; row < list->GetItemCount(); ++row) {
+      auto* item = reinterpret_cast<WeatherRoute*>(
+          wxUIntToPtr(list->GetItemData(row)));
+      list->SetItemState(row, item->routemapoverlay == selected
+          ? wxLIST_STATE_SELECTED : 0, wxLIST_STATE_SELECTED);
+    }
+  };
+  selectRow(earlier);
+  check(earlier->m_bEndRouteVisible && !route->m_bEndRouteVisible &&
+            !nominal->m_bEndRouteVisible,
+        "actual_main_list_selection_changes_selected_departure");
+  check(controller->m_bEndRouteVisible,
+        "unrelated_visibility_unchanged");
+
+  // Exercise the real Configuration choice event, not just a model setter.
+  auto* choice = wxDynamicCast(wxWindow::FindWindowByName(
+      "DepartureChartDisplay", &m_ConfigurationDialog), wxChoice);
+  if (!choice) return false;
+  choice->SetSelection(RouteMapConfiguration::ALL_DEPARTURES);
+  wxCommandEvent all(wxEVT_CHOICE, choice->GetId());
+  all.SetEventObject(choice);
+  choice->GetEventHandler()->ProcessEvent(all);
+  check(route->m_bEndRouteVisible && nominal->m_bEndRouteVisible &&
+            earlier->m_bEndRouteVisible,
+        "configuration_choice_shows_all_departures");
+  SetRouteVisibility(nominal, false);
+  check(route->GetConfiguration().DepartureTimeOptimizationChartDisplay ==
+            RouteMapConfiguration::MANUAL_DEPARTURES &&
+        choice->GetSelection() == RouteMapConfiguration::MANUAL_DEPARTURES,
+        "eye_choice_switches_group_and_control_to_manual");
+  selectRow(route);
+  OnWeatherRouteSelected();
+  UpdateDepartureChartCompletion();
+  check(!nominal->m_bEndRouteVisible && earlier->m_bEndRouteVisible &&
+            route->m_bEndRouteVisible,
+        "manual_subset_survives_selection_refresh_and_completion");
+  check(controller->GetConfiguration().DepartureTimeOptimizationChartDisplay ==
+            RouteMapConfiguration::MANUAL_DEPARTURES,
+        "controller_remembers_mode_for_next_run");
+  check(route->Finished() && route->ReachedDestination() &&
+            route->EndTime() == end && route->GetPlotData().size() == plotCount,
+        "mode_and_selection_changes_preserve_computed_results");
+
+  InitializeDepartureChartGroup(id, {controller},
+                               RouteMapConfiguration::SELECTED_DEPARTURE);
+  selectRow(earlier);
+  UpdateDepartureChartCompletion();
+  check(earlier->m_bEndRouteVisible && !route->m_bEndRouteVisible,
+        "completion_does_not_replace_user_inspected_departure");
+  InitializeDepartureChartGroup(id, {controller},
+      RouteMapConfiguration::MANUAL_DEPARTURES, {{-30, true}, {0, false},
+                                               {30, true}});
+  check(earlier->m_bEndRouteVisible && !nominal->m_bEndRouteVisible &&
+            route->m_bEndRouteVisible,
+        "repeat_manual_group_restores_matching_departure_choices");
+
+  candidate.DepartureTimeOptimizationOffsetMinutes = 0;
+  candidate.IsMultiLegGenerated = true;
+  candidate.MultiLegGroupId = "host-contract-chain";
+  candidate.MultiLegLegIndex = 1;
+  candidate.MultiLegLegCount = 2;
+  if (!AddConfiguration(candidate)) return false;
+  auto* secondLeg = m_WeatherRoutes.back()->routemapoverlay;
+  SetDepartureChartDisplay(nominal, RouteMapConfiguration::SELECTED_DEPARTURE);
+  SelectDepartureOnChart(nominal);
+  check(nominal->m_bEndRouteVisible && secondLeg->m_bEndRouteVisible &&
+            !earlier->m_bEndRouteVisible && !route->m_bEndRouteVisible,
+        "selected_departure_shows_all_legs_of_that_candidate");
+
+  route->SetConfigurationPreserveResult(original);
+  DeleteRouteMaps({controller, nominal, earlier, secondLeg});
+  check(m_DepartureChartGroups.count(id) == 0,
+        "deleted_group_releases_presentation_references");
+  SetRouteVisibility(route, true, false);
+  selectRow(route);
+  wxLogMessage("WR_DEPARTURE_DISPLAY result=%s", passed ? "passed" : "failed");
+  return passed;
+}
+
 bool WeatherRouting::RunRouteLifecycleContract(RouteMapOverlay* route) {
   bool passed = true;
   const auto check = [&](bool condition, const char* name) {

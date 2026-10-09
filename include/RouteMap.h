@@ -361,6 +361,13 @@ struct RouteMapConfiguration {
   bool UseCurrentTime;
   /** If true, compute a batch of routes around StartTime. */
   bool DepartureTimeOptimizationEnabled;
+  enum DepartureChartDisplay {
+    SELECTED_DEPARTURE = 0,
+    ALL_DEPARTURES = 1,
+    MANUAL_DEPARTURES = 2
+  };
+  /** Presentation only: changing this must preserve computed results. */
+  int DepartureTimeOptimizationChartDisplay;
   /** Minutes before and after StartTime to test. */
   int DepartureTimeOptimizationRangeMinutes;
   /** Minutes between candidate departure times. */

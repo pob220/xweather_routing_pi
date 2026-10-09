@@ -1379,7 +1379,33 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cbDepartureTimeOptimizationEnabled->SetToolTip(_(
       "Compute this route for alternative departure times around the selected "
       "start time."));
-  fgSizer60->Add(m_cbDepartureTimeOptimizationEnabled, 0, wxALL, 5);
+  wxBoxSizer* departureDisplaySizer = new wxBoxSizer(
+#ifdef __OCPN__ANDROID__
+      wxVERTICAL
+#else
+      wxHORIZONTAL
+#endif
+  );
+  departureDisplaySizer->Add(m_cbDepartureTimeOptimizationEnabled, 0,
+                             wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  wxBoxSizer* displayChoiceSizer = new wxBoxSizer(wxHORIZONTAL);
+  displayChoiceSizer->Add(new wxStaticText(sbStart->GetStaticBox(), wxID_ANY,
+                                          _("Show on chart")),
+                          0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  m_cDepartureChartDisplay = new wxChoice(sbStart->GetStaticBox(), wxID_ANY);
+  m_cDepartureChartDisplay->SetName("DepartureChartDisplay");
+  m_cDepartureChartDisplay->Append(_("Selected departure"));
+  m_cDepartureChartDisplay->Append(_("All departures"));
+  m_cDepartureChartDisplay->Append(_("Manual"));
+  m_cDepartureChartDisplay->SetSelection(0);
+  m_cDepartureChartDisplay->SetToolTip(_(
+      "Selected departure follows the highlighted candidate. All departures "
+      "shows the whole optimisation group. Manual keeps your individual eye "
+      "choices. Changing this preserves computed results."));
+  displayChoiceSizer->Add(m_cDepartureChartDisplay, 1,
+                          wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  departureDisplaySizer->Add(displayChoiceSizer, 1, wxEXPAND);
+  fgSizer60->Add(departureDisplaySizer, 0, wxEXPAND);
 
   wxFlexGridSizer* fgSizerDepartureOptimization;
   fgSizerDepartureOptimization = new wxFlexGridSizer(0, 4, 0, 0);
