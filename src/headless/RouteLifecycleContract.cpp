@@ -75,9 +75,23 @@ bool WeatherRouting::RunDepartureChartContract(RouteMapOverlay* route) {
       "DepartureChartDisplay", &m_ConfigurationDialog), wxChoice);
   if (!choice) return false;
   choice->SetSelection(RouteMapConfiguration::ALL_DEPARTURES);
+  // Move a named start after computing. Presentation must keep the result's
+  // original coordinates rather than re-resolving an updated live position.
+  RouteMapPosition* movedStart = nullptr;
+  double startLatitude = 0;
+  for (auto& position : RouteMap::Positions)
+    if (position.Name == original.Start) {
+      movedStart = &position;
+      startLatitude = position.lat;
+      position.lat += 0.5;
+      break;
+    }
   wxCommandEvent all(wxEVT_CHOICE, choice->GetId());
   all.SetEventObject(choice);
   choice->GetEventHandler()->ProcessEvent(all);
+  check(movedStart && route->GetConfiguration().StartLat == original.StartLat,
+        "display_change_does_not_refresh_live_start_coordinates");
+  if (movedStart) movedStart->lat = startLatitude;
   check(route->m_bEndRouteVisible && nominal->m_bEndRouteVisible &&
             earlier->m_bEndRouteVisible,
         "configuration_choice_shows_all_departures");

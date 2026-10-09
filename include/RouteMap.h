@@ -1125,6 +1125,12 @@ public:
     m_bValid = m_Configuration.Update();
     Unlock();
   }
+  void SetDepartureChartDisplayMode(int mode) {
+    Lock();
+    // Presentation changes must not re-resolve live boat/waypoint positions.
+    m_Configuration.DepartureTimeOptimizationChartDisplay = mode;
+    Unlock();
+  }
   RouteMapConfiguration GetConfiguration() {
     Lock();
     RouteMapConfiguration o = m_Configuration;
