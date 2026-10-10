@@ -1385,11 +1385,11 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   int confVersion;
   pConf->Read(_T ( "ConfigVersion" ), &confVersion, 0);
-  // v1.25 through v1.28 retain the v1.24 bundled boats and polars. A feature-only
+  // v1.25 through v1.29 retain the v1.24 bundled boats and polars. A feature-only
   // upgrade must not prompt to overwrite existing user data.
-  if (confVersion >= 124 && confVersion <= 127 &&
+  if (confVersion >= 124 && confVersion <= 128 &&
       PLUGIN_VERSION_MAJOR == 1 &&
-      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 28) {
+      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 29) {
     confVersion = PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR;
     pConf->Write(_T("ConfigVersion"), confVersion);
   }
