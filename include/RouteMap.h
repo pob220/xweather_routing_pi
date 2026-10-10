@@ -457,13 +457,12 @@ struct RouteMapConfiguration {
   double MaxApparentWindKnots;
 
   /**
-   * The calculated route will avoid swells larger than this value in meters.
-   *
-   * If the grib data does not contain swell information, the maximum swell
-   * value is ignored. If there is no route within the maximum swell value, the
-   * route calculation will fail.
+   * Maximum significant wave height (combined wind sea and swell), meters.
+   * Applied to known and bounded local estimated heights. Unknown coverage
+   * is reported, or rejected when RequireWaveCoverage is enabled.
    */
   double MaxSwellMeters;
+  bool RequireWaveCoverage{false};
 
   /**
    * The calculated route will not go beyond this latitude, as an absolute

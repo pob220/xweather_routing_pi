@@ -118,11 +118,12 @@ std::optional<double> PolarPerformanceModel::bestSailingSpeedAt(
       !std::isfinite(configuration_.upwindEfficiency) ||
       !std::isfinite(configuration_.downwindEfficiency) ||
       configuration_.upwindEfficiency < 0 || configuration_.downwindEfficiency < 0 ||
-      (waves.available && (!std::isfinite(waves.significantHeightMetres) ||
-                           !std::isfinite(waves.periodSeconds)))) return {};
+      (waves.available && !std::isfinite(waves.significantHeightMetres))) return {};
   std::optional<double> best;
   for (const auto& item : configuration_.profiles) {
-    if (item.role != ProfileRole::SailOnly || !validateProfile(item)) continue;
+    if (item.role != ProfileRole::SailOnly || !validateProfile(item) ||
+        (waves.available && !item.wavePerformance.empty() &&
+         !std::isfinite(waves.periodSeconds))) continue;
     const auto consider = [&](double angle) {
       if (angle < minimumAngle || angle > maximumAngle) return;
       const double speed = evaluateProfile(item, tws, angle, waves).speedThroughWaterKnots;
@@ -166,6 +167,8 @@ double PolarPerformanceModel::interpolate(const PerformanceProfile& profile,
 PerformanceCandidate PolarPerformanceModel::evaluateProfile(
     const PerformanceProfile& profileValue, double tws, double twa,
     const WaveSample& waves) const {
+  if (waves.available && (!std::isfinite(waves.significantHeightMetres) ||
+      (!profileValue.wavePerformance.empty() && !std::isfinite(waves.periodSeconds)))) return {};
   double speed = interpolate(profileValue, tws, twa) * profileValue.efficiency;
   const double directionalEfficiency = twa <= 90.0
                                            ? configuration_.upwindEfficiency

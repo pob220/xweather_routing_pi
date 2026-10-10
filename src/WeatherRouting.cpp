@@ -4927,6 +4927,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                 scenario.route.maxApparentWindKnots;
           if (scenario.route.hasOptimizeTacking)
             configuration.OptimizeTacking = scenario.route.optimizeTacking;
+          if (scenario.route.hasRequireWaveCoverage)
+            configuration.RequireWaveCoverage = scenario.route.requireWaveCoverage;
+          if (scenario.route.hasAnchoring)
+            configuration.Anchoring = scenario.route.anchoring;
           if (scenario.route.hasMaxSwellMeters)
             configuration.MaxSwellMeters = scenario.route.maxSwellMeters;
           if (scenario.route.hasUpwindEfficiency)
@@ -9504,6 +9508,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
         configuration.MaxApparentWindKnots =
             AttributeDouble(e, "MaxApparentWindKnots", 50);
 
+        configuration.RequireWaveCoverage = AttributeBool(e, "RequireWaveCoverage", false);
         configuration.MaxSwellMeters =
             AttributeDouble(e, "MaxSwellMeters", 20.);
         configuration.MaxLatitude = AttributeDouble(e, "MaxLatitude", 90);
@@ -9701,6 +9706,7 @@ void WeatherRouting::SaveXML(wxString filename) {
     c->SetAttribute("MaxApparentWindKnots", configuration.MaxApparentWindKnots);
 
     c->SetDoubleAttribute("MaxSwellMeters", configuration.MaxSwellMeters);
+    c->SetAttribute("RequireWaveCoverage", configuration.RequireWaveCoverage);
     c->SetAttribute("MaxLatitude", configuration.MaxLatitude);
     c->SetAttribute("TackingTime", configuration.TackingTime);
     c->SetAttribute("JibingTime", configuration.JibingTime);
@@ -10239,6 +10245,9 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
         if (!mode.empty()) State += " (" + mode + ")";
         if (routemapoverlay->UsesEstimatedPolarPerformance())
           State += _(" (estimated polar performance)");
+        if (routemapoverlay->HasUnknownWaveHeights()) State += _(" (wave coverage incomplete)");
+        else if (routemapoverlay->HasEstimatedWaveHeights()) State += _(" (wave heights estimated)");
+        if (routemapoverlay->HasAnchoringWaits()) State += _(" (anchoring assumed)");
         if (routemapoverlay->HasModernNativeCoastalEndpointLeeway())
           State += _(" (shore buffer at endpoint: check route)");
       } else
@@ -13268,6 +13277,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("MaxTrueWindKnots"), configuration.MaxTrueWindKnots);
   pConf->Write(_T("MaxApparentWindKnots"), configuration.MaxApparentWindKnots);
   pConf->Write(_T("MaxSwellMeters"), configuration.MaxSwellMeters);
+  pConf->Write(_T("RequireWaveCoverage"), configuration.RequireWaveCoverage);
   pConf->Write(_T("MaxLatitude"), configuration.MaxLatitude);
   pConf->Write(_T("TackingTime"), configuration.TackingTime);
   pConf->Write(_T("JibingTime"), configuration.JibingTime);
@@ -13355,6 +13365,7 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.MaxTrueWindKnots);
   pConf->Read(_T("MaxApparentWindKnots"), &configuration.MaxApparentWindKnots,
               configuration.MaxApparentWindKnots);
+  pConf->Read(_T("RequireWaveCoverage"), &configuration.RequireWaveCoverage, false);
   pConf->Read(_T("MaxSwellMeters"), &configuration.MaxSwellMeters,
               configuration.MaxSwellMeters);
   pConf->Read(_T("MaxLatitude"), &configuration.MaxLatitude,
@@ -13513,6 +13524,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.MaxApparentWindKnots = 50;  // Safety margin for wind speed
 
   configuration.MaxSwellMeters = 20.;
+  configuration.RequireWaveCoverage = false;
   configuration.MaxLatitude = 90;
   configuration.TackingTime = 0;
   configuration.JibingTime = 0;

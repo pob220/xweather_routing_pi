@@ -2663,6 +2663,8 @@ void calculateResultSummaries(RoutingResult& result) {
       result.environment.gribWaveDuration += duration;
     else
       result.environment.missingWaveDuration += duration;
+    if (leg.waves.available && leg.waves.nearbyHeightEstimate)
+      result.environment.estimatedWaveDuration += duration;
     EnvironmentalSnapshot current;
     current.wind = {true, {}, leg.windSource};
     current.current = {true, {}, leg.currentSource};
@@ -2861,10 +2863,10 @@ RoutingPreflightResult RoutingEngine::preflight(
     result.coverage.current = environment.xtdCurrent->coverage();
   }
 
-  if (request.constraints.maximumWaveHeightMetres &&
-      !coversRoute(result.coverage.waves)) {
+  if (request.environment.useWaves && !coversRoute(result.coverage.waves)) {
     result.coverage.waveWaiverNeeded = true;
-    if (request.environment.missingWaves ==
+    if (request.constraints.maximumWaveHeightMetres &&
+        request.environment.missingWaves ==
         MissingWavePolicy::DisallowWhenConstrained)
       result.requiredActions.push_back(
           RequiredUserAction::ConfirmRoutingWithoutWaveData);
@@ -2876,7 +2878,7 @@ RoutingPreflightResult RoutingEngine::preflight(
     else
       result.warnings.push_back(
           {RoutingWarningCode::WaveDataMissing,
-           "wave constraint data is unavailable and explicitly waived"});
+           "Wave coverage is unavailable; unchecked areas will be reported"});
   }
   if (request.constraints.minimumDepthMetres &&
       (!environment.landAndBoundaries ||

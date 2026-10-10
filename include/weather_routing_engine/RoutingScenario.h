@@ -62,6 +62,10 @@ struct RoutingScenarioRouteSettings {
   int comfortMaximumSeconds{20};
   double maxSwellMeters{20};
   bool hasMaxSwellMeters{false};
+  bool requireWaveCoverage{false};
+  bool hasRequireWaveCoverage{false};
+  bool anchoring{false};
+  bool hasAnchoring{false};
   int chartShorelineResolution{0};
   bool hasChartShorelineResolution{false};
   int shorelineResolution{4};

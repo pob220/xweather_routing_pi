@@ -463,6 +463,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   m_cbUseOptimalAngles->SetMinSize(WR_FromDIP(this, wxSize(310, 40)));
   m_cbInvertedRegions->SetMinSize(WR_FromDIP(this, wxSize(300, 40)));
   m_cbAnchoring->SetMinSize(WR_FromDIP(this, wxSize(240, 40)));
+  m_cbRequireWaveCoverage->SetMinSize(WR_FromDIP(this, wxSize(340, 40)));
   m_cRoutingEffortPercent->Clear();
   for (const wxString& label : {_("100% / Standard"), _("150% / Extended"),
                                 _("200% / Thorough"), _("400% / Exhaustive")})
@@ -1242,6 +1243,7 @@ void ConfigurationDialog::SetConfigurations(
   SET_CHECKBOX(InvertedRegions);
   SET_CHECKBOX(UseReverseReachabilityRecovery);
   SET_CHECKBOX(Anchoring);
+  SET_CHECKBOX(RequireWaveCoverage);
 
   SET_CHECKBOX(UseGrib);
   SET_CONTROL(ClimatologyType, m_cClimatologyType, SetSelection, int, -1);
@@ -1958,6 +1960,7 @@ void ConfigurationDialog::Update() {
     GET_CHECKBOX(InvertedRegions);
     GET_CHECKBOX(UseReverseReachabilityRecovery);
     GET_CHECKBOX(Anchoring);
+    GET_CHECKBOX(RequireWaveCoverage);
     if (configuration.EngineSettings.engine != weather_routing::RoutingEngine::Auto &&
         (NO_EDITED_CONTROLS ||
          std::find(m_edited_controls.begin(), m_edited_controls.end(),
@@ -2078,6 +2081,7 @@ bool ConfigurationDialog::RunComfortHostContract() {
            m_sComfortAdditionalPercent->IsEnabled();
   passed = passed && changed.StartTime == saved.StartTime && changed.DeltaTime == saved.DeltaTime &&
            changed.MaxSwellMeters == saved.MaxSwellMeters &&
+           changed.RequireWaveCoverage == saved.RequireWaveCoverage &&
            changed.EngineSettings.engine == saved.EngineSettings.engine;
   SetConfigurations({changed});
   passed = passed && m_cbExploreComfortAlternatives->IsChecked() &&

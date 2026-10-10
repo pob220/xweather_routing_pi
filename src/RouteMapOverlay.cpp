@@ -395,6 +395,38 @@ void RouteMapOverlay::InstallModernNativeResult(
                     return warning.code ==
                            wr::RoutingWarningCode::CoastalEndpointLeeway;
                   });
+  m_ModernNativeMissingWaves = complete && result.validation.environment.missingWaveDuration.count() > 0;
+  m_ModernNativeEstimatedWaves = complete && result.validation.environment.estimatedWaveDuration.count() > 0;
+  m_ModernNativeAnchoringWaits = complete && result.metrics.waitingTime.count() > 0;
+  m_ModernNativeCoverageNotes.clear();
+  if (m_ModernNativeMissingWaves) {
+    m_ModernNativeCoverageNotes = result.validation.environment.gribWaveDuration.count() == 0
+        ? _("No usable wave-height data along this route. Wave heights are unknown and the wave ceiling could not be checked.")
+        : _("Wave coverage is incomplete along this route. The wave ceiling was checked where height data or local estimates were available; other sections remain unchecked.");
+  }
+  if (m_ModernNativeEstimatedWaves) {
+    if (!m_ModernNativeCoverageNotes.empty()) m_ModernNativeCoverageNotes += "\n";
+    m_ModernNativeCoverageNotes += _("Some wave heights are estimated using the maximum of nearby connected-water cells within 15 NM. These estimates are not a guaranteed upper bound.");
+  }
+  if (m_ModernNativeAnchoringWaits) {
+    if (!m_ModernNativeCoverageNotes.empty()) m_ModernNativeCoverageNotes += "\n";
+    m_ModernNativeCoverageNotes += wxString::Format(_("Anchoring assumed: %lld minutes of stationary waiting, included in total passage time. Verify anchoring suitability at each position."),
+        static_cast<long long>(result.metrics.waitingTime.count() / 60));
+    for (std::size_t i = 0; i < result.legs.size(); ++i) {
+      const auto& leg = result.legs[i];
+      if (!leg.stationaryWait) continue;
+      auto endTime = leg.endTime;
+      while (i + 1 < result.legs.size() && result.legs[i + 1].stationaryWait &&
+          result.legs[i + 1].start == leg.start && result.legs[i + 1].startTime == endTime)
+        endTime = result.legs[++i].endTime;
+      auto start = wxDateTime(static_cast<time_t>(leg.startTime.time_since_epoch().count()));
+      auto end = wxDateTime(static_cast<time_t>(endTime.time_since_epoch().count()));
+      m_ModernNativeCoverageNotes += wxString::Format("\n%.5f, %.5f: %s to %s UTC",
+          leg.start.latitude, leg.start.longitude,
+          start.Format("%Y-%m-%d %H:%M", wxDateTime::UTC),
+          end.Format("%Y-%m-%d %H:%M", wxDateTime::UTC));
+    }
+  }
   if (complete && result.validation.passed && !result.legs.empty() &&
       m_RetainedCandidates.empty())
     m_RetainedCandidates.push_back(weather_routing::RetainRouteCandidate(
@@ -420,7 +452,7 @@ void RouteMapOverlay::InstallModernNativeResult(
     wxString reason = complete ? wxString()
                               : wxString::FromUTF8(result.message.c_str());
 #ifdef __OCPN__ANDROID__
-    if (!complete) {
+    if (!complete && result.attemptFailures.empty()) {
       switch (result.status) {
         case wr::RoutingStatus::WindForecastRequired:
           reason = _("Wind forecast does not cover this route and time. Load suitable weather in xGRIB or enable climatology wind fallback.");
@@ -429,7 +461,7 @@ void RouteMapOverlay::InstallModernNativeResult(
           reason = _("Current data are required. Load a forecast with currents or turn off currents in Weather settings.");
           break;
         case wr::RoutingStatus::WaveDataRequired:
-          reason = _("Wave data are required. Load a wave forecast or remove the wave limit in Weather settings.");
+          reason = _("Required wave coverage is unavailable. Load a wave forecast covering the route and time, or turn off Require wave coverage to proceed with a coverage warning.");
           break;
         case wr::RoutingStatus::InvalidPolar:
           reason = _("Select a valid sailing polar in Boat settings before computing this route.");
@@ -2329,6 +2361,8 @@ void RouteMapOverlay::Clear() {
     m_ModernCursorTrace = std::numeric_limits<std::size_t>::max();
     destination_position = nullptr;
     m_UsesModernNativeResult = false;
+    m_ModernNativeCoverageNotes.clear();
+    m_ModernNativeMissingWaves = m_ModernNativeEstimatedWaves = m_ModernNativeAnchoringWaits = false;
   } else {
     delete destination_position;
   }

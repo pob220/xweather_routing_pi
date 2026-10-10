@@ -38,6 +38,8 @@ void addUsage(EnvironmentalSourceUsage& usage,
     usage.gribWaveDuration += duration;
   else
     usage.missingWaveDuration += duration;
+  if (environment.waves.available && environment.waves.nearbyHeightEstimate)
+    usage.estimatedWaveDuration += duration;
 }
 }  // namespace
 

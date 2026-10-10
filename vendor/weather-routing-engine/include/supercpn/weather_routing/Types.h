@@ -74,6 +74,7 @@ struct WaveSample {
   double directionFromDegrees{};
   double periodSeconds{};
   EnvironmentalSourceMetadata metadata;
+  bool nearbyHeightEstimate{};
 };
 
 struct EnvironmentalSnapshot {
@@ -110,6 +111,7 @@ struct EnvironmentalSourceUsage {
   Duration currentAssumedZeroDuration{};
   Duration gribWaveDuration{};
   Duration missingWaveDuration{};
+  Duration estimatedWaveDuration{};
 };
 
 enum class PropulsionMode { Sail, MotorSail, Motor };
@@ -393,6 +395,7 @@ enum class RoutingWarningCode {
   CurrentAssumedZero,
   CurrentCoverageIncomplete,
   WaveDataMissing,
+  WaveHeightEstimated,
   WaveCoverageIncomplete,
   EstimatedPolar,
   SearchPruned,
@@ -655,6 +658,12 @@ struct EnsembleMetrics {
   std::vector<EnsembleMemberResult> members;
 };
 
+struct RoutingAttemptFailure {
+  std::string engine;
+  RoutingStatus status{RoutingStatus::InternalError};
+  std::string detail;
+};
+
 struct RoutingResult {
   RoutingStatus status{RoutingStatus::InternalError};
   std::vector<RouteLeg> legs;
@@ -672,6 +681,7 @@ struct RoutingResult {
   // Optional client-side solver provenance, retained by arrival planning.
   std::string engineIdentity;
   std::string searchVariant;
+  std::vector<RoutingAttemptFailure> attemptFailures;
 };
 
 }  // namespace supercpn::weather_routing

@@ -86,6 +86,7 @@ set(TEST_SRC
     TimeZoneDisplay_tests.cpp
     GpxRouteTime_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/navobj_util.cpp
+    NearbyWaveHeight_tests.cpp
     ModernNativeEngine_tests.cpp
     OriginalEngine_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/vendor/original-routing-engine/src/Engine.cpp

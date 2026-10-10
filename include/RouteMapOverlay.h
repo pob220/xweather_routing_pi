@@ -366,6 +366,10 @@ public:
   }
   bool UsesModernNativeResult() const { return m_UsesModernNativeResult; }
   bool UsesEstimatedPolarPerformance();
+  const wxString& ModernNativeCoverageNotes() const { return m_ModernNativeCoverageNotes; }
+  bool HasUnknownWaveHeights() const { return m_ModernNativeMissingWaves; }
+  bool HasEstimatedWaveHeights() const { return m_ModernNativeEstimatedWaves; }
+  bool HasAnchoringWaits() const { return m_ModernNativeAnchoringWaits; }
   bool HasModernNativeCoastalEndpointLeeway() const {
     return m_ModernNativeCoastalEndpointLeeway;
   }
@@ -510,6 +514,10 @@ private:
   bool m_UsesModernNativeResult{false};
   bool m_ModernNativeCoastalEndpointLeeway{false};
   bool m_ModernNativeEstimatedPolar{false};
+  bool m_ModernNativeMissingWaves{false};
+  bool m_ModernNativeEstimatedWaves{false};
+  bool m_ModernNativeAnchoringWaits{false};
+  wxString m_ModernNativeCoverageNotes;
   std::shared_ptr<std::atomic_bool> m_ComfortStop{std::make_shared<std::atomic_bool>(false)};
   std::atomic_bool m_ExploringComfort{false};
   std::vector<weather_routing::RetainedRouteCandidate> m_RetainedCandidates;

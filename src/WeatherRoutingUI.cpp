@@ -1623,7 +1623,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   fgSizer110->Add(m_staticText1282, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 
   m_staticText27 = new wxStaticText(sbConstraints->GetStaticBox(), wxID_ANY,
-                                    _("Max Swell") /* MaxSwellMeters */,
+                                    _("Max wave height") /* MaxSwellMeters */,
                                     wxDefaultPosition, wxDefaultSize, 0);
   m_staticText27->Wrap(-1);
   fgSizer110->Add(m_staticText27, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
@@ -1633,9 +1633,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       wxSize(140, -1), wxSP_ARROW_KEYS, 0. /* min */, 100. /* max */,
       0. /* initial */, 0.1 /* inc */);
   m_sMaxSwellMeters->SetToolTip(
-      _("Maximum swell height to allow during routing.\nRoutes with swell "
-        "heights above this value will be avoided. Set 0 to disable this limit. "
-        "Quick requires wave data whenever this limit is enabled."));
+      _("Maximum significant wave height (combined sea and swell). Set 0 to disable the limit. "
+        "Missing wave heights remain unknown and are reported; enable Require wave coverage "
+        "to reject routes with unknown wave heights."));
   m_sMaxSwellMeters->SetMaxSize(wxSize(140, -1));
 
   fgSizer110->Add(m_sMaxSwellMeters, 1,
@@ -2335,14 +2335,15 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cbAnchoring =
       new wxCheckBox(sbOptions1->GetStaticBox(), wxID_ANY, _("Anchoring"),
                      wxDefaultPosition, wxDefaultSize, wxCHK_3STATE);
-  m_cbAnchoring->SetToolTip(
-      _("When enabled, allows the boat to remain stationary (anchor) during "
-        "routing calculations. This can create routes with strategic waiting "
-        "periods for better weather conditions."));
-  m_cbAnchoring->SetToolTip(
-      _("When enabled, allows the boat to remain stationary (anchor) during "
-        "routing calculations. This can create routes with strategic waiting "
-        "periods when facing strong currents."));
+  m_cbAnchoring->SetToolTip(_("Allow stationary waits of up to six hours in total. Waiting time and positions "
+      "are included in the route report. This assumes the boat can safely anchor there; "
+      "the routing calculation does not establish anchoring suitability."));
+  m_cbRequireWaveCoverage = new wxCheckBox(sbOptions1->GetStaticBox(), wxID_ANY,
+      _("Require wave coverage"), wxDefaultPosition, wxDefaultSize, wxCHK_3STATE);
+  m_cbRequireWaveCoverage->SetToolTip(_("Reject routes with unknown wave heights. Small local gaps may use "
+      "the maximum of nearby cells within 15 NM without crossing land, reported as estimated. "
+      "Larger gaps and times outside wave coverage remain unknown."));
+  fgSizer1121->Add(m_cbRequireWaveCoverage, 0, wxALL, 5);
   fgSizer1121->Add(m_cbAnchoring, 0, wxALL, 5);
 
   fgSizer113->Add(fgSizer1121, 1, wxEXPAND, 5);
@@ -3468,6 +3469,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cbAnchoring->Connect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_cbRequireWaveCoverage->Connect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_cbUseReverseReachabilityRecovery->Connect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
@@ -4154,6 +4158,9 @@ ConfigurationDialogBase::~ConfigurationDialogBase() {
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_cbAnchoring->Disconnect(
+      wxEVT_COMMAND_CHECKBOX_CLICKED,
+      wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
+  m_cbRequireWaveCoverage->Disconnect(
       wxEVT_COMMAND_CHECKBOX_CLICKED,
       wxCommandEventHandler(ConfigurationDialogBase::OnUpdate), NULL, this);
   m_cIntegrator->Disconnect(

@@ -502,6 +502,7 @@ protected:
   wxStaticText* m_staticText130;
   wxCheckBox* m_cbInvertedRegions;
   wxCheckBox* m_cbAnchoring;
+  wxCheckBox* m_cbRequireWaveCoverage;
   wxChoice* m_cRoutingEffortPercent;
   wxSpinCtrl* m_sDepartureTimeOptimizationConcurrentRoutes;
   wxSpinCtrl* m_sChartSafetyRamCacheMiB;
