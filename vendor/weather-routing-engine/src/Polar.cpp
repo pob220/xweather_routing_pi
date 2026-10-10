@@ -109,6 +109,35 @@ bool PolarPerformanceModel::valid(std::string* reason) const {
   return true;
 }
 
+std::optional<double> PolarPerformanceModel::bestSailingSpeedAt(
+    GeoPoint, TimePoint, double tws, const WaveSample& waves,
+    double minimumAngle, double maximumAngle) const {
+  if (!std::isfinite(tws) || tws < 0 ||
+      !std::isfinite(minimumAngle) || !std::isfinite(maximumAngle) ||
+      minimumAngle < 0 || maximumAngle > 180 || minimumAngle > maximumAngle ||
+      !std::isfinite(configuration_.upwindEfficiency) ||
+      !std::isfinite(configuration_.downwindEfficiency) ||
+      configuration_.upwindEfficiency < 0 || configuration_.downwindEfficiency < 0 ||
+      (waves.available && (!std::isfinite(waves.significantHeightMetres) ||
+                           !std::isfinite(waves.periodSeconds)))) return {};
+  std::optional<double> best;
+  for (const auto& item : configuration_.profiles) {
+    if (item.role != ProfileRole::SailOnly || !validateProfile(item)) continue;
+    const auto consider = [&](double angle) {
+      if (angle < minimumAngle || angle > maximumAngle) return;
+      const double speed = evaluateProfile(item, tws, angle, waves).speedThroughWaterKnots;
+      if (std::isfinite(speed) && speed >= 0 && (!best || speed > *best)) best = speed;
+    };
+    consider(minimumAngle);
+    consider(maximumAngle);
+    consider(90);
+    consider(std::nextafter(90.0, 180.0));
+    for (const auto& row : item.rows)
+      for (const auto& point : row.points) consider(point.trueWindAngleDegrees);
+  }
+  return best;
+}
+
 const PerformanceProfile* PolarPerformanceModel::profile(
     ProfileRole role, const std::string& identity) const {
   for (const auto& item : configuration_.profiles)

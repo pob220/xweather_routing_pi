@@ -2685,7 +2685,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       sbMotor->GetStaticBox(), wxID_ANY, _("Motor if boat speed is below"));
   m_cbUseMotor->SetToolTip(_(
       "Enable motor when Speed Through Water (STW) falls below the specified "
-      "threshold. This does not change the configured course-angle limits."));
+      "threshold. When the best usable sailing STW is below this threshold, "
+      "motor-only routing may use headings outside the sailing-angle limits. "
+      "Chart, depth and weather limits still apply."));
   sbMotor->Add(m_cbUseMotor, 0, wxALL, 5);
 
   wxStaticText* motorThresholdLabel = new wxStaticText(

@@ -444,6 +444,26 @@ public:
   explicit OpenCpnPerformanceModel(RouteMapConfiguration configuration)
       : configuration_(std::move(configuration)) {}
 
+  std::optional<double> bestSailingSpeedAt(wr::GeoPoint position,
+      wr::TimePoint time, double tws, const wr::WaveSample&,
+      double minimumAngle, double maximumAngle) const override {
+    const bool night = configuration_.NightCumulativeEfficiency != 1.0 &&
+        SunCalculator::GetInstance().GetDayLightStatus(position.latitude,
+            position.longitude, ToWx(time)) == DayLightStatus::Night;
+    if (tws != bestWind_ || night != bestNight_ ||
+        minimumAngle != bestMinimumAngle_ || maximumAngle != bestMaximumAngle_) {
+      bestSpeed_ = BestSailingSpeedForRouting(configuration_.boat.Polars,
+          tws, minimumAngle, maximumAngle, configuration_.UpwindEfficiency,
+          configuration_.DownwindEfficiency,
+          night ? configuration_.NightCumulativeEfficiency : 1.0);
+      bestWind_ = tws;
+      bestNight_ = night;
+      bestMinimumAngle_ = minimumAngle;
+      bestMaximumAngle_ = maximumAngle;
+    }
+    return bestSpeed_;
+  }
+
   bool valid(std::string* reason) const override {
     const bool result =
         !configuration_.boat.Polars.empty() ||
@@ -564,6 +584,9 @@ private:
   }
 
   mutable RouteMapConfiguration configuration_;
+  mutable double bestWind_{NAN}, bestMinimumAngle_{NAN}, bestMaximumAngle_{NAN};
+  mutable bool bestNight_{};
+  mutable std::optional<double> bestSpeed_;
 };
 
 class OpenCpnLandProvider final : public wr::LandAndBoundaryProvider {

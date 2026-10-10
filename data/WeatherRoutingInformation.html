@@ -12,6 +12,19 @@ a certain time.  By merging the results of many calculations,
 it is possible to form a map determining routes
 to any given location within the map.
 
+<h3>Motoring when sailing performance is insufficient (1.29)</h3>
+<p><b>Motor if boat speed is below</b> uses the STW threshold you set for that
+route. If the best usable sailing STW across the permitted sailing angles and
+available polars is below that threshold, motor-only routing may use other
+headings, including directly into the wind, at your configured motor speed.
+The check uses actual sailing STW, not reduced progress from tacking or speed
+over ground. Sailing efficiency settings are included.</p>
+<p>Sailing and motor-sailing retain their sailing-angle limits. When sufficient
+sailing performance exists, motor-only legs also retain those limits. The
+condition is checked throughout each leg and again during final validation.
+Chart, depth, weather, boundary and propulsion limits continue to apply.
+Missing or rejected polar performance does not count as zero sailing speed.</p>
+
 <h3>Polar wind range policies (1.28.1)</h3>
 <p>Boat &rarr; Polars provides separate choices for wind below and above each
 polar's supplied range. Below the range, <b>Taper to zero</b> scales the first

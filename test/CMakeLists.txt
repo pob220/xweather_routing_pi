@@ -64,6 +64,7 @@ set(TEST_SRC
     RouteDisplayPolicy_tests.cpp
     Polar_tests.cpp
     PolarRoutingPolicy_tests.cpp
+    LowWindMotor_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
     MultiLegRouteOutput_tests.cpp

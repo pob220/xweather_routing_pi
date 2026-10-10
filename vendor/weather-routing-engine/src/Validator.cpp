@@ -336,8 +336,8 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       const double tws = vectorMagnitudeKnots(resolved.snapshot.wind.velocity);
       const double twa = trueWindAngleDegrees(resolved.snapshot.wind.velocity,
                                               leg.courseThroughWaterDegrees);
-      if (twa + 1e-9 < request.constraints.minimumTrueWindAngleDegrees ||
-          twa - 1e-9 > request.constraints.maximumTrueWindAngleDegrees)
+      if (!sailingAngleAllowed(request, performance, midpoint, time, tws, twa,
+              resolved.snapshot.waves, leg.propulsionMode, leg.profileRole))
         return fail(std::move(result),
                     "route violates hard true-wind-angle bounds");
       const auto achievable = performance.evaluateAt(

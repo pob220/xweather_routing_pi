@@ -149,6 +149,11 @@ public:
     arena.checkpoint();
     return source->evaluateAt(p, t, m, r, id, w, a, s);
   }
+  std::optional<double> bestSailingSpeedAt(wr::GeoPoint p, wr::TimePoint t,
+      double w, const wr::WaveSample& s, double lo, double hi) const override {
+    arena.checkpoint();
+    return source->bestSailingSpeedAt(p, t, w, s, lo, hi);
+  }
 };
 class GuardClimatology final : public wr::ClimatologyProvider {
   std::shared_ptr<const wr::ClimatologyProvider> source;
@@ -267,6 +272,14 @@ public:
     for (double a = lo; a <= hi + 1e-8; a += r.options.headingStepDegrees)
       angles.push_back(a);
     if (angles.empty() || angles.back() < hi - 1e-8) angles.push_back(hi);
+    if (r.vessel.propulsion.allowMotor &&
+        r.vessel.propulsion.motorBelowSailingSpeedKnots > 0) {
+      // Additional headings are motor-only candidates. Selection and every
+      // integration/replay sample still verify the low-sailing-STW condition.
+      for (double a = 0; a <= 180; a += r.options.headingStepDegrees)
+        if (a < lo - 1e-8 || a > hi + 1e-8) angles.push_back(a);
+      if (hi < 180 - 1e-8 && angles.back() < 180 - 1e-8) angles.push_back(180);
+    }
     const auto positive = angles;
     for (double a : positive)
       if (a > 0 && a < 180) angles.push_back(-a);
@@ -368,10 +381,10 @@ public:
       wr::GeoPoint p, wr::TimePoint t, double heading,
       const wr::EnvironmentalSnapshot& e, unsigned index) {
     double a = wr::trueWindAngleDegrees(e.wind.velocity, heading);
-    if (a + 1e-8 < request.constraints.minimumTrueWindAngleDegrees ||
-        a - 1e-8 > request.constraints.maximumTrueWindAngleDegrees)
-      return {};
     auto& id = profiles[index];
+    if (!wr::sailingAngleAllowed(request, *environment.performance, p, t,
+            wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves, id.mode, id.role))
+      return {};
     auto c = environment.performance->evaluateAt(
         p, t, id.mode, id.role, id.profileIdentity,
         wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves);
@@ -403,9 +416,6 @@ public:
   std::optional<unsigned> select(const State& s, double heading,
                                  const wr::EnvironmentalSnapshot& e) {
     double a = wr::trueWindAngleDegrees(e.wind.velocity, heading);
-    if (a + 1e-8 < request.constraints.minimumTrueWindAngleDegrees ||
-        a - 1e-8 > request.constraints.maximumTrueWindAngleDegrees)
-      return {};
     auto cs = environment.performance->candidatesAt(
         s.point, s.time, wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves,
         s.prior ? profiles[s.profile].mode : wr::PropulsionMode::Sail,
@@ -414,6 +424,8 @@ public:
     for (auto& c : cs)
       if (c.valid && std::isfinite(c.speedThroughWaterKnots) &&
           c.speedThroughWaterKnots > .05 &&
+          wr::sailingAngleAllowed(request, *environment.performance, s.point, s.time,
+              wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves, c.mode, c.role) &&
           ((c.mode == wr::PropulsionMode::Sail &&
             request.vessel.propulsion.allowSailing) ||
            (c.mode == wr::PropulsionMode::Motor &&

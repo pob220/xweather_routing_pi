@@ -21,6 +21,7 @@
 #define _WEATHER_ROUTING_POLAR_H_
 
 #include <vector>
+#include <optional>
 #include "PolygonRegion.h"
 #include <wx/wx.h>
 
@@ -470,6 +471,8 @@ private:
   double m_maximumSpeed{0.0};
   friend double PolarSpeedForRouting(std::vector<Polar>&, std::size_t, double,
       double, PolarSpeedStatus*, bool, bool*);
+  friend std::optional<double> BestSailingSpeedForRouting(std::vector<Polar>&,
+      double, double, double, double, double, double);
   friend class EditPolarDialog;
   friend class BoatDialog;
   friend class Boat;
@@ -599,5 +602,12 @@ double PolarSpeedForRouting(std::vector<Polar>& polars, std::size_t index,
                             PolarSpeedStatus* status = nullptr,
                             bool optimize_tacking = false,
                             bool* estimated = nullptr);
+
+// Actual sailing STW over the permitted angles, without projected tacking VMG.
+// Unknown performance stays unknown; an explicit zero is usable calm data.
+std::optional<double> BestSailingSpeedForRouting(
+    std::vector<Polar>& polars, double tws, double minimumAngle,
+    double maximumAngle, double upwindEfficiency = 1.0,
+    double downwindEfficiency = 1.0, double nightEfficiency = 1.0);
 
 #endif

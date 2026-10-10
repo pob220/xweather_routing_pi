@@ -498,6 +498,37 @@ double PolarSpeedForRouting(std::vector<Polar>& polars, std::size_t index,
   return std::isfinite(speed) ? std::min(speed, polar.MaximumSpeed()) : speed;
 }
 
+std::optional<double> BestSailingSpeedForRouting(
+    std::vector<Polar>& polars, double tws, double minimumAngle,
+    double maximumAngle, double upwindEfficiency,
+    double downwindEfficiency, double nightEfficiency) {
+  if (!std::isfinite(tws) || tws < 0 || !std::isfinite(minimumAngle) ||
+      !std::isfinite(maximumAngle) || minimumAngle < 0 || maximumAngle > 180 ||
+      minimumAngle > maximumAngle || !std::isfinite(upwindEfficiency) ||
+      !std::isfinite(downwindEfficiency) || !std::isfinite(nightEfficiency) ||
+      upwindEfficiency < 0 || downwindEfficiency < 0 || nightEfficiency < 0)
+    return {};
+  std::optional<double> best;
+  for (std::size_t index = 0; index < polars.size(); ++index) {
+    const auto consider = [&](double angle) {
+      if (angle < minimumAngle || angle > maximumAngle) return;
+      const double raw = PolarSpeedForRouting(polars, index, angle, tws);
+      if (!std::isfinite(raw) || raw < 0) return;
+      const double speed = std::min(polars[index].MaximumSpeed(), raw *
+          (angle <= 90 ? upwindEfficiency : downwindEfficiency) * nightEfficiency);
+      if (!best || speed > *best) best = speed;
+    };
+    consider(minimumAngle);
+    consider(maximumAngle);
+    consider(90);
+    consider(std::nextafter(90.0, 180.0));
+    // Interpolation is linear between polar angle rows. Its maximum is at
+    // a row or a clipped boundary, including fractional-angle rows.
+    for (double angle : polars[index].degree_steps) consider(angle);
+  }
+  return best;
+}
+
 double Polar::Speed(double twa, double tws, PolarSpeedStatus* status,
                     bool bound, bool optimize_tacking) {
   // Initialize error code to success

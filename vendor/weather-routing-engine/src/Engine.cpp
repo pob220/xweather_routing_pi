@@ -274,13 +274,16 @@ bool hardEnvironmentConstraints(const RoutingRequest& request,
 
 bool hardMotionConstraints(const RoutingRequest& request,
                            const EnvironmentalSnapshot& environment,
-                           double heading, double speedThroughWater) {
+                           double heading, const PerformanceCandidate& candidate,
+                           const VesselPerformanceModel& performance,
+                           GeoPoint position, TimePoint time) {
   const double twa = trueWindAngleDegrees(environment.wind.velocity, heading);
-  if (twa + 1e-9 < request.constraints.minimumTrueWindAngleDegrees ||
-      twa - 1e-9 > request.constraints.maximumTrueWindAngleDegrees)
+  if (!sailingAngleAllowed(request, performance, position, time,
+          vectorMagnitudeKnots(environment.wind.velocity), twa,
+          environment.waves, candidate.mode, candidate.role))
     return false;
   if (request.constraints.maximumApparentWindKnots) {
-    const Vector2 boat = speedDirectionToVector(speedThroughWater, heading);
+    const Vector2 boat = speedDirectionToVector(candidate.speedThroughWaterKnots, heading);
     const Vector2 apparent{
         environment.wind.velocity.eastKnots - boat.eastKnots,
         environment.wind.velocity.northKnots - boat.northKnots};
@@ -418,7 +421,8 @@ std::optional<MotionReplay> integrateMotion(
     if (!startPerformance.valid ||
         !hardEnvironmentConstraints(request, predictorResolved.snapshot) ||
         !hardMotionConstraints(request, predictorResolved.snapshot, heading,
-                               startPerformance.speedThroughWaterKnots))
+                               startPerformance, performanceModel, replay.end,
+                               movingStart + elapsed))
       return {};
 
     const Vector2 startWater = speedDirectionToVector(
@@ -456,7 +460,8 @@ std::optional<MotionReplay> integrateMotion(
     if (!midpointPerformance.valid ||
         !hardEnvironmentConstraints(request, midpointResolved.snapshot) ||
         !hardMotionConstraints(request, midpointResolved.snapshot, heading,
-                               midpointPerformance.speedThroughWaterKnots))
+                               midpointPerformance, performanceModel, midpoint,
+                               movingStart + elapsed + Duration{slice.count() / 2}))
       return {};
 
     const Vector2 water = speedDirectionToVector(
@@ -791,7 +796,7 @@ std::vector<Node> propagate(const RoutingRequest& request,
   std::vector<Node> result;
   for (const auto& performance : performances) {
     if (!hardMotionConstraints(request, resolved.snapshot, heading,
-                               performance.speedThroughWaterKnots)) {
+                               performance, performanceModel, from.position, from.time)) {
       ++diagnostics.constraintRejections;
       continue;
     }
