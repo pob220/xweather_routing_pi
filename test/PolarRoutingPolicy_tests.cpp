@@ -330,14 +330,15 @@ TEST_P(PolarRoutingEngines, WaitsStationaryInZeroWindThenSailsWhenWindReturns) {
       EXPECT_LT(wr::distanceNm(leg.start, leg.end), 1e-9);
       waiting += leg.endTime - leg.startTime;
     } else {
-      EXPECT_GE(leg.startTime, weather->windBegins);
+      EXPECT_GE(leg.startTime.time_since_epoch().count(),
+                weather->windBegins.time_since_epoch().count());
       EXPECT_GT(leg.speedThroughWaterKnots, 0);
       EXPECT_GT(wr::distanceNm(leg.start, leg.end), 0);
       sailed = true;
     }
   }
-  EXPECT_GE(waiting, std::chrono::hours{2});
-  EXPECT_LE(waiting, request.options.maximumWait);
+  EXPECT_GE(waiting.count(), wr::Duration{std::chrono::hours{2}}.count());
+  EXPECT_LE(waiting.count(), request.options.maximumWait.count());
   EXPECT_TRUE(sailed);
   const auto replay = wr::RouteValidator{}.validate(request, environment,
                                                    *boat, result.legs);
@@ -384,10 +385,12 @@ TEST_P(PolarRoutingEngines, SailsThenWaitsThroughCalmAndResumesAtSamePosition) {
       EXPECT_GT(wr::distanceNm(request.start, leg.start), 0.1);
       waited = true;
     } else if (!waited) {
-      EXPECT_LE(leg.endTime, weather->calmBegins);
+      EXPECT_LE(leg.endTime.time_since_epoch().count(),
+                weather->calmBegins.time_since_epoch().count());
       sailedBefore = true;
     } else {
-      EXPECT_GE(leg.startTime, weather->windBegins);
+      EXPECT_GE(leg.startTime.time_since_epoch().count(),
+                weather->windBegins.time_since_epoch().count());
       EXPECT_GT(leg.speedThroughWaterKnots, 0);
       sailedAfter = true;
     }
