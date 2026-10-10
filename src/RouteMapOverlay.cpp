@@ -365,6 +365,14 @@ bool RouteMapOverlay::GetModernNativeProgress(wxString& stage,
   return true;
 }
 
+bool RouteMapOverlay::UsesEstimatedPolarPerformance() {
+  if (!Finished() || !ReachedDestination()) return false;
+  if (UsesModernNativeResult()) return m_ModernNativeEstimatedPolar;
+  for (const PlotData& point : GetPlotData(false))
+    if (point.data_mask & Position::POLAR_WIND_ESTIMATED) return true;
+  return false;
+}
+
 void RouteMapOverlay::InstallModernNativeResult(
     const supercpn::weather_routing::RoutingResult& result) {
   namespace wr = supercpn::weather_routing;
@@ -375,6 +383,12 @@ void RouteMapOverlay::InstallModernNativeResult(
       result.status == wr::RoutingStatus::CompleteUsingGraphFallback;
   const bool resourceExhausted = ResourceExhausted();
   const bool complete = resultComplete && !resourceExhausted;
+  m_ModernNativeEstimatedPolar = complete &&
+      (result.validation.estimatedPolarWind ||
+       std::any_of(result.warnings.begin(), result.warnings.end(),
+          [](const wr::RoutingWarning& warning) {
+            return warning.code == wr::RoutingWarningCode::EstimatedPolar;
+          }));
   const bool coastalEndpointLeeway = complete &&
       std::any_of(result.warnings.begin(), result.warnings.end(),
                   [](const wr::RoutingWarning& warning) {

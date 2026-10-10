@@ -12,6 +12,29 @@ a certain time.  By merging the results of many calculations,
 it is possible to form a map determining routes
 to any given location within the map.
 
+<h3>Polar wind range policies (1.28.1)</h3>
+<p>Boat &rarr; Polars provides separate choices for wind below and above each
+polar's supplied range. Below the range, <b>Taper to zero</b> scales the first
+column's speed towards zero at zero wind. Above the range, <b>Hold final
+speeds</b> uses the final column at the current wind angle. <b>Reject</b> keeps
+that end of the range as a strict operating limit.</p>
+<p><b>Automatic</b> tapers below the boat's lowest supplied wind data using
+only its lowest-wind tables. For a single polar, it holds the final column
+above the supplied range. For multiple polars, their upper wind ranges remain
+strict. Use Reject for a single sail with an operating limit, or choose Hold
+final speeds explicitly for a general boat table in a multi-polar boat.</p>
+<p>Blank cells are missing measurements and may be interpolated when there
+is enough neighbouring data; unresolved blanks remain unavailable. Numeric
+zeros, including both <b>0</b> and <b>0.0</b>, mean zero direct sailing speed.
+Supplied zero speeds, declines in speed and in-range interpolation are
+preserved. Tacking optimisation can use another sailing angle to make progress
+along a course that cannot be sailed directly. Sailing speed through water is
+capped at the selected polar's maximum recorded speed, including after
+efficiency adjustments; configured motor speed is separate. Current can make
+speed over ground higher. Forecast wind is never capped: weather limits still
+use its actual value. Completed routes identify estimated polar performance
+when their chronological validation uses an out-of-range wind estimate.</p>
+
 <h3>Route visibility and computed results (1.28)</h3>
 <p>The eye in the route list controls whether that route is visible on the
 chart. Selecting a hidden route lets you inspect its settings and results

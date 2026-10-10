@@ -145,6 +145,7 @@ struct PerformanceCandidate {
   int sailPlan{-1};
   double speedThroughWaterKnots{};
   double fuelLitresPerHour{};
+  bool estimatedPolarWind{};
 };
 
 class VesselPerformanceModel {

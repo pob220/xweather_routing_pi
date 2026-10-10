@@ -48,6 +48,10 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
                                     RoutingDiagnostics* diagnostics,
                                     bool requireDestination) {
   RouteValidationResult result;
+  auto recordEstimatedPolar = [&](const PerformanceCandidate& candidate) {
+    result.estimatedPolarWind = result.estimatedPolarWind ||
+                                candidate.estimatedPolarWind;
+  };
   if (legs.empty()) return fail(std::move(result), "route contains no legs");
   if (environment.landAndBoundaries)
     environment.landAndBoundaries->prepareValidationRoute(
@@ -296,6 +300,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       if (!predictorPerformance.valid)
         return fail(std::move(result),
                     "selected propulsion/profile is unavailable during replay");
+      recordEstimatedPolar(predictorPerformance);
       const Vector2 predictorWater =
           speedDirectionToVector(predictorPerformance.speedThroughWaterKnots,
                                  leg.courseThroughWaterDegrees);
@@ -344,6 +349,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
                 << legIndex;
         return fail(std::move(result), message.str());
       }
+      recordEstimatedPolar(achievable);
       if (request.constraints.maximumTrueWindKnots &&
           tws > *request.constraints.maximumTrueWindKnots + 1e-9)
         return fail(std::move(result), "route exceeds hard true-wind limit");

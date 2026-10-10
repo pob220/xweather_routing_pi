@@ -532,12 +532,11 @@ private:
     wr::PerformanceCandidate result;
     if (index >= configuration_.boat.Polars.size()) return result;
     PolarSpeedStatus status = POLAR_SPEED_SUCCESS;
-    // Each candidate is a sail table with its own operating wind range.
-    // The route's maximum wind is a separate weather constraint, not
-    // permission to extend a light-wind sail beyond its measured range.
-    double speed = configuration_.boat.Polars[index].Speed(
-        twa, tws, &status, true,
-        configuration_.OptimizeTacking && !configuration_.IsOriginal());
+    bool estimated = false;
+    double speed = PolarSpeedForRouting(configuration_.boat.Polars, index,
+        twa, tws, &status,
+        configuration_.OptimizeTacking && !configuration_.IsOriginal(),
+        &estimated);
     if (!std::isfinite(speed) || speed <= 0.0) return result;
     if (configuration_.UseMotor && speed < configuration_.MotorSpeedThreshold) {
       result.mode = wr::PropulsionMode::Motor;
@@ -552,6 +551,8 @@ private:
               position.latitude, position.longitude, ToWx(time)) ==
           DayLightStatus::Night)
         speed *= configuration_.NightCumulativeEfficiency;
+      speed = std::min(speed, configuration_.boat.Polars[index].MaximumSpeed());
+      result.estimatedPolarWind = estimated;
     }
     result.valid = std::isfinite(speed) && speed > 0.0;
     result.sailPlan = static_cast<int>(index);

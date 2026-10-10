@@ -1385,11 +1385,11 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   int confVersion;
   pConf->Read(_T ( "ConfigVersion" ), &confVersion, 0);
-  // v1.25 through v1.27 retain the v1.24 bundled boats and polars. A feature-only
+  // v1.25 through v1.28 retain the v1.24 bundled boats and polars. A feature-only
   // upgrade must not prompt to overwrite existing user data.
-  if (confVersion >= 124 && confVersion <= 126 &&
+  if (confVersion >= 124 && confVersion <= 127 &&
       PLUGIN_VERSION_MAJOR == 1 &&
-      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 27) {
+      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 28) {
     confVersion = PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR;
     pConf->Write(_T("ConfigVersion"), confVersion);
   }
@@ -10034,6 +10034,7 @@ static wxString BuildRouteFailureState(RouteMapOverlay* routemapoverlay) {
 }
 
 struct FinalRouteWeatherSourceSummary {
+  bool completed{false};
   bool grib{false};
   bool climatology{false};
   long climatologySeconds{0};
@@ -10044,6 +10045,7 @@ static FinalRouteWeatherSourceSummary FinalRouteWeatherSources(
   FinalRouteWeatherSourceSummary summary;
   if (!route || !route->Finished() || !route->ReachedDestination())
     return summary;
+  summary.completed = true;
 
   for (const PlotData& point : route->GetPlotData(false)) {
     const bool grib = point.data_mask & Position::GRIB_WIND;
@@ -10069,7 +10071,10 @@ static wxString CompactWeatherDuration(long seconds) {
 static void FormatFinalRouteWeatherSources(
     const FinalRouteWeatherSourceSummary& summary, wxString& compact,
     wxString& detail) {
-  if (summary.climatology) {
+  if (!summary.completed) {
+    compact = _("N/A");
+    detail = _("Weather-source summary requires a completed route");
+  } else if (summary.climatology) {
     const wxString duration =
         CompactWeatherDuration(summary.climatologySeconds);
     if (summary.grib) {
@@ -10232,6 +10237,8 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
         State = _("Complete") + (title.empty() ? wxString() : " — " + title);
 #endif
         if (!mode.empty()) State += " (" + mode + ")";
+        if (routemapoverlay->UsesEstimatedPolarPerformance())
+          State += _(" (estimated polar performance)");
         if (routemapoverlay->HasModernNativeCoastalEndpointLeeway())
           State += _(" (shore buffer at endpoint: check route)");
       } else

@@ -576,6 +576,7 @@ struct RouteValidationResult {
   std::uint64_t samples{};
   EnvironmentalSourceUsage environment;
   std::vector<EnvironmentalSourceTransition> sourceTransitions;
+  bool estimatedPolarWind{};
 };
 
 struct PruningDiagnostics {
