@@ -550,6 +550,11 @@ double Polar::Speed(double twa, double tws, PolarSpeedStatus* status,
   }
 
   unsigned int W1i = degree_step_index[(int)floor(twa)];
+  // The degree lookup is indexed by whole degrees. A fractional angle just
+  // beyond a table row must use the following interval, including when the
+  // row itself has a fractional angle or an authoritative zero speed.
+  while (W1i + 1 < degree_steps.size() && twa >= degree_steps[W1i + 1])
+    ++W1i;
   unsigned int W2i = W1i + 1;
   if (W2i > degree_steps.size() - 1) W2i = W1i;
 

@@ -45,7 +45,12 @@ The unchanged bundled boat/polar data upgrade from 1.24–1.27 does not prompt
 to overwrite user data. Version 1.28's route display, clearing and Android
 workspace behaviour remain included. Minimum host API remains 1.21.
 
-Local qualification passed all 448 tests and ten publication contract tests.
+Fractional wind angles now use the correct interval after a polar row,
+including fractional rows and rows with explicit zeros. Previously the
+whole-degree lookup could extrapolate from the preceding interval and produce
+a negative speed beside a valid zero.
+
+Local qualification passed all 449 tests and ten publication contract tests.
 Seeded offshore endpoint pairs, both directions, two bundled polars and low,
 in-range and high winds are exercised across all three engines. Nine checks
 cover calm-wind waiting and its limits. Numeric zeros and blanks survive a

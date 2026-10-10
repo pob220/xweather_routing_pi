@@ -160,9 +160,10 @@ TEST(PolarRoutingPolicy, SeededWindAndAngleCoverageCannotInventExcessSpeed) {
   std::mt19937 generator(1281);
   std::uniform_real_distribution<double> winds(0, 100), angles(0, 360);
   for (int i = 0; i < 2000; ++i) {
-    const double speed = PolarSpeedForRouting(polars, 0, angles(generator),
-                                              winds(generator));
-    ASSERT_TRUE(std::isfinite(speed));
+    const double angle = angles(generator);
+    const double wind = winds(generator);
+    const double speed = PolarSpeedForRouting(polars, 0, angle, wind);
+    ASSERT_TRUE(std::isfinite(speed)) << "angle=" << angle << " wind=" << wind;
     EXPECT_GE(speed, 0);
     EXPECT_LE(speed, 8);
   }
@@ -170,6 +171,18 @@ TEST(PolarRoutingPolicy, SeededWindAndAngleCoverageCannotInventExcessSpeed) {
   EXPECT_TRUE(std::isnan(PolarSpeedForRouting(polars, 0, NAN, 8)));
   EXPECT_TRUE(std::isnan(PolarSpeedForRouting(polars, 0, 90, INFINITY)));
   EXPECT_TRUE(std::isnan(PolarSpeedForRouting(polars, 1, 90, 8)));
+}
+
+TEST(PolarRoutingPolicy, FractionalAnglesBeyondZeroRowsUseTheNextInterval) {
+  auto polars = TestPolars();
+  EXPECT_DOUBLE_EQ(PolarSpeedForRouting(polars, 0, 60, 4), 0);
+  EXPECT_NEAR(PolarSpeedForRouting(polars, 0, 60.5, 4), 2.0 / 60.0, 1e-6);
+  EXPECT_NEAR(PolarSpeedForRouting(polars, 0, 299.5, 4), 2.0 / 60.0, 1e-6);
+  wxString message;
+  ASSERT_TRUE(polars[0].Open(wxString(TESTDATADIR) +
+      "/polars/WindPolicy_fractional_test.pol", message));
+  EXPECT_DOUBLE_EQ(PolarSpeedForRouting(polars, 0, 60.25, 4), 0);
+  EXPECT_NEAR(PolarSpeedForRouting(polars, 0, 60.5, 4), 0.5 / 29.75, 1e-6);
 }
 
 namespace wr = supercpn::weather_routing;
