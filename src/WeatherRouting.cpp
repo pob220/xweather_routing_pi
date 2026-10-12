@@ -1385,11 +1385,11 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 
   int confVersion;
   pConf->Read(_T ( "ConfigVersion" ), &confVersion, 0);
-  // v1.25 through v1.27 retain the v1.24 bundled boats and polars. A feature-only
+  // v1.25 through v1.30 retain the v1.24 bundled boats and polars. A feature-only
   // upgrade must not prompt to overwrite existing user data.
-  if (confVersion >= 124 && confVersion <= 126 &&
+  if (confVersion >= 124 && confVersion <= 129 &&
       PLUGIN_VERSION_MAJOR == 1 &&
-      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 27) {
+      PLUGIN_VERSION_MINOR >= 25 && PLUGIN_VERSION_MINOR <= 30) {
     confVersion = PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR;
     pConf->Write(_T("ConfigVersion"), confVersion);
   }
@@ -2075,6 +2075,10 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
   // while transient selection/isochrone previews belong to Chart mode.
   if (!IsShown() && !m_androidChartVisible) currentroutemaps.clear();
 #endif
+  // Selection is for inspection, not permission to draw a hidden route.
+  currentroutemaps.remove_if([](RouteMapOverlay* route) {
+    return !route->m_bEndRouteVisible;
+  });
   for (std::list<RouteMapOverlay*>::iterator it = currentroutemaps.begin();
        it != currentroutemaps.end(); it++) {
     (*it)->Render(time, m_SettingsDialog, dc, vp, false, m_positionOnRoute);
@@ -3299,6 +3303,7 @@ bool WeatherRouting::ComputeMultiLegSequence(RouteMapOverlay* selectedRoute) {
 
   RouteMapConfiguration first = routes.front()->GetConfiguration();
   CancelMultiLegSequence();
+  for (auto* route : routes) SetRouteVisibility(route, true, false);
   ShowRoutingProgress(_("Weather Routing Progress"));
   UpdateRoutingProgress(
       _("Preparing routes"),
@@ -4246,6 +4251,9 @@ bool WeatherRouting::ComputeMultiLegDepartureOptimizationNow(
 
   if (m_MultiLegOptimizationCandidates.empty()) return false;
 
+  InitializeDepartureChartGroup(m_ActiveMultiLegOptimizationId, baseRoutes,
+                               first.DepartureTimeOptimizationChartDisplay);
+
   std::vector<RouteMapOverlay*> first_leg_candidates;
   for (std::vector<MultiLegOptimizationCandidate>::iterator candidate =
            m_MultiLegOptimizationCandidates.begin();
@@ -4292,7 +4300,9 @@ void WeatherRouting::OnHeadlessRouteTestTimer(wxTimerEvent&) {
   }
   const long elapsed_ms =
       (wxGetUTCTimeMillis() - m_HeadlessRouteTestState->startedMs).ToLong();
-  bool active = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty();
+  bool active = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() ||
+                m_DeferredRoutingStartPending || m_RoutePreparationDepth > 0 ||
+                !m_PreparingChartSafetyRoutes.empty();
   if (m_HeadlessRouteTestState->kind ==
           HeadlessRouteTestState::Kind::SingleRoute &&
       !active && m_HeadlessRouteTestState->departureOptimization) {
@@ -4436,6 +4446,34 @@ void WeatherRouting::CompleteHeadlessSingleRouteTest(bool timed_out,
   if (m_tCompute.IsRunning()) m_tCompute.Stop();
   if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
   if (m_tDeferredRoutingStart.IsRunning()) m_tDeferredRoutingStart.Stop();
+  long lifecyclePass = 0;
+  EnvString("WR_HEADLESS_LIFECYCLE_CONTRACT").ToLong(&lifecyclePass);
+  if (lifecyclePass > 0) {
+    if (timed_out || complete == 0 ||
+        (lifecyclePass > 1 && selected_route->m_bEndRouteVisible) ||
+        !RunDepartureChartContract(selected_route) ||
+        !RunRouteLifecycleContract(selected_route)) {
+      FinishHeadlessRouteTestProcess(4);
+      return;
+    }
+    if (lifecyclePass < 4) {
+      wxSetEnv("WR_HEADLESS_LIFECYCLE_CONTRACT",
+               wxString::Format("%ld", lifecyclePass + 1));
+      wxCommandEvent compute;
+      OnCompute(compute);
+      if (!selected_route->m_bEndRouteVisible ||
+          !RouteComputationActive(selected_route)) {
+        FinishHeadlessRouteTestProcess(5);
+        return;
+      }
+      // Hide while queued/running. Completion must never turn it back on.
+      SetRouteVisibility(selected_route, false);
+      m_HeadlessRouteTestState->startedMs = wxGetUTCTimeMillis();
+      m_tHeadlessRouteTest.Start(50);
+      return;
+    }
+    wxLogMessage("WR_ROUTE_LIFECYCLE recompute_cycles=3 result=passed");
+  }
   if (!timed_out && complete > 0 && EnvString("WR_HEADLESS_COMFORT_COMPARE") == "1") {
     Show(true);
     auto* list = m_panel->m_lWeatherRoutes;
@@ -4851,6 +4889,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
             else configuration.ShorelineResolution = scenario.route.shorelineResolution;
           }
           if (scenario.route.hasQuickOffshoreStepMinutes)
+            // Historical key: active only for Standard. Quick now uses the
+            // shared timeStepSeconds / dt field, including in Auto and All.
             configuration.EngineSettings.FastSettings().offshoreStepMinutes = scenario.route.quickOffshoreStepMinutes;
           if (scenario.route.hasQuickHeadingStepDegrees)
             configuration.EngineSettings.FastSettings().headingStepDegrees = scenario.route.quickHeadingStepDegrees;
@@ -4889,6 +4929,10 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                 scenario.route.maxApparentWindKnots;
           if (scenario.route.hasOptimizeTacking)
             configuration.OptimizeTacking = scenario.route.optimizeTacking;
+          if (scenario.route.hasRequireWaveCoverage)
+            configuration.RequireWaveCoverage = scenario.route.requireWaveCoverage;
+          if (scenario.route.hasAnchoring)
+            configuration.Anchoring = scenario.route.anchoring;
           if (scenario.route.hasMaxSwellMeters)
             configuration.MaxSwellMeters = scenario.route.maxSwellMeters;
           if (scenario.route.hasUpwindEfficiency)
@@ -5877,13 +5921,12 @@ void WeatherRouting::OnWeatherRouteSort(wxListEvent& event) {
   sortcol = event.GetColumn();
   sortorder = -sortorder;
 
-  if (sortcol == 0) {
+  if (sortcol == columns[VISIBLE]) {
     for (int index = 0; index < m_panel->m_lWeatherRoutes->GetItemCount();
          index++) {
       WeatherRoute* weatherroute = reinterpret_cast<WeatherRoute*>(
           wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(index)));
-      weatherroute->routemapoverlay->m_bEndRouteVisible = sortorder == 1;
-      UpdateItem(index);
+      SetRouteVisibility(weatherroute->routemapoverlay, sortorder == 1);
     }
     RequestRefresh(GetParent());
   } else {
@@ -5895,6 +5938,20 @@ void WeatherRouting::OnWeatherRouteSort(wxListEvent& event) {
                                          (long)m_panel->m_lWeatherRoutes);
 #endif
   }
+}
+
+void WeatherRouting::OnWeatherRouteSelected(wxListEvent& event) {
+  if (event.GetEventType() == wxEVT_LIST_ITEM_SELECTED &&
+      !m_UpdatingStabilityRouteSelection && !m_UpdatingDepartureSelection &&
+      !m_bSkipUpdateCurrentItems) {
+    const long row = event.GetIndex();
+    if (row >= 0 && row < m_panel->m_lWeatherRoutes->GetItemCount()) {
+      auto* item = reinterpret_cast<WeatherRoute*>(
+          wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(row)));
+      if (item) SelectDepartureOnChart(item->routemapoverlay, true, false);
+    }
+  }
+  OnWeatherRouteSelected();
 }
 
 void WeatherRouting::OnWeatherRouteSelected() {
@@ -5947,22 +6004,18 @@ void WeatherRouting::OnWeatherRoutesListLeftDown(wxMouseEvent& event) {
   OnLeftDown(event);
   wxPoint pos = event.GetPosition();
   int flags = 0;
-  long index = m_panel->m_lWeatherRoutes->HitTest(pos, flags);
+  long clickedColumn = -1;
+  long index = m_panel->m_lWeatherRoutes->HitTest(pos, flags, &clickedColumn);
 
   // Do we have the Visibility column?
   if (columns[VISIBLE] >= 0) {
-    int minx = 0,
-        maxx = m_panel->m_lWeatherRoutes->GetColumnWidth(columns[VISIBLE]);
-
     //    Clicking Visibility column?
-    if (index >= 0 && event.GetX() >= minx && event.GetX() < maxx) {
+    if (index >= 0 && clickedColumn == columns[VISIBLE]) {
       // Process the clicked item
       WeatherRoute* weatherroute = reinterpret_cast<WeatherRoute*>(
           wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(index)));
-      weatherroute->routemapoverlay->m_bEndRouteVisible =
-          !weatherroute->routemapoverlay->m_bEndRouteVisible;
-      UpdateItem(index);
-      RequestRefresh(GetParent());
+      SetRouteVisibility(weatherroute->routemapoverlay,
+                         !weatherroute->routemapoverlay->m_bEndRouteVisible);
     }
   }
 
@@ -5984,6 +6037,52 @@ void WeatherRouting::UpdateComputeState() {
   m_tCompute.Start(1, true);
 }
 
+static wxChoice* AddDepartureChartChoice(wxWindow* parent,
+                                         wxBoxSizer* topSizer) {
+  auto* row = new wxBoxSizer(
+#ifdef __OCPN__ANDROID__
+      wxVERTICAL
+#else
+      wxHORIZONTAL
+#endif
+  );
+  row->Add(new wxStaticText(parent, wxID_ANY, _("Show on chart")), 0,
+            wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  auto* choice = new wxChoice(parent, wxID_ANY);
+  choice->SetName("DepartureChartDisplay");
+  choice->Append(_("Selected departure"));
+  choice->Append(_("All departures"));
+  choice->Append(_("Manual"));
+  choice->SetSelection(0);
+  choice->SetToolTip(_(
+      "Selected departure follows the highlighted candidate. All departures "
+      "shows this optimisation group. Manual keeps individual eye choices. "
+      "Changing the display does not recompute routes."));
+#ifdef __OCPN__ANDROID__
+  row->Add(choice, 0, wxEXPAND | wxALL, 5);
+  auto* help = new wxStaticText(parent, wxID_ANY, _(
+      "Selected departure follows the highlighted candidate. All departures "
+      "shows the group. Use Visible on chart on route cards for a Manual subset."));
+  wxFont font = help->GetFont();
+  font.SetPointSize(16);
+  help->SetFont(font);
+  const auto wrapHelp = [parent, help]() {
+    WR_WrapAndroidText(help, help->GetLabel(),
+        wxMax(200, parent->GetClientSize().x - 72));
+  };
+  wrapHelp();
+  parent->Bind(wxEVT_SIZE, [wrapHelp](wxSizeEvent& event) {
+    wrapHelp();
+    event.Skip();
+  });
+  row->Add(help, 0, wxEXPAND | wxALL, 5);
+#else
+  row->Add(choice, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+#endif
+  topSizer->Add(row, 0, wxEXPAND);
+  return choice;
+}
+
 class DepartureTimeOptimizationResultsDialog : public wxDialog {
 public:
   DepartureTimeOptimizationResultsDialog(
@@ -6000,6 +6099,7 @@ public:
         m_UpdatingSelection(false),
         m_CloseHandled(false) {
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
+    m_ChartDisplay = AddDepartureChartChoice(this, topSizer);
     m_List = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                             wxLC_REPORT | wxLC_SINGLE_SEL);
 
@@ -6023,7 +6123,7 @@ public:
           for (long i = 0; i < m_List->GetItemCount(); ++i)
             m_List->SetItemState(i, i == row ? wxLIST_STATE_SELECTED : 0,
                                  wxLIST_STATE_SELECTED);
-          UpdateCorridor();
+          SelectionChanged();
         });
     topSizer->Add(m_androidView, 1, wxEXPAND);
 #else
@@ -6123,9 +6223,17 @@ public:
           m_KeepCorridor->GetValue());
     });
     m_List->Bind(wxEVT_LIST_ITEM_SELECTED,
-                 [this](wxListEvent&) { UpdateCorridor(); });
+                 [this](wxListEvent&) { SelectionChanged(); });
     m_List->Bind(wxEVT_LIST_ITEM_DESELECTED,
                  [this](wxListEvent&) { UpdateCorridor(); });
+    m_ChartDisplay->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+      if (auto* route = AnchorRoute())
+        m_WeatherRouting->SetDepartureChartDisplay(
+            route, m_ChartDisplay->GetSelection());
+      UpdateCorridor();
+    });
+    m_WeatherRouting->Bind(wxEVT_WR_DEPARTURE_DISPLAY_CHANGED,
+        &DepartureTimeOptimizationResultsDialog::OnDisplayChanged, this);
     Bind(wxEVT_TIMER, &DepartureTimeOptimizationResultsDialog::OnAutoRefresh,
          this);
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) {
@@ -6138,11 +6246,59 @@ public:
   }
 
   ~DepartureTimeOptimizationResultsDialog() override {
+    m_WeatherRouting->Unbind(wxEVT_WR_DEPARTURE_DISPLAY_CHANGED,
+        &DepartureTimeOptimizationResultsDialog::OnDisplayChanged, this);
     StopAutoRefresh();
     CloseCorridor("results_destroyed");
   }
 
 private:
+  RouteMapOverlay* AnchorRoute() {
+    for (auto* route : m_RouteMaps)
+      if (FindWeatherRoute(route)) return route;
+    return nullptr;
+  }
+
+  void SelectionChanged() {
+    if (m_UpdatingSelection) return;
+    m_WeatherRouting->SelectDepartureOnChart(SelectedRoute());
+    UpdateCorridor();
+  }
+
+  void OnDisplayChanged(wxCommandEvent& event) {
+    event.Skip();
+    auto* anchor = AnchorRoute();
+    if (!anchor || m_UpdatingSelection) return;
+    if (anchor->GetConfiguration().DepartureTimeOptimizationGroupId !=
+        event.GetString()) return;
+    SyncDisplaySelection();
+    UpdateCorridor();
+  }
+
+  void SyncDisplaySelection() {
+    auto* anchor = AnchorRoute();
+    m_ChartDisplay->Enable(anchor != nullptr);
+    if (!anchor) return;
+    m_ChartDisplay->SetSelection(
+        anchor->GetConfiguration().DepartureTimeOptimizationChartDisplay);
+    auto* selected = m_WeatherRouting->SelectedDepartureOnChart(anchor);
+    m_UpdatingSelection = true;
+    long selectedRow = -1;
+    for (long row = 0; row < m_List->GetItemCount(); ++row) {
+      auto it = m_RouteMaps.begin();
+      std::advance(it, m_List->GetItemData(row));
+      const bool match = it != m_RouteMaps.end() && *it == selected;
+      m_List->SetItemState(row, match ? wxLIST_STATE_SELECTED : 0,
+                           wxLIST_STATE_SELECTED);
+      if (match) selectedRow = row;
+    }
+    if (selectedRow >= 0) m_List->EnsureVisible(selectedRow);
+#ifdef __OCPN__ANDROID__
+    m_androidView->SetRows(m_androidRows, selectedRow);
+#endif
+    m_UpdatingSelection = false;
+  }
+
   static const int AUTO_REFRESH_INTERVAL_MS = 1000;
   static const int AUTO_REFRESH_MAX_COUNT = 3600;
 
@@ -6308,7 +6464,8 @@ private:
 
   void Populate() {
     wxStopWatch timer;
-    RouteMapOverlay* selectedRoute = SelectedRoute();
+    RouteMapOverlay* selectedRoute =
+        m_WeatherRouting->SelectedDepartureOnChart(AnchorRoute());
     m_UpdatingSelection = true;
     m_List->DeleteAllItems();
 #ifdef __OCPN__ANDROID__
@@ -6404,6 +6561,7 @@ private:
     m_androidView->SetRows(m_androidRows, selectedRow);
 #endif
     m_UpdatingSelection = false;
+    SyncDisplaySelection();
     if (available) UpdateCorridor();
     long totalMs = timer.Time();
     if (totalMs >= UI_TIMING_LOG_THRESHOLD_MS)
@@ -6418,6 +6576,7 @@ private:
   std::list<RouteMapOverlay*> m_RouteMaps;
   wxDateTime m_NominalStartTime;
   wxListCtrl* m_List;
+  wxChoice* m_ChartDisplay;
 #ifdef __OCPN__ANDROID__
   WR_AndroidComparisonView* m_androidView;
   std::vector<std::vector<wxString>> m_androidRows;
@@ -6715,6 +6874,9 @@ void WeatherRouting::ValidateStabilityCorridorSelection(
 
 void WeatherRouting::RenderStabilityCorridor(piDC& dc, PlugIn_ViewPort& vp) {
   if (!m_StabilityCorridorLifecycle.IsVisible()) return;
+  for (auto* route : m_StabilityCorridorSourceRoutes)
+    if (route && m_StabilityCorridorLifecycle.Contains(route) &&
+        !route->m_bEndRouteVisible) return;
   const weather_routing_engine::RouteFamily* selectedFamily = NULL;
   for (const auto& family : m_StabilityCorridorResult.families)
     if (family.id == m_StabilityCorridorLifecycle.FamilyId())
@@ -6841,6 +7003,7 @@ public:
         m_UpdatingSelection(false),
         m_CloseHandled(false) {
     wxBoxSizer* topSizer = new wxBoxSizer(wxVERTICAL);
+    m_ChartDisplay = AddDepartureChartChoice(this, topSizer);
     m_List = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                             wxLC_REPORT | wxLC_SINGLE_SEL);
 
@@ -6858,7 +7021,7 @@ public:
           for (long i = 0; i < m_List->GetItemCount(); ++i)
             m_List->SetItemState(i, i == row ? wxLIST_STATE_SELECTED : 0,
                                  wxLIST_STATE_SELECTED);
-          UpdateCorridor();
+          SelectionChanged();
         });
     topSizer->Add(m_androidView, 1, wxEXPAND);
 #else
@@ -6944,9 +7107,17 @@ public:
           m_KeepCorridor->GetValue());
     });
     m_List->Bind(wxEVT_LIST_ITEM_SELECTED,
-                 [this](wxListEvent&) { UpdateCorridor(); });
+                 [this](wxListEvent&) { SelectionChanged(); });
     m_List->Bind(wxEVT_LIST_ITEM_DESELECTED,
                  [this](wxListEvent&) { UpdateCorridor(); });
+    m_ChartDisplay->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+      if (auto* route = AnchorRoute())
+        m_WeatherRouting->SetDepartureChartDisplay(
+            route, m_ChartDisplay->GetSelection());
+      UpdateCorridor();
+    });
+    m_WeatherRouting->Bind(wxEVT_WR_DEPARTURE_DISPLAY_CHANGED,
+        &MultiLegDepartureOptimizationResultsDialog::OnDisplayChanged, this);
     Bind(wxEVT_TIMER,
          &MultiLegDepartureOptimizationResultsDialog::OnAutoRefresh, this);
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { CloseDialog(); });
@@ -6955,11 +7126,72 @@ public:
   }
 
   ~MultiLegDepartureOptimizationResultsDialog() override {
+    m_WeatherRouting->Unbind(wxEVT_WR_DEPARTURE_DISPLAY_CHANGED,
+        &MultiLegDepartureOptimizationResultsDialog::OnDisplayChanged, this);
     StopAutoRefresh();
     CloseCorridor("multi_leg_results_destroyed");
   }
 
 private:
+  RouteMapOverlay* AnchorRoute() {
+    for (const auto& candidate : m_WeatherRouting->MultiLegOptimizationCandidates())
+      for (auto* route : candidate.routes)
+        if (std::any_of(m_WeatherRouting->m_WeatherRoutes.begin(),
+                        m_WeatherRouting->m_WeatherRoutes.end(),
+                        [route](WeatherRoute* item) {
+                          return item->routemapoverlay == route;
+                        }) &&
+            route->GetConfiguration().DepartureTimeOptimizationCandidate)
+          return route;
+    return nullptr;
+  }
+
+  void SelectionChanged() {
+    if (m_UpdatingSelection) return;
+    const int index = SelectedCandidateIndex();
+    const auto& candidates = m_WeatherRouting->MultiLegOptimizationCandidates();
+    if (index >= 0 && index < static_cast<int>(candidates.size()) &&
+        !candidates[index].routes.empty())
+      m_WeatherRouting->SelectDepartureOnChart(candidates[index].routes.front());
+    UpdateCorridor();
+  }
+
+  void OnDisplayChanged(wxCommandEvent& event) {
+    event.Skip();
+    auto* anchor = AnchorRoute();
+    if (!anchor || m_UpdatingSelection ||
+        anchor->GetConfiguration().DepartureTimeOptimizationGroupId !=
+            event.GetString()) return;
+    SyncDisplaySelection();
+    UpdateCorridor();
+  }
+
+  void SyncDisplaySelection() {
+    auto* anchor = AnchorRoute();
+    m_ChartDisplay->Enable(anchor != nullptr);
+    if (!anchor) return;
+    m_ChartDisplay->SetSelection(
+        anchor->GetConfiguration().DepartureTimeOptimizationChartDisplay);
+    auto* selected = m_WeatherRouting->SelectedDepartureOnChart(anchor);
+    if (!selected) return;
+    const int offset = selected->GetConfiguration()
+                           .DepartureTimeOptimizationOffsetMinutes;
+    m_UpdatingSelection = true;
+    long selectedRow = -1;
+    const auto& candidates = m_WeatherRouting->MultiLegOptimizationCandidates();
+    for (long row = 0; row < m_List->GetItemCount(); ++row) {
+      const bool match = candidates[row].offsetMinutes == offset;
+      m_List->SetItemState(row, match ? wxLIST_STATE_SELECTED : 0,
+                           wxLIST_STATE_SELECTED);
+      if (match) selectedRow = row;
+    }
+    if (selectedRow >= 0) m_List->EnsureVisible(selectedRow);
+#ifdef __OCPN__ANDROID__
+    m_androidView->SetRows(m_androidRows, selectedRow);
+#endif
+    m_UpdatingSelection = false;
+  }
+
   static const int AUTO_REFRESH_INTERVAL_MS = 1000;
   static const int AUTO_REFRESH_MAX_COUNT = 7200;
 
@@ -7229,11 +7461,13 @@ private:
     m_androidView->SetRows(m_androidRows, selectedRow);
 #endif
     m_UpdatingSelection = false;
+    SyncDisplaySelection();
     if (available) UpdateCorridor();
   }
 
   WeatherRouting* m_WeatherRouting;
   wxListCtrl* m_List;
+  wxChoice* m_ChartDisplay;
 #ifdef __OCPN__ANDROID__
   WR_AndroidComparisonView* m_androidView;
   std::vector<std::vector<wxString>> m_androidRows;
@@ -7257,6 +7491,8 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   if (!routemapoverlay) return false;
 
   RouteMapConfiguration base = routemapoverlay->GetConfiguration();
+  const wxString previousCandidateGroup =
+      base.DepartureTimeOptimizationGroupId;
   // Arrival-time routing has its own adaptive, reverse-guided departure
   // search. It must remain one route calculation rather than being expanded
   // into the fixed departure-optimisation batch.
@@ -7317,11 +7553,27 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
   }
 
   std::list<RouteMapOverlay*> oldOptimizationRoutes;
+  std::set<wxString> previousGroups;
+  if (!previousCandidateGroup.IsEmpty())
+    previousGroups.insert(previousCandidateGroup);
+  for (const auto& group : m_DepartureChartGroups)
+    if (std::find(group.second.controllers.begin(),
+                  group.second.controllers.end(), routemapoverlay) !=
+        group.second.controllers.end()) previousGroups.insert(group.first);
+  std::map<int, bool> previousVisibility;
   for (auto it = m_WeatherRoutes.begin(); it != m_WeatherRoutes.end(); it++) {
     RouteMapConfiguration configuration =
         (*it)->routemapoverlay->GetConfiguration();
-    if (configuration.DepartureTimeOptimizationCandidate)
+    if (configuration.DepartureTimeOptimizationCandidate &&
+        (*it)->routemapoverlay != routemapoverlay &&
+        previousGroups.count(configuration.DepartureTimeOptimizationGroupId)) {
       oldOptimizationRoutes.push_back((*it)->routemapoverlay);
+      if (!base.UseCurrentTime &&
+          configuration.DepartureTimeOptimizationNominalStartTime ==
+              base.StartTime)
+        previousVisibility[configuration.DepartureTimeOptimizationOffsetMinutes] =
+            (*it)->routemapoverlay->m_bEndRouteVisible;
+    }
   }
   for (auto routemap : oldOptimizationRoutes)
     if (routemap) Stop(routemap);
@@ -7367,6 +7619,9 @@ bool WeatherRouting::ComputeDepartureTimeOptimization(
     candidate_routes.push_back(candidateRoute);
   }
 
+  InitializeDepartureChartGroup(groupId, {routemapoverlay},
+                               base.DepartureTimeOptimizationChartDisplay,
+                               previousVisibility);
   const int logical_cpu_count = wxThread::GetCPUCount();
   const bool deterministic_host_service_lane =
       ModernNativeRouteRequiresSerialHostServices(base);
@@ -7405,6 +7660,7 @@ void WeatherRouting::StartCurrentRouteComputations() {
   wxDateTime optimizationNominalStartTime;
   bool showOptimizationResults = false;
   for (auto it = currentroutemaps.begin(); it != currentroutemaps.end(); it++) {
+    if (!RouteMapIsManaged(*it)) continue;
     RouteMapConfiguration configuration = (*it)->GetConfiguration();
     if (ComputeDepartureTimeOptimization(*it)) {
       optimizationNominalStartTime = configuration.StartTime;
@@ -7474,6 +7730,10 @@ void WeatherRouting::OnCompute(wxCommandEvent& event) {
   CancelMultiLegSequence();
   CancelMultiLegDepartureOptimization(true);
   std::list<RouteMapOverlay*> currentroutemaps = CurrentRouteMaps();
+  for (auto* route : currentroutemaps)
+    if (!RouteComputationActive(route) &&
+        !route->GetConfiguration().DepartureTimeOptimizationCandidate)
+      SetRouteVisibility(route, true, false);
   if (ShouldShowComputeProgress(currentroutemaps)) {
     if (m_DeferredRoutingStartPending) {
       WR_MessageBox(_("A weather routing start is already pending."),
@@ -7542,6 +7802,10 @@ void WeatherRouting::OnComputeAll(wxCommandEvent& event) {
     if (weatherroute && weatherroute->routemapoverlay)
       allroutemaps.push_back(weatherroute->routemapoverlay);
   }
+  for (auto* route : allroutemaps)
+    if (!RouteComputationActive(route) &&
+        !route->GetConfiguration().DepartureTimeOptimizationCandidate)
+      SetRouteVisibility(route, true, false);
   if (ShouldShowComputeProgress(allroutemaps)) {
     if (m_DeferredRoutingStartPending) {
       WR_MessageBox(_("A weather routing start is already pending."),
@@ -7890,12 +8154,111 @@ void WeatherRouting::OnFilter(wxCommandEvent& event) {
   m_FilterRoutesDialog.Show();
 }
 
-void WeatherRouting::OnResetAll(wxCommandEvent& event) {
-  CancelMultiLegSequence();
-  CancelMultiLegDepartureOptimization(true);
-  m_StatisticsDialog.SetRunTime(m_RunTime = wxTimeSpan(0));
-  Reset();
+void WeatherRouting::SetRouteVisibility(RouteMapOverlay* route, bool visible,
+                                      bool manualChoice) {
+  if (!route) return;
+  if (manualChoice && route->GetConfiguration()
+                          .DepartureTimeOptimizationCandidate)
+    SetDepartureChartDisplay(route, RouteMapConfiguration::MANUAL_DEPARTURES);
+  route->m_bEndRouteVisible = visible;
+  for (long row = 0; row < m_panel->m_lWeatherRoutes->GetItemCount(); ++row) {
+    auto* item = reinterpret_cast<WeatherRoute*>(
+        wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(row)));
+    if (item && item->routemapoverlay == route) UpdateItem(row);
+  }
+  RequestRefresh(GetParent());
+  if (manualChoice && route->GetConfiguration()
+                          .DepartureTimeOptimizationCandidate)
+    NotifyDepartureChartDisplay(
+        route->GetConfiguration().DepartureTimeOptimizationGroupId);
+}
+
+bool WeatherRouting::RouteComputationActive(RouteMapOverlay* route) {
+  if (!route) return true;
+  if (m_DeferredRoutingStartPending) {
+    if (m_DeferredRoutingStartMode == DEFERRED_ROUTING_COMPUTE_ALL) return true;
+    if (m_DeferredRoutingStartMode == DEFERRED_ROUTING_COMPUTE_CURRENT) {
+      const auto selected = CurrentRouteMaps();
+      if (std::find(selected.begin(), selected.end(), route) != selected.end())
+        return true;
+    } else if (route->GetConfiguration().MultiLegGroupId ==
+                   m_DeferredRoutingStartGroupId) return true;
+  }
+  if (route->Running() || route->ExploringComfort() ||
+      m_PreparingChartSafetyRoutes.count(route) ||
+      std::find(m_RunningRouteMaps.begin(), m_RunningRouteMaps.end(), route) !=
+          m_RunningRouteMaps.end() ||
+      std::find(m_WaitingRouteMaps.begin(), m_WaitingRouteMaps.end(), route) !=
+          m_WaitingRouteMaps.end()) return true;
+  const auto configuration = route->GetConfiguration();
+  // Later legs are still owned by an active passage even before they queue.
+  return (m_ActiveMultiLegSequence && configuration.MultiLegGroupId ==
+              m_ActiveMultiLegGroupId) ||
+         (m_ActiveMultiLegDepartureOptimization &&
+              configuration.IsMultiLegGenerated);
+}
+
+bool WeatherRouting::CanClearComputedResults(
+    const std::list<RouteMapOverlay*>& routes) {
+  if (routes.empty() || m_RoutePreparationDepth > 0 ||
+      m_DeferredRoutingStartPending) return false;
+  bool hasResults = false;
+  for (auto* route : routes) {
+    if (RouteComputationActive(route)) return false;
+    hasResults |= route->HasComputedResults();
+  }
+  return hasResults;
+}
+
+bool WeatherRouting::ClearComputedResults(
+    const std::list<RouteMapOverlay*>& routes) {
+  if (!CanClearComputedResults(routes)) return false;
+  // Discard every UI reference to result data before freeing its geometry.
+  m_positionOnRoute = nullptr;
+  if (m_RoutingTablePanel &&
+      std::find(routes.begin(), routes.end(),
+                m_RoutingTablePanel->GetRouteMap()) != routes.end())
+    m_RoutingTablePanel->SetRouteMap(nullptr);
+  m_PlotDialog.SetRouteMapOverlay(nullptr);
+  for (auto* route : routes) {
+    if (std::find(m_StabilityCorridorSourceRoutes.begin(),
+                  m_StabilityCorridorSourceRoutes.end(), route) !=
+        m_StabilityCorridorSourceRoutes.end()) {
+      HideStabilityCorridor("computed_results_cleared");
+      m_StabilityCorridorSourceRoutes.clear();
+      m_StabilityCorridorRoutes.clear();
+      m_StabilityCorridorResult = weather_routing_engine::StabilityCorridorResult();
+    }
+    route->DeleteThread();
+    route->ReleaseGribTimelineFrameReference();
+    route->SetConfiguration(route->GetConfiguration());
+    route->Reset();
+    UpdateRouteMap(route);
+  }
   UpdateStates();
+  OnWeatherRouteSelected();
+  SetEnableConfigurationMenu();
+  RequestRefresh(GetParent());
+  return true;
+}
+
+void WeatherRouting::OnClearResults(wxCommandEvent& event) {
+  const auto routes = CurrentRouteMaps();
+  if (!routes.empty() && !ClearComputedResults(routes))
+    WR_MessageBox(_("Stop the selected computations before clearing their results."),
+                  _("Clear computed results"), wxOK | wxICON_INFORMATION, this);
+}
+
+void WeatherRouting::OnResetAll(wxCommandEvent& event) {
+  std::list<RouteMapOverlay*> routes;
+  for (auto* item : m_WeatherRoutes) routes.push_back(item->routemapoverlay);
+  if (!CanClearComputedResults(routes)) return;
+  if (WR_MessageBox(_("Clear all computed results? Route settings will be kept so you can compute them again."),
+                    _("Clear all computed results"),
+                    wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this) != wxYES)
+    return;
+  if (ClearComputedResults(routes))
+    m_StatisticsDialog.SetRunTime(m_RunTime = wxTimeSpan(0));
 }
 
 void WeatherRouting::OnSaveAsTrack(wxCommandEvent& event) {
@@ -8664,11 +9027,6 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
       m_panel->m_gProgress->SetValue(m_RoutesToRun - m_WaitingRouteMaps.size() -
                                      m_RunningRouteMaps.size());
       sectionTimer.Start();
-#ifdef __OCPN__ANDROID__
-      if (routemapoverlay->Finished() && routemapoverlay->ReachedDestination() &&
-          !completedConfiguration.DepartureTimeOptimizationCandidate)
-        routemapoverlay->m_bEndRouteVisible = true;
-#endif
       UpdateRouteMap(routemapoverlay);
       updateRouteMs += sectionTimer.Time();
       // Completed routes retain their compact route/weather results. The
@@ -8746,6 +9104,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     AdvanceMultiLegDepartureOptimization(routemapoverlay);
   }
   FinishChartSafetyComputeProgressIfDone();
+  if (!completedRouteMaps.empty()) SetEnableConfigurationMenu();
   advanceMs += sectionTimer.Time();
 
   bool departure_candidates_active = false;
@@ -8889,6 +9248,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
         m_ActiveMultiLegDepartureOptimization ? 1 : 0);
   }
 
+  UpdateDepartureChartCompletion();
   if (m_RunningRouteMaps.size()) {
     // A native worker blocks while a GRIB or chart request is serviced on the
     // GUI thread.  The historical fixed 25 ms poll imposed up to 40 round
@@ -9055,6 +9415,8 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
                      AttributeInt(e, "ArrivalSafetyMarginMinutes", 30));
         configuration.DepartureTimeOptimizationEnabled =
             AttributeBool(e, "DepartureTimeOptimizationEnabled", false);
+        configuration.DepartureTimeOptimizationChartDisplay = std::clamp(
+            AttributeInt(e, "DepartureTimeOptimizationChartDisplay", 0), 0, 2);
         configuration.DepartureTimeOptimizationRangeMinutes =
             AttributeInt(e, "DepartureTimeOptimizationRangeMinutes", 360);
         configuration.DepartureTimeOptimizationStepMinutes =
@@ -9148,6 +9510,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
         configuration.MaxApparentWindKnots =
             AttributeDouble(e, "MaxApparentWindKnots", 50);
 
+        configuration.RequireWaveCoverage = AttributeBool(e, "RequireWaveCoverage", false);
         configuration.MaxSwellMeters =
             AttributeDouble(e, "MaxSwellMeters", 20.);
         configuration.MaxLatitude = AttributeDouble(e, "MaxLatitude", 90);
@@ -9287,6 +9650,8 @@ void WeatherRouting::SaveXML(wxString filename) {
                     configuration.ArrivalSafetyMarginMinutes);
     c->SetAttribute("DepartureTimeOptimizationEnabled",
                     configuration.DepartureTimeOptimizationEnabled);
+    c->SetAttribute("DepartureTimeOptimizationChartDisplay",
+                    configuration.DepartureTimeOptimizationChartDisplay);
     c->SetAttribute("DepartureTimeOptimizationRangeMinutes",
                     configuration.DepartureTimeOptimizationRangeMinutes);
     c->SetAttribute("DepartureTimeOptimizationStepMinutes",
@@ -9343,6 +9708,7 @@ void WeatherRouting::SaveXML(wxString filename) {
     c->SetAttribute("MaxApparentWindKnots", configuration.MaxApparentWindKnots);
 
     c->SetDoubleAttribute("MaxSwellMeters", configuration.MaxSwellMeters);
+    c->SetAttribute("RequireWaveCoverage", configuration.RequireWaveCoverage);
     c->SetAttribute("MaxLatitude", configuration.MaxLatitude);
     c->SetAttribute("TackingTime", configuration.TackingTime);
     c->SetAttribute("JibingTime", configuration.JibingTime);
@@ -9398,6 +9764,14 @@ void WeatherRouting::SaveXML(wxString filename) {
 
 void WeatherRouting::SetEnableConfigurationMenu() {
   bool current = FirstCurrentRouteMap() != NULL;
+  const bool clearSelected = CanClearComputedResults(CurrentRouteMaps());
+  m_mClearResults->Enable(clearSelected);
+  m_mClearResults1->Enable(clearSelected);
+  std::list<RouteMapOverlay*> allRoutes;
+  for (auto* route : m_WeatherRoutes) allRoutes.push_back(route->routemapoverlay);
+  const bool clearAll = CanClearComputedResults(allRoutes);
+  m_mClearAllResults->Enable(clearAll);
+  m_mClearAllResults1->Enable(clearAll);
   m_mBatch->Enable(current);
   m_mBatch1->Enable(current);
   m_mEdit->Enable(current);
@@ -9668,6 +10042,7 @@ static wxString BuildRouteFailureState(RouteMapOverlay* routemapoverlay) {
 }
 
 struct FinalRouteWeatherSourceSummary {
+  bool completed{false};
   bool grib{false};
   bool climatology{false};
   long climatologySeconds{0};
@@ -9678,6 +10053,7 @@ static FinalRouteWeatherSourceSummary FinalRouteWeatherSources(
   FinalRouteWeatherSourceSummary summary;
   if (!route || !route->Finished() || !route->ReachedDestination())
     return summary;
+  summary.completed = true;
 
   for (const PlotData& point : route->GetPlotData(false)) {
     const bool grib = point.data_mask & Position::GRIB_WIND;
@@ -9703,7 +10079,10 @@ static wxString CompactWeatherDuration(long seconds) {
 static void FormatFinalRouteWeatherSources(
     const FinalRouteWeatherSourceSummary& summary, wxString& compact,
     wxString& detail) {
-  if (summary.climatology) {
+  if (!summary.completed) {
+    compact = _("N/A");
+    detail = _("Weather-source summary requires a completed route");
+  } else if (summary.climatology) {
     const wxString duration =
         CompactWeatherDuration(summary.climatologySeconds);
     if (summary.grib) {
@@ -9866,6 +10245,11 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
         State = _("Complete") + (title.empty() ? wxString() : " — " + title);
 #endif
         if (!mode.empty()) State += " (" + mode + ")";
+        if (routemapoverlay->UsesEstimatedPolarPerformance())
+          State += _(" (estimated polar performance)");
+        if (routemapoverlay->HasUnknownWaveHeights()) State += _(" (wave coverage incomplete)");
+        else if (routemapoverlay->HasEstimatedWaveHeights()) State += _(" (wave heights estimated)");
+        if (routemapoverlay->HasAnchoringWaits()) State += _(" (anchoring assumed)");
         if (routemapoverlay->HasModernNativeCoastalEndpointLeeway())
           State += _(" (shore buffer at endpoint: check route)");
       } else
@@ -12784,6 +13168,8 @@ void WeatherRouting::Reset() {
 
 void WeatherRouting::DeleteRouteMaps(
     std::list<RouteMapOverlay*> routemapoverlays) {
+  const bool previouslyUpdating = m_UpdatingDepartureSelection;
+  m_UpdatingDepartureSelection = true;
   // RoutingTablePanel is retained when its AUI pane is hidden. Detach it from
   // an overlay before deleting that overlay so later chart paints cannot use
   // a dangling route pointer.
@@ -12857,6 +13243,22 @@ void WeatherRouting::DeleteRouteMaps(
 
   m_ReportDialog.m_bReportStale = true;
 
+  for (auto group = m_DepartureChartGroups.begin();
+       group != m_DepartureChartGroups.end();) {
+    auto& controllers = group->second.controllers;
+    controllers.erase(std::remove_if(controllers.begin(), controllers.end(),
+        [this](RouteMapOverlay* route) { return !RouteMapIsManaged(route); }),
+        controllers.end());
+    const bool hasMembers = std::any_of(m_WeatherRoutes.begin(),
+        m_WeatherRoutes.end(), [&](WeatherRoute* item) {
+          return item->routemapoverlay->GetConfiguration()
+                     .DepartureTimeOptimizationGroupId == group->first;
+        });
+    if (!hasMembers) group = m_DepartureChartGroups.erase(group);
+    else ++group;
+  }
+  m_UpdatingDepartureSelection = previouslyUpdating;
+
   SetEnableConfigurationMenu();
 
   if (current) UpdateDialogs();
@@ -12877,6 +13279,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("MaxTrueWindKnots"), configuration.MaxTrueWindKnots);
   pConf->Write(_T("MaxApparentWindKnots"), configuration.MaxApparentWindKnots);
   pConf->Write(_T("MaxSwellMeters"), configuration.MaxSwellMeters);
+  pConf->Write(_T("RequireWaveCoverage"), configuration.RequireWaveCoverage);
   pConf->Write(_T("MaxLatitude"), configuration.MaxLatitude);
   pConf->Write(_T("TackingTime"), configuration.TackingTime);
   pConf->Write(_T("JibingTime"), configuration.JibingTime);
@@ -12913,6 +13316,8 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   pConf->Write(_T("MotorSpeed"), configuration.MotorSpeed);
   pConf->Write(_T("DepartureTimeOptimizationConcurrentRoutes"),
                configuration.DepartureTimeOptimizationConcurrentRoutes);
+  pConf->Write("DepartureTimeOptimizationChartDisplay",
+               configuration.DepartureTimeOptimizationChartDisplay);
   pConf->Write(_T("ArrivalSearchHorizonMinutes"),
                configuration.ArrivalSearchHorizonMinutes);
   pConf->Write(_T("ArrivalSafetyMarginMinutes"),
@@ -12962,6 +13367,7 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.MaxTrueWindKnots);
   pConf->Read(_T("MaxApparentWindKnots"), &configuration.MaxApparentWindKnots,
               configuration.MaxApparentWindKnots);
+  pConf->Read(_T("RequireWaveCoverage"), &configuration.RequireWaveCoverage, false);
   pConf->Read(_T("MaxSwellMeters"), &configuration.MaxSwellMeters,
               configuration.MaxSwellMeters);
   pConf->Read(_T("MaxLatitude"), &configuration.MaxLatitude,
@@ -13030,6 +13436,11 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
               configuration.MotorSpeed);
   long departure_concurrent_routes =
       configuration.DepartureTimeOptimizationConcurrentRoutes;
+  long departure_chart_display = 0;
+  pConf->Read("DepartureTimeOptimizationChartDisplay", &departure_chart_display,
+              0L);
+  configuration.DepartureTimeOptimizationChartDisplay =
+      static_cast<int>(std::clamp(departure_chart_display, 0L, 2L));
   pConf->Read(_T("DepartureTimeOptimizationConcurrentRoutes"),
               &departure_concurrent_routes, departure_concurrent_routes);
   configuration.DepartureTimeOptimizationConcurrentRoutes = std::max(
@@ -13115,6 +13526,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.MaxApparentWindKnots = 50;  // Safety margin for wind speed
 
   configuration.MaxSwellMeters = 20.;
+  configuration.RequireWaveCoverage = false;
   configuration.MaxLatitude = 90;
   configuration.TackingTime = 0;
   configuration.JibingTime = 0;

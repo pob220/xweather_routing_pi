@@ -2209,3 +2209,94 @@ TEST(CoastalEndpointPolicy, AccessCannotGrowPastTwoMilesWhenClearWaterIsFurtherA
       }));
   EXPECT_GT(boundaries.fullChecks, 0U);
 }
+
+TEST(ModernNativeEngine, DisabledAnchoringCannotInventStationaryHold) {
+  auto request = TestRequest();
+  request.options.allowWaiting = false;
+  request.options.useReverseRecovery = false;
+  request.options.useGraphFallback = false;
+  auto environment = TestEnvironment();
+  environment.performance = std::make_shared<TimeGatePerformance>(
+      request.departure + std::chrono::hours{1});
+  const auto result = RoutingEngine{}.route(request, environment);
+  EXPECT_FALSE(Successful(result.status));
+  EXPECT_EQ(result.diagnostics.waitStates, 0U);
+  EXPECT_TRUE(std::none_of(result.legs.begin(), result.legs.end(),
+      [](const auto& leg) { return leg.stationaryWait; }));
+}
+
+namespace {
+class WaveGapWeather final : public WeatherProvider {
+public:
+  enum Kind { None, Direct, Estimate, SpatialGap, TemporalGap, Excessive };
+  explicit WaveGapWeather(Kind kind) : kind_(kind) {}
+  ParameterCoverage windCoverage() const override { return {true, {}, {}, {-180,-90,180,90}, "wave-test"}; }
+  ParameterCoverage currentCoverage() const override { return {}; }
+  ParameterCoverage waveCoverage() const override { auto c=windCoverage(); c.available=kind_ != None; return c; }
+  WindSample wind(GeoPoint, TimePoint) const override {
+    WindSample w; w.available=true; w.velocity={0,-15};
+    w.metadata.source=EnvironmentalSource::GribForecast; return w;
+  }
+  CurrentSample current(GeoPoint, TimePoint) const override { return {}; }
+  WaveSample waves(GeoPoint p, TimePoint t) const override {
+    if (kind_ == None || (kind_ == SpatialGap && p.longitude > 0.025) ||
+        (kind_ == TemporalGap && t > TestTime()+std::chrono::minutes{15})) return {};
+    WaveSample w; w.available=true; w.significantHeightMetres=kind_==Excessive ? 4 : 1;
+    w.periodSeconds=std::numeric_limits<double>::quiet_NaN();
+    w.directionFromDegrees=std::numeric_limits<double>::quiet_NaN();
+    w.nearbyHeightEstimate=kind_==Estimate;
+    w.metadata.source=EnvironmentalSource::GribForecast; return w;
+  }
+  std::string identity() const override { return "wave-test"; }
+private: Kind kind_;
+};
+RoutingRequest WaveRequest(bool required) {
+  auto r=TestRequest(); r.start={0,0}; r.destination={0,0.05};
+  r.environment.useCurrent=false; r.environment.useWaves=true;
+  r.environment.missingWaves=required ? MissingWavePolicy::RequireExplicitAcknowledgement : MissingWavePolicy::AllowWithWarning;
+  r.environment.missingWavesAcknowledged=!required;
+  r.constraints.maximumWaveHeightMetres=2;
+  r.options.allowWaiting=false; r.options.timeStep=std::chrono::minutes{10};
+  r.options.destinationToleranceNm=.02;
+  r.limits.maximumRouteDuration=std::chrono::hours{2}; return r;
+}
+RoutingResult WaveRoute(int engine, WaveGapWeather::Kind kind, bool required) {
+  auto r=WaveRequest(required); auto e=TestEnvironment();
+  e.grib=std::make_shared<WaveGapWeather>(kind);
+  e.performance=std::make_shared<PolarPerformanceModel>(r.vessel);
+  if (engine==0) return original_routing::Engine{}.route(r,e);
+  if (engine==1) return QuickRoutingEngine{}.route(r,e).route;
+  return RoutingEngine{}.route(r,e);
+}
+TEST(WaveCoveragePolicy, EveryEngineAllowsUnknownWithWarningOrRejectsWhenRequired) {
+  for (int engine=0; engine<3; ++engine) for (auto kind : {WaveGapWeather::None, WaveGapWeather::SpatialGap, WaveGapWeather::TemporalGap}) {
+    SCOPED_TRACE(std::to_string(engine)+"/"+std::to_string(kind));
+    const auto allowed=WaveRoute(engine,kind,false);
+    ASSERT_TRUE(Successful(allowed.status)) << allowed.message;
+    EXPECT_GT(allowed.validation.environment.missingWaveDuration.count(),0);
+    const auto required=WaveRoute(engine,kind,true);
+    EXPECT_FALSE(Successful(required.status));
+  }
+}
+TEST(WaveCoveragePolicy, EveryEngineEnforcesCeilingAndRecordsLocalEstimates) {
+  for (int engine=0; engine<3; ++engine) {
+    SCOPED_TRACE(engine);
+    const auto direct=WaveRoute(engine,WaveGapWeather::Direct,true);
+    ASSERT_TRUE(Successful(direct.status)) << direct.message;
+    EXPECT_EQ(direct.validation.environment.missingWaveDuration.count(),0);
+    EXPECT_EQ(direct.validation.environment.estimatedWaveDuration.count(),0);
+    const auto estimated=WaveRoute(engine,WaveGapWeather::Estimate,true);
+    ASSERT_TRUE(Successful(estimated.status)) << estimated.message;
+    EXPECT_GT(estimated.validation.environment.estimatedWaveDuration.count(),0);
+    EXPECT_FALSE(Successful(WaveRoute(engine,WaveGapWeather::Excessive,false).status));
+  }
+}
+}
+TEST(WaveCoveragePolicy, RequireCoverageStillAppliesWithoutHeightCeiling) {
+  auto r=WaveRequest(true); r.constraints.maximumWaveHeightMetres.reset();
+  auto e=TestEnvironment(); e.grib=std::make_shared<WaveGapWeather>(WaveGapWeather::None);
+  e.performance=std::make_shared<PolarPerformanceModel>(r.vessel);
+  EXPECT_EQ(original_routing::Engine{}.route(r,e).status, RoutingStatus::WaveDataRequired);
+  EXPECT_EQ(QuickRoutingEngine{}.route(r,e).route.status, RoutingStatus::WaveDataRequired);
+  EXPECT_EQ(RoutingEngine{}.route(r,e).status, RoutingStatus::WaveDataRequired);
+}

@@ -329,6 +329,7 @@ public:
    * Resets the route map to its initial state.
    */
   virtual void Clear();
+  bool HasComputedResults();
 
   /**
    * Locks the route map for thread-safe access.
@@ -364,6 +365,11 @@ public:
     return m_ModernProgress.Read().generation;
   }
   bool UsesModernNativeResult() const { return m_UsesModernNativeResult; }
+  bool UsesEstimatedPolarPerformance();
+  const wxString& ModernNativeCoverageNotes() const { return m_ModernNativeCoverageNotes; }
+  bool HasUnknownWaveHeights() const { return m_ModernNativeMissingWaves; }
+  bool HasEstimatedWaveHeights() const { return m_ModernNativeEstimatedWaves; }
+  bool HasAnchoringWaits() const { return m_ModernNativeAnchoringWaits; }
   bool HasModernNativeCoastalEndpointLeeway() const {
     return m_ModernNativeCoastalEndpointLeeway;
   }
@@ -415,6 +421,7 @@ public:
   bool m_UpdateOverlay;
 
   /** Flag indicating if the end route should be visible. */
+  // Master visibility for all chart output, including selection previews.
   bool m_bEndRouteVisible;
 
   /**
@@ -506,6 +513,11 @@ private:
 
   bool m_UsesModernNativeResult{false};
   bool m_ModernNativeCoastalEndpointLeeway{false};
+  bool m_ModernNativeEstimatedPolar{false};
+  bool m_ModernNativeMissingWaves{false};
+  bool m_ModernNativeEstimatedWaves{false};
+  bool m_ModernNativeAnchoringWaits{false};
+  wxString m_ModernNativeCoverageNotes;
   std::shared_ptr<std::atomic_bool> m_ComfortStop{std::make_shared<std::atomic_bool>(false)};
   std::atomic_bool m_ExploringComfort{false};
   std::vector<weather_routing::RetainedRouteCandidate> m_RetainedCandidates;

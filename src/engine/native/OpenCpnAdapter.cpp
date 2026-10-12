@@ -32,6 +32,7 @@
 #include "engine/native/CoordinateNormalization.h"
 #include "engine/native/RoutingEngineSequence.h"
 #include "engine/native/WeatherCoverage.h"
+#include "engine/native/NearbyWaveHeight.h"
 #include "original_routing/Engine.h"
 #include "supercpn/weather_routing/AlternativeEngine.h"
 #include "supercpn/weather_routing/ArrivalPlanner.h"
@@ -99,6 +100,7 @@ struct OpenCpnSample {
   double waveHeight{std::numeric_limits<double>::quiet_NaN()};
   double waveDirection{std::numeric_limits<double>::quiet_NaN()};
   double wavePeriod{std::numeric_limits<double>::quiet_NaN()};
+  bool estimatedWaveHeight{};
   int dataMask{};
   wr::TimePoint sampleTime{};
 };
@@ -186,11 +188,22 @@ public:
             identity()};
   }
   wr::ParameterCoverage waveCoverage() const override {
-    return {configuration_.UseGrib,
-            {},
-            {},
-            {-180.0, -90.0, 180.0, 90.0},
-            identity()};
+    if (waveCoverage_) return *waveCoverage_;
+    wr::ParameterCoverage coverage;
+    Shared_GribRecordSet frame;
+    if (configuration_.UseGrib && overlay_.AcquireGribTimelineFrame(
+            configuration_.StartTime, frame)) {
+      const auto* records = frame.GetGribRecordSet();
+      const auto* h = records ? records->m_GribRecordPtrArray[Idx_HTSIGW] : nullptr;
+      if (h)
+        coverage = weather_routing::native::WindGridCoverage(
+            h->getLonMin(), h->getLatMin(), h->getLonMax(), h->getLatMax(), h->getDi(),
+            h->getLonMin(), h->getLatMin(), h->getLonMax(), h->getLatMax(), h->getDi());
+    }
+    // This describes the departure frame only. Missing cells and later wave
+    // coverage are checked by the same sampler during search and validation.
+    waveCoverage_ = coverage;
+    return coverage;
   }
 
   wr::WindSample wind(wr::GeoPoint position,
@@ -236,8 +249,11 @@ public:
     result.significantHeightMetres = sample.waveHeight;
     result.directionFromDegrees = sample.waveDirection;
     result.periodSeconds = sample.wavePeriod;
+    result.nearbyHeightEstimate = sample.estimatedWaveHeight;
     result.metadata =
         metadata(wr::EnvironmentalSource::GribForecast, sample.sampleTime);
+    if (sample.estimatedWaveHeight)
+      result.metadata.fallbackReason = "maximum of nearby connected-water wave-height cells (within 15 NM)";
     return result;
   }
 
@@ -267,6 +283,7 @@ public:
 
 private:
   mutable std::optional<wr::ParameterCoverage> windCoverage_;
+  mutable std::optional<wr::ParameterCoverage> waveCoverage_;
 
   struct LocalCacheSlot {
     bool valid{};
@@ -411,13 +428,37 @@ private:
         configuration, &point, sample.windFromGround, sample.windSpeedGround,
         sample.windFromWater, sample.windSpeedWater, sample.currentToward,
         sample.currentSpeed, atlas, sample.dataMask);
-    if (sample.available) {
+    if (configuration.grib) {
       sample.waveHeight = WeatherDataProvider::GetSwell(
           configuration, samplePosition.latitude, samplePosition.longitude);
       sample.waveDirection = WeatherDataProvider::GetWaveDirection(
           configuration, samplePosition.latitude, samplePosition.longitude);
       sample.wavePeriod = WeatherDataProvider::GetWavePeriod(
           configuration, samplePosition.latitude, samplePosition.longitude);
+      const auto* heightGrid = configuration.grib->m_GribRecordPtrArray[Idx_HTSIGW];
+      // Use the finest prepared shoreline for wave borrowing in every engine.
+      auto waveShoreline = configuration.shoreline_dataset;
+      for (auto it = configuration.engine_shorelines.rbegin();
+           it != configuration.engine_shorelines.rend(); ++it) {
+        if (*it) {
+          waveShoreline = *it;
+          break;
+        }
+      }
+      if (!std::isfinite(sample.waveHeight) && heightGrid && waveShoreline) {
+        const auto height = weather_routing::native::NearbyWaveHeight(*heightGrid,
+            samplePosition, [&](wr::GeoPoint a, wr::GeoPoint b) {
+              // Never borrow across a shoreline, irrespective of Detect Land.
+              // Without prepared shoreline data the height remains unknown.
+              return !waveShoreline->CrossesLand(
+                  a.latitude, a.longitude, b.latitude, b.longitude);
+            });
+        if (height) {
+          sample.waveHeight = *height;
+          sample.estimatedWaveHeight = true;
+          // Height-only estimates do not invent direction or period.
+        }
+      }
     }
     return publish(sample);
   }
@@ -443,6 +484,26 @@ class OpenCpnPerformanceModel final : public wr::VesselPerformanceModel {
 public:
   explicit OpenCpnPerformanceModel(RouteMapConfiguration configuration)
       : configuration_(std::move(configuration)) {}
+
+  std::optional<double> bestSailingSpeedAt(wr::GeoPoint position,
+      wr::TimePoint time, double tws, const wr::WaveSample&,
+      double minimumAngle, double maximumAngle) const override {
+    const bool night = configuration_.NightCumulativeEfficiency != 1.0 &&
+        SunCalculator::GetInstance().GetDayLightStatus(position.latitude,
+            position.longitude, ToWx(time)) == DayLightStatus::Night;
+    if (tws != bestWind_ || night != bestNight_ ||
+        minimumAngle != bestMinimumAngle_ || maximumAngle != bestMaximumAngle_) {
+      bestSpeed_ = BestSailingSpeedForRouting(configuration_.boat.Polars,
+          tws, minimumAngle, maximumAngle, configuration_.UpwindEfficiency,
+          configuration_.DownwindEfficiency,
+          night ? configuration_.NightCumulativeEfficiency : 1.0);
+      bestWind_ = tws;
+      bestNight_ = night;
+      bestMinimumAngle_ = minimumAngle;
+      bestMaximumAngle_ = maximumAngle;
+    }
+    return bestSpeed_;
+  }
 
   bool valid(std::string* reason) const override {
     const bool result =
@@ -532,12 +593,11 @@ private:
     wr::PerformanceCandidate result;
     if (index >= configuration_.boat.Polars.size()) return result;
     PolarSpeedStatus status = POLAR_SPEED_SUCCESS;
-    // Each candidate is a sail table with its own operating wind range.
-    // The route's maximum wind is a separate weather constraint, not
-    // permission to extend a light-wind sail beyond its measured range.
-    double speed = configuration_.boat.Polars[index].Speed(
-        twa, tws, &status, true,
-        configuration_.OptimizeTacking && !configuration_.IsOriginal());
+    bool estimated = false;
+    double speed = PolarSpeedForRouting(configuration_.boat.Polars, index,
+        twa, tws, &status,
+        configuration_.OptimizeTacking && !configuration_.IsOriginal(),
+        &estimated);
     if (!std::isfinite(speed) || speed <= 0.0) return result;
     if (configuration_.UseMotor && speed < configuration_.MotorSpeedThreshold) {
       result.mode = wr::PropulsionMode::Motor;
@@ -552,6 +612,8 @@ private:
               position.latitude, position.longitude, ToWx(time)) ==
           DayLightStatus::Night)
         speed *= configuration_.NightCumulativeEfficiency;
+      speed = std::min(speed, configuration_.boat.Polars[index].MaximumSpeed());
+      result.estimatedPolarWind = estimated;
     }
     result.valid = std::isfinite(speed) && speed > 0.0;
     result.sailPlan = static_cast<int>(index);
@@ -563,6 +625,9 @@ private:
   }
 
   mutable RouteMapConfiguration configuration_;
+  mutable double bestWind_{NAN}, bestMinimumAngle_{NAN}, bestMaximumAngle_{NAN};
+  mutable bool bestNight_{};
+  mutable std::optional<double> bestSpeed_;
 };
 
 class OpenCpnLandProvider final : public wr::LandAndBoundaryProvider {
@@ -799,22 +864,25 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
 
   request.environment.useWind = true;
   request.environment.useCurrent = configuration.Currents;
-  request.environment.useWaves = configuration.UseGrib;
+  request.environment.useWaves = configuration.UseGrib || configuration.RequireWaveCoverage ||
+      configuration.MaxSwellMeters > 0.0;
   request.environment.climatology =
       wr::ClimatologyFallbackPolicy::AllowWithWarning;
   request.environment.climatologyAcknowledged = true;
   request.environment.missingCurrent =
       wr::MissingCurrentPolicy::AllowAssumedZero;
   request.environment.zeroCurrentAcknowledged = true;
-  request.environment.missingWaves = wr::MissingWavePolicy::AllowWithWarning;
-  request.environment.missingWavesAcknowledged = true;
+  request.options.allowWaiting = configuration.Anchoring;
+  request.environment.missingWaves = configuration.RequireWaveCoverage
+      ? wr::MissingWavePolicy::RequireExplicitAcknowledgement
+      : wr::MissingWavePolicy::AllowWithWarning;
+  request.environment.missingWavesAcknowledged = !configuration.RequireWaveCoverage;
   if (configuration.IsOriginal()) {
-    // Enabling currents or a wave ceiling requests a real constraint, not
-    // permission to invent data. The old engines keep their historic policy.
+    // Preserve the current-data policy. Wave coverage and anchoring follow
+    // the same explicit configuration for every engine, including incumbents.
     request.environment.missingCurrent = wr::MissingCurrentPolicy::Disallow;
     request.environment.zeroCurrentAcknowledged = false;
-    request.environment.missingWaves = wr::MissingWavePolicy::DisallowWhenConstrained;
-    request.environment.missingWavesAcknowledged = false;
+
   }
 
   if (configuration.MaxTrueWindKnots > 0.0)
@@ -921,7 +989,8 @@ wr::RoutingRequest BuildRequest(RouteMapOverlay& overlay,
   request.limits.maximumRetainedStates = resources.maximum_retained_states;
   if (configuration.IsOriginal()) {
     const auto& settings = configuration.EngineSettings.original;
-    request.options.timeStep = std::chrono::minutes(settings.offshoreStepMinutes);
+    request.options.timeStep = wr::Duration{
+        weather_routing::QuickTimeStepSeconds(configuration.DeltaTime)};
     request.options.headingStepDegrees = settings.headingStepDegrees;
     request.options.maximumSearchAngleDegrees = settings.maximumSearchAngle;
     request.options.routingEffortPercent = 100;
@@ -1034,6 +1103,8 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       quickConfiguration.EngineSettings.original.memoryBudgetMiB =
           static_cast<int>(quickMemory.effectiveMiB);
       wr::RoutingRequest quickRequest = BuildRequest(overlay, quickConfiguration);
+      // Professional's contour candidate uses the same configured nominal
+      // timestep as standalone Quick, including its endpoint reductions.
       auto quickWeather = std::make_shared<OpenCpnWeatherProvider>(
           overlay, quickConfiguration);
       auto quickLand = std::make_shared<OpenCpnLandProvider>(
@@ -1057,13 +1128,14 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       wxLogMessage(
           "WR_PROFESSIONAL_QUICK_BUDGET saved_mib=%u target_mib=%u "
           "effective_mib=%u available_mib=%llu required_before_mib=%llu "
-          "generated_limit=%llu",
+          "generated_limit=%llu time_step_s=%lld",
           quickMemory.savedMiB, quickMemory.targetMiB,
           quickMemory.effectiveMiB,
           static_cast<unsigned long long>(quickMemory.availableMiB),
           static_cast<unsigned long long>(quickMemory.requiredBeforeMiB),
           static_cast<unsigned long long>(
-              quickRequest.limits.maximumGeneratedStates));
+              quickRequest.limits.maximumGeneratedStates),
+          static_cast<long long>(quickRequest.options.timeStep.count()));
       wr::RoutingResult quick;
       if (quickMemory.effectiveMiB == 0) {
         quick.status = wr::RoutingStatus::ResourceLimitReached;
@@ -1120,6 +1192,9 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
       }
       original_routing::Options originalOptions;
       originalOptions.captureVisualization = true;
+      // Match the other engines' bounded harbour access. Search and replay
+      // retain full clearance outside the fixed endpoint areas.
+      originalOptions.allowCoastalEndpointLeeway = true;
       auto original = original_routing::Engine{}.route(
           bounded, solveEnvironment, originalOptions);
       originalGenerated += original.diagnostics.generatedStates;
@@ -1647,6 +1722,9 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
         arrivalPlan->diagnostics.bracketRefinements,
         arrivalPlan->diagnostics.evaluationBudgetExhausted ? 1 : 0);
   }
+  if (result.attemptFailures.empty() && result.engineIdentity == "quick" &&
+      result.message.find("Quick search did not find") == 0)
+    result.message = "Standard search allowance exhausted before finding a validated route; try Professional or review the settings.";
   auto reportingConfiguration = resultConfiguration;
   auto reportingRequest = request;
   if (!result.engineIdentity.empty()) {
@@ -1813,10 +1891,11 @@ bool RunModernNativeRoute(RouteMapOverlay& overlay, wxString& error) {
                          configuration.DepartureTimeOptimizationOffsetMinutes));
   if (!Complete(result.status)) {
     error = wxString::FromUTF8(result.message.c_str());
+    if (result.status == wr::RoutingStatus::WaveDataRequired &&
+        result.attemptFailures.empty())
+      error = _("Required wave coverage is unavailable. Load a wave forecast covering the route and time, or turn off Require wave coverage to proceed with a coverage warning.");
     if (configuration.IsOriginal()) {
-      if (result.status == wr::RoutingStatus::WaveDataRequired)
-        error = _("Quick requires wave coverage to enforce Max Swell. Supply wave data, or deliberately set Max Swell to 0 to disable this limit.");
-      else if (result.status == wr::RoutingStatus::CurrentDataRequired)
+      if (result.status == wr::RoutingStatus::CurrentDataRequired)
         error = _("Quick requires current coverage while Currents is enabled. Supply current data, or deliberately turn Currents off.");
       else if (result.status == wr::RoutingStatus::WindForecastRequired)
         error = _("Quick requires wind coverage for this route and time. Extend the GRIB coverage or configure an available climatology provider.");

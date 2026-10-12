@@ -74,6 +74,7 @@ struct WaveSample {
   double directionFromDegrees{};
   double periodSeconds{};
   EnvironmentalSourceMetadata metadata;
+  bool nearbyHeightEstimate{};
 };
 
 struct EnvironmentalSnapshot {
@@ -110,6 +111,7 @@ struct EnvironmentalSourceUsage {
   Duration currentAssumedZeroDuration{};
   Duration gribWaveDuration{};
   Duration missingWaveDuration{};
+  Duration estimatedWaveDuration{};
 };
 
 enum class PropulsionMode { Sail, MotorSail, Motor };
@@ -393,6 +395,7 @@ enum class RoutingWarningCode {
   CurrentAssumedZero,
   CurrentCoverageIncomplete,
   WaveDataMissing,
+  WaveHeightEstimated,
   WaveCoverageIncomplete,
   EstimatedPolar,
   SearchPruned,
@@ -573,9 +576,13 @@ struct RouteValidationResult {
   bool passed{};
   std::string failureReason;
   std::size_t acceptedPrefixLegs{};
+  // Leading legs whose chronological replay starts inside the departure
+  // buffer. Delivery must retain this independently validated allowance.
+  std::size_t coastalDepartureEgressLegs{};
   std::uint64_t samples{};
   EnvironmentalSourceUsage environment;
   std::vector<EnvironmentalSourceTransition> sourceTransitions;
+  bool estimatedPolarWind{};
 };
 
 struct PruningDiagnostics {
@@ -654,6 +661,12 @@ struct EnsembleMetrics {
   std::vector<EnsembleMemberResult> members;
 };
 
+struct RoutingAttemptFailure {
+  std::string engine;
+  RoutingStatus status{RoutingStatus::InternalError};
+  std::string detail;
+};
+
 struct RoutingResult {
   RoutingStatus status{RoutingStatus::InternalError};
   std::vector<RouteLeg> legs;
@@ -671,6 +684,7 @@ struct RoutingResult {
   // Optional client-side solver provenance, retained by arrival planning.
   std::string engineIdentity;
   std::string searchVariant;
+  std::vector<RoutingAttemptFailure> attemptFailures;
 };
 
 }  // namespace supercpn::weather_routing

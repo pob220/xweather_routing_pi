@@ -2,6 +2,7 @@
 #include "Contour.h"
 #include "supercpn/weather_routing/CoastalEndpointPolicy.h"
 #include "RoutingInternal.h"
+#include "MotionKernel.h"
 #include "original_routing/VisualizationSampler.h"
 #include <array>
 #include <memory>
@@ -148,6 +149,11 @@ public:
     arena.checkpoint();
     return source->evaluateAt(p, t, m, r, id, w, a, s);
   }
+  std::optional<double> bestSailingSpeedAt(wr::GeoPoint p, wr::TimePoint t,
+      double w, const wr::WaveSample& s, double lo, double hi) const override {
+    arena.checkpoint();
+    return source->bestSailingSpeedAt(p, t, w, s, lo, hi);
+  }
 };
 class GuardClimatology final : public wr::ClimatologyProvider {
   std::shared_ptr<const wr::ClimatologyProvider> source;
@@ -202,6 +208,8 @@ struct Motion {
   unsigned profile{};
   wr::Duration modeDuration{}, motorTime{};
   double fuel{};
+  wr::Duration waitDuration{};
+  bool prior{true};
 };
 struct State {
   wr::GeoPoint point;
@@ -211,6 +219,7 @@ struct State {
   bool prior{};
   wr::Duration modeDuration{}, motorTime{};
   double fuel{};
+  wr::Duration waitDuration{};
 };
 class Search {
 public:
@@ -263,6 +272,14 @@ public:
     for (double a = lo; a <= hi + 1e-8; a += r.options.headingStepDegrees)
       angles.push_back(a);
     if (angles.empty() || angles.back() < hi - 1e-8) angles.push_back(hi);
+    if (r.vessel.propulsion.allowMotor &&
+        r.vessel.propulsion.motorBelowSailingSpeedKnots > 0) {
+      // Additional headings are motor-only candidates. Selection and every
+      // integration/replay sample still verify the low-sailing-STW condition.
+      for (double a = 0; a <= 180; a += r.options.headingStepDegrees)
+        if (a < lo - 1e-8 || a > hi + 1e-8) angles.push_back(a);
+      if (hi < 180 - 1e-8 && angles.back() < 180 - 1e-8) angles.push_back(180);
+    }
     const auto positive = angles;
     for (double a : positive)
       if (a > 0 && a < 180) angles.push_back(-a);
@@ -277,14 +294,42 @@ public:
             t->time,
             t->angle,
             t->profile,
-            t->parent != nullptr,
+            t->hasMotion,
             t->modeDuration,
             t->motorTime,
-            t->fuel};
+            t->fuel,
+            t->waitDuration};
   }
   State after(const Motion& m) const {
     return {m.leg.end, m.leg.endTime,  m.angle,     m.profile,
-            true,      m.modeDuration, m.motorTime, m.fuel};
+            m.prior,   m.modeDuration, m.motorTime, m.fuel, m.waitDuration};
+  }
+  std::optional<Motion> wait(const State& s, wr::Duration duration) {
+    if (duration <= wr::Duration{} || s.time + duration >
+        request.departure + request.limits.maximumRouteDuration) return {};
+    wr::internal::MotionState from;
+    from.position = s.point;
+    from.time = s.time;
+    from.waitDuration = s.waitDuration;
+    if (s.prior) {
+      const auto& id = profiles[s.profile];
+      from.mode = id.mode;
+      from.role = id.role;
+      from.profileIdentity = id.profileIdentity;
+      from.sailPlan = id.sailPlan;
+    }
+    auto waiting = wr::internal::checkedWait(request, environment, from,
+                                            duration, result.diagnostics);
+    if (!waiting) return {};
+    Motion m;
+    m.leg = std::move(waiting->leg);
+    m.angle = s.angle;
+    m.profile = s.profile;
+    m.motorTime = s.motorTime;
+    m.fuel = s.fuel;
+    m.waitDuration = waiting->state.waitDuration;
+    m.prior = s.prior;
+    return m;
   }
   std::optional<wr::EnvironmentalSnapshot> weather(wr::GeoPoint p,
                                                    wr::TimePoint t) {
@@ -336,10 +381,10 @@ public:
       wr::GeoPoint p, wr::TimePoint t, double heading,
       const wr::EnvironmentalSnapshot& e, unsigned index) {
     double a = wr::trueWindAngleDegrees(e.wind.velocity, heading);
-    if (a + 1e-8 < request.constraints.minimumTrueWindAngleDegrees ||
-        a - 1e-8 > request.constraints.maximumTrueWindAngleDegrees)
-      return {};
     auto& id = profiles[index];
+    if (!wr::sailingAngleAllowed(request, *environment.performance, p, t,
+            wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves, id.mode, id.role))
+      return {};
     auto c = environment.performance->evaluateAt(
         p, t, id.mode, id.role, id.profileIdentity,
         wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves);
@@ -371,9 +416,6 @@ public:
   std::optional<unsigned> select(const State& s, double heading,
                                  const wr::EnvironmentalSnapshot& e) {
     double a = wr::trueWindAngleDegrees(e.wind.velocity, heading);
-    if (a + 1e-8 < request.constraints.minimumTrueWindAngleDegrees ||
-        a - 1e-8 > request.constraints.maximumTrueWindAngleDegrees)
-      return {};
     auto cs = environment.performance->candidatesAt(
         s.point, s.time, wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves,
         s.prior ? profiles[s.profile].mode : wr::PropulsionMode::Sail,
@@ -382,6 +424,8 @@ public:
     for (auto& c : cs)
       if (c.valid && std::isfinite(c.speedThroughWaterKnots) &&
           c.speedThroughWaterKnots > .05 &&
+          wr::sailingAngleAllowed(request, *environment.performance, s.point, s.time,
+              wr::vectorMagnitudeKnots(e.wind.velocity), a, e.waves, c.mode, c.role) &&
           ((c.mode == wr::PropulsionMode::Sail &&
             request.vessel.propulsion.allowSailing) ||
            (c.mode == wr::PropulsionMode::Motor &&
@@ -461,6 +505,7 @@ public:
     }
     const auto initial = cached;
     Motion m;
+    m.waitDuration = s.waitDuration;
     m.profile = id;
     auto& leg = m.leg;
     const auto& c = profiles[id];
@@ -864,10 +909,13 @@ public:
         }
       }
       Motion motion;
+      motion.waitDuration = cursor.waitDuration;
       motion.leg = leg;
       motion.motorTime = cursor.motorTime;
       motion.fuel = cursor.fuel + leg.estimatedFuelLitres;
       if (leg.stationaryWait) {
+        motion.waitDuration += leg.endTime - leg.startTime;
+        motion.prior = cursor.prior;
         motion.profile = cursor.profile;
         motion.angle = cursor.angle;
       } else {
@@ -924,7 +972,9 @@ public:
                         result.diagnostics.closestApproachNm, 100});
     State s{request.start, request.departure};
     std::vector<wr::RouteLeg> legs;
-    for (auto p : chain) {
+    unsigned contourRejoins = 0;
+    for (std::size_t node = 0; node < chain.size(); ++node) {
+      auto p = chain[node];
       if (request.progress)
         request.progress({wr::RoutingProgressStage::Validation, candidatesTried,
                           options.maximumValidatedCandidates,
@@ -932,11 +982,48 @@ public:
                           result.diagnostics.landChecks,
                           result.diagnostics.closestApproachNm, 100});
       const auto hint = (p->time - p->parent->time).count();
+      if (p->stationaryWait) {
+        auto waiting = wait(s, wr::Duration{hint});
+        if (!waiting) return false;
+        legs.push_back(waiting->leg);
+        s = after(*waiting);
+        continue;
+      }
       const wr::Duration allowance{
           std::max<std::int64_t>(1800, hint * 2 + 1200)};
       auto repaired = connect(s, p->point, hint, allowance);
       if (!repaired)
         repaired = interimBridge(s, p->point, allowance, legs);
+      // Contour vertices are search proposals, not mandatory waypoints. A
+      // precise prefix may reach one at a different tide or wind phase and
+      // cannot always reproduce the next proposed point. Professional may
+      // reconnect to a nearby later vertex without changing the search step.
+      // Keep this recovery small, preserve proposed waits, and independently
+      // replay every delivered leg under the original request.
+      if (!repaired && options.allowProfessionalInterimBridge &&
+          contourRejoins < 4) {
+        for (std::size_t ahead = 1; ahead <= 3 && node + ahead < chain.size();
+             ++ahead) {
+          const auto target = chain[node + ahead];
+          if (target->stationaryWait) break;
+          if (wr::distanceNm(s.point, target->point) > 30.0) continue;
+          const auto joinedHint = (target->time - p->parent->time).count();
+          const wr::Duration joinedAllowance{
+              std::max<std::int64_t>(1800, joinedHint * 2 + 1200)};
+          repaired = connect(s, target->point, joinedHint, joinedAllowance);
+          if (!repaired)
+            repaired = interimBridge(s, target->point, joinedAllowance, legs);
+          if (!repaired) continue;
+          if (result.diagnostics.stageStopReasons.size() < 8)
+            result.diagnostics.stageStopReasons.push_back(
+                "Professional Quick contour rejoin: skipped " +
+                std::to_string(ahead) + " proposed vertices after " +
+                std::to_string(legs.size()) + " replayed legs");
+          node += ahead;
+          ++contourRejoins;
+          break;
+        }
+      }
       if (!repaired) {
         if (result.diagnostics.stageStopReasons.size() < 8)
           result.diagnostics.stageStopReasons.push_back(
@@ -968,6 +1055,12 @@ public:
         result.diagnostics.stageStopReasons.push_back(validation.failureReason);
       return false;
     }
+    // Professional can retain this contour route as its incumbent. Preserve
+    // the departure prefix established by independent dense replay so the
+    // final host/plotting gate applies the same bounded coastal policy.
+    for (std::size_t i = 0; i < legs.size(); ++i)
+      legs[i].coastalDepartureEgress =
+          i < validation.coastalDepartureEgressLegs;
     result.legs = std::move(legs);
     result.validation = std::move(validation);
     result.environment = result.validation.environment;
@@ -978,7 +1071,9 @@ public:
       result.metrics.tackCount += leg.tackTransition;
       result.metrics.gybeCount += leg.gybeTransition;
       auto duration = leg.endTime - leg.startTime;
-      if (leg.propulsionMode == wr::PropulsionMode::Sail)
+      if (leg.stationaryWait)
+        result.metrics.waitingTime += duration;
+      else if (leg.propulsionMode == wr::PropulsionMode::Sail)
         result.metrics.sailingTime += duration;
       else if (leg.propulsionMode == wr::PropulsionMode::Motor)
         result.metrics.motorOnlyTime += duration;
@@ -1060,6 +1155,7 @@ public:
         wr::vectorDirectionToDegrees(e->wind.velocity) + 180);
     Position* points = nullptr;
     unsigned count = 0;
+    bool usableProfile = false;
     for (double a : angles) {
       arena.checkpoint();
       double h = wr::normalizeHeading(from + a);
@@ -1069,6 +1165,7 @@ public:
         continue;
       auto id = select(s, h, *e);
       if (!id) continue;
+      usableProfile = true;
       if (result.diagnostics.generatedStates >=
           request.limits.maximumGeneratedStates)
         throw Stop{wr::RoutingStatus::ResourceLimitReached,
@@ -1090,6 +1187,8 @@ public:
       trace->modeDuration = m->modeDuration;
       trace->motorTime = m->motorTime;
       trace->fuel = m->fuel;
+      trace->hasMotion = true;
+      trace->waitDuration = m->waitDuration;
       auto q = new Position(arena, m->leg.end.latitude,
                             longitude(m->leg.end.longitude), trace);
       trace->release();
@@ -1106,6 +1205,29 @@ public:
     }
     if (count < 3) {
       if (points) DeletePoints(points);
+      // A calm or unsupported polar speed must not erase the temporal
+      // frontier. Retain a bounded, independently validated stationary wait
+      // only when no configured heading has usable vessel performance.
+      if (!usableProfile) {
+        if (auto waiting = wait(s, dt)) {
+          if (result.diagnostics.generatedStates >= request.limits.maximumGeneratedStates)
+            throw Stop{wr::RoutingStatus::ResourceLimitReached, "generated state limit"};
+          ++result.diagnostics.generatedStates;
+          auto trace = new Trace(arena, p->trace, s.point, waiting->leg.endTime);
+          trace->stationaryWait = true;
+          trace->hasMotion = s.prior;
+          trace->heading = p->trace->heading;
+          trace->angle = s.angle;
+          trace->profile = s.profile;
+          trace->motorTime = s.motorTime;
+          trace->fuel = s.fuel;
+          trace->waitDuration = waiting->waitDuration;
+          auto q = new Position(arena, p->lat, p->lon, trace);
+          trace->release();
+          q->next = q->prev = q;
+          output.push_back(new IsoRoute(q->BuildSkipList()));
+        }
+      }
       return false;
     }
     output.push_back(new IsoRoute(points->BuildSkipList()));

@@ -38,6 +38,8 @@ void addUsage(EnvironmentalSourceUsage& usage,
     usage.gribWaveDuration += duration;
   else
     usage.missingWaveDuration += duration;
+  if (environment.waves.available && environment.waves.nearbyHeightEstimate)
+    usage.estimatedWaveDuration += duration;
 }
 }  // namespace
 
@@ -48,6 +50,10 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
                                     RoutingDiagnostics* diagnostics,
                                     bool requireDestination) {
   RouteValidationResult result;
+  auto recordEstimatedPolar = [&](const PerformanceCandidate& candidate) {
+    result.estimatedPolarWind = result.estimatedPolarWind ||
+                                candidate.estimatedPolarWind;
+  };
   if (legs.empty()) return fail(std::move(result), "route contains no legs");
   if (environment.landAndBoundaries)
     environment.landAndBoundaries->prepareValidationRoute(
@@ -85,6 +91,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
 
   for (std::size_t legIndex = 0; legIndex < legs.size(); ++legIndex) {
     const RouteLeg& leg = legs[legIndex];
+    const bool departureEgressAtLegStart = departureEgress;
     if (leg.endTime <= leg.startTime)
       return fail(std::move(result),
                   "route timestamps are not strictly increasing");
@@ -161,6 +168,8 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
         previousEnvironment = resolved.snapshot;
       }
       previousModeDuration = Duration{};
+      if (departureEgressAtLegStart)
+        result.coastalDepartureEgressLegs = legIndex + 1;
       ++result.acceptedPrefixLegs;
       continue;
     }
@@ -296,6 +305,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       if (!predictorPerformance.valid)
         return fail(std::move(result),
                     "selected propulsion/profile is unavailable during replay");
+      recordEstimatedPolar(predictorPerformance);
       const Vector2 predictorWater =
           speedDirectionToVector(predictorPerformance.speedThroughWaterKnots,
                                  leg.courseThroughWaterDegrees);
@@ -331,8 +341,8 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
       const double tws = vectorMagnitudeKnots(resolved.snapshot.wind.velocity);
       const double twa = trueWindAngleDegrees(resolved.snapshot.wind.velocity,
                                               leg.courseThroughWaterDegrees);
-      if (twa + 1e-9 < request.constraints.minimumTrueWindAngleDegrees ||
-          twa - 1e-9 > request.constraints.maximumTrueWindAngleDegrees)
+      if (!sailingAngleAllowed(request, performance, midpoint, time, tws, twa,
+              resolved.snapshot.waves, leg.propulsionMode, leg.profileRole))
         return fail(std::move(result),
                     "route violates hard true-wind-angle bounds");
       const auto achievable = performance.evaluateAt(
@@ -344,6 +354,7 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
                 << legIndex;
         return fail(std::move(result), message.str());
       }
+      recordEstimatedPolar(achievable);
       if (request.constraints.maximumTrueWindKnots &&
           tws > *request.constraints.maximumTrueWindKnots + 1e-9)
         return fail(std::move(result), "route exceeds hard true-wind limit");
@@ -514,6 +525,8 @@ RouteValidationResult validateRoute(const RoutingRequest& request,
     if (request.vessel.propulsion.maximumFuelLitres &&
         totalFuel > *request.vessel.propulsion.maximumFuelLitres + 1e-6)
       return fail(std::move(result), "route exceeds fuel limit");
+    if (departureEgressAtLegStart)
+      result.coastalDepartureEgressLegs = legIndex + 1;
     ++result.acceptedPrefixLegs;
   }
   result.passed = true;

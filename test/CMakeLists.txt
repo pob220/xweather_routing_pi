@@ -64,6 +64,8 @@ set(TEST_SRC
     ReachabilityPrewarmPolicy_tests.cpp
     RouteDisplayPolicy_tests.cpp
     Polar_tests.cpp
+    PolarRoutingPolicy_tests.cpp
+    LowWindMotor_tests.cpp
     PolygonRegion_tests.cpp
     Utilities_tests.cpp
     MultiLegRouteOutput_tests.cpp
@@ -85,6 +87,7 @@ set(TEST_SRC
     TimeZoneDisplay_tests.cpp
     GpxRouteTime_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/navobj_util.cpp
+    NearbyWaveHeight_tests.cpp
     ModernNativeEngine_tests.cpp
     OriginalEngine_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/vendor/original-routing-engine/src/Engine.cpp
