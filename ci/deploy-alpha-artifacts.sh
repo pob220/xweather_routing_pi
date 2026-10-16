@@ -10,6 +10,8 @@ fi
 python3 ci/prepare-alpha-artifacts.py artifacts alpha-publication \
   "$(git rev-parse HEAD)" "${CIRCLE_BUILD_NUM:?CircleCI build number required}"
 
+python3 ci/validate-catalogue-packages.py alpha-publication
+
 python3 - <<'PY'
 import json
 import subprocess

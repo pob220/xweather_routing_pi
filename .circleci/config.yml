@@ -222,8 +222,8 @@ jobs:
       - attach_workspace:
           at: .
       - run:
-          name: Install deployment client
-          command: python -m pip install --user cloudsmith-cli
+          name: Install deployment client and catalogue schema validator
+          command: sudo apt-get update && sudo apt-get install -y libxml2-utils && python -m pip install --user cloudsmith-cli
       - run:
           name: Verify publication guards
           command: python3 -m unittest discover -s ci/tests -v
@@ -245,8 +245,8 @@ jobs:
           name: Recover previously reviewed green build artifacts
           command: python3 ci/fetch-circleci-workflow-artifacts.py << pipeline.parameters.recover_alpha_workflow_id >>
       - run:
-          name: Install deployment client
-          command: python -m pip install --user cloudsmith-cli
+          name: Install deployment client and catalogue schema validator
+          command: sudo apt-get update && sudo apt-get install -y libxml2-utils && python -m pip install --user cloudsmith-cli
       - run:
           name: Verify publication guards
           command: python3 -m unittest discover -s ci/tests -v

@@ -79,6 +79,9 @@ def inspect_pair(directory):
             f"Unexpected target for {matrix_name}: {target}; "
             f"expected {EXPECTED_TARGETS.get(matrix_name)}"
         )
+    build_target = (root.findtext("build-target") or "").strip()
+    if matrix_name.startswith("windows-") and build_target and build_target != "msvc":
+        raise ValueError(f"Invalid Windows build-target: {build_target}; expected msvc")
     libraries = {f"lib{PACKAGE}.so", f"lib{PACKAGE}.dylib", f"{PACKAGE}.dll"}
     with tarfile.open(archive, "r:gz") as package:
         members = package.getmembers()
@@ -101,6 +104,10 @@ def inspect_pair(directory):
         embedded = package.extractfile(embedded_members[0]).read()
         if (ET.fromstring(embedded).findtext("version") or "").strip() != version:
             raise ValueError(f"Embedded metadata version mismatch: {archive}")
+        embedded_root = ET.fromstring(embedded)
+        for field in ("build-target", "build-gtk"):
+            if (embedded_root.findtext(field) or "").strip() != (root.findtext(field) or "").strip():
+                raise ValueError(f"Embedded metadata {field} mismatch: {archive}")
     return archive, root, version, target, metadata.name
 
 
