@@ -30,7 +30,7 @@
     ".clang-tidy": "53cc15adb63192c30eca8f274b2c06a0560aede69f994aec1031363687b3c09d",
     "baseline.json": "62e47564db7674c3b598c62e2d3a33260c99bb0128c4c2b21e6f8974028242ee",
     "README.md": "b892945f2819b9e3d41524c1aa10b72f278a8cdba32b9865410cab64e3f14b46",
-    "QUINTON-SUMMARY.md": "b2187c5cd7a0558ae768559b6cfd96805d04f4459dabc0a03583587d9e55cb81",
+    "QUINTON-SUMMARY.md": "065ef8b70e9c5b7ab5d38d76d84ecf50e9214f3696779eaed94ade6cf11afafb",
     "tests/Contracts.cpp": "1145452270a251fa673a30679a121dc16a7560567318fc7b3882bcc525870c1d",
     "tests/BenchmarkBounds.h": "6d3ec5e2f40f3a42191d2f99e99c380a35c2ed2fee6b203236f958fdd997cfd8",
     "tests/HeadlessContracts.cpp": "4ef2d8554ebb5030b84ecc2d89d00ce0f4f9883384ffe1285644830bd3584467",
@@ -47,5 +47,9 @@
     "src/SearchStorage.h": "3bfacebbfb01a43259a4ac2ec2076fa44f63fa863188f872526e87d70443f75b",
     "include/mim_astar/Router.h": "150355e04280f23c07402ede58b6f5a06fc541fe5e183931eea6eef7449e2ea3"
   },
-  "checks_note": "Measured performance summaries refer to frozen pre-review builds; no performance improvement is claimed by this source review."
+  "checks_note": "Measured performance summaries refer to frozen pre-review builds; no performance improvement is claimed by this source review.",
+  "documentation_update": {
+    "utc": "2026-10-24T10:46:48.504416+00:00",
+    "description": "Add evidenced legacy Cowboy limitations; executable source and test evidence unchanged"
+  }
 }

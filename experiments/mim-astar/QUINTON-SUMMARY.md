@@ -61,6 +61,32 @@ libraries and installed plugins are unchanged. Cowboy remains a separate
 historical control because its older physical/provider model makes its raw
 timings unsuitable for this common-model ranking.
 
+**Cowboy: main problems found in the examined legacy implementation**
+
+- **Premature completion:** enclosing the destination inside an isochrone could
+  trigger “reached” even when a feasible final sailing connection had not been made.
+- **Unsailable plotted final legs:** implicit optimized tacking could be drawn
+  as one straight chord, without explicit sailed tacks. The displayed final leg
+  could violate the configured wind-angle limits or imply excessive straight-leg speed.
+- **Land and clearance gaps:** long final connectors could skip land checks and
+  omit the configured margin. Inherited host intersection/grid-traversal defects
+  could also miss crossings.
+- **No mandatory independent whole-route acceptance replay:** a displayed route
+  was not required to pass a fresh chronological check of the complete delivered
+  track against sailing physics and the requested constraints.
+- **Direction-dependent final-connection bugs:** the iteration did not update its
+  course estimate correctly and used a one-sided angular-error test. A route could
+  fail in one direction while the reversed control succeeded.
+- **Permissive missing-data handling:** unavailable current could become assumed
+  zero current, and missing swell could bypass an active wave limit.
+
+These are implementation and acceptance problems addressed by the hardened Quick
+engine; the contour method itself remains useful. Some Cowboy routes did pass
+independent replay. The problems do not imply every historical route was invalid.
+[Legacy arrival code](https://github.com/rgleason/weather_routing_pi/blob/ed07e567c22e5c65d1711f7a4ded654101912043/src/RouteMap.cpp#L401),
+[legacy final connector](https://github.com/rgleason/weather_routing_pi/blob/ed07e567c22e5c65d1711f7a4ded654101912043/src/RoutePoint.cpp#L539),
+[Quick hardening](https://github.com/pob220/xweather_routing_pi/blob/7156844dec9ab1bccb826fa787ac426af17b5fbd/vendor/original-routing-engine/README.md).
+
 The prototype is a useful test of the idea, but the measurements do not yet
 justify replacing the existing engines. The next experiment should target the
 cost of physical integrations and the pruning/work-allocation decisions on the
