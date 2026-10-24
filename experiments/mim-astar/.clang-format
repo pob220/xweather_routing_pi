@@ -1,0 +1,4 @@
+BasedOnStyle: Google
+ColumnLimit: 90
+AccessModifierOffset: -2
+PointerAlignment: Left

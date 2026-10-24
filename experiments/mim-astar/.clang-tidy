@@ -1,0 +1,10 @@
+Checks: >-
+  -*,
+  cppcoreguidelines-*,
+  bugprone-*,
+  performance-*,
+  misc-include-cleaner,
+  readability-identifier-length
+HeaderFilterRegex: '(^|.*/)experiments/mim-astar/(src|include)/'
+WarningsAsErrors: '*'
+FormatStyle: file

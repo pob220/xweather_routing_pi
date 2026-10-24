@@ -1,0 +1,14 @@
+{
+  "baseline_commit": "7156844dec9ab1bccb826fa787ac426af17b5fbd",
+  "scope": "Independent standalone search only; no plugin, host, installation or user-profile changes",
+  "baseline_source_sha256": {
+    "vendor/weather-routing-engine/src/Engine.cpp": "2830bd614e5f4235b4b28cf5d97e8b25caf0a3beb729a2e11d660c5401820393",
+    "vendor/weather-routing-engine/src/MotionKernel.h": "2889945586ccd6d811f5eb9d18533e765e036548d769c6f81da95189eb0df7a3",
+    "vendor/weather-routing-engine/src/Validator.cpp": "45213eb945111a6fb3395002e5b036d3387ac8dbbab975d1e0b11dba97e85430",
+    "vendor/original-routing-engine/src/Engine.cpp": "8e12f5ffedfb1143965abee612817f19dede45d127394eac304d1912ee86a468",
+    "vendor/quick2-routing-engine/src/Engine.cpp": "6fd728307bc2dc5adc8090f5a4988a879ed178d447365bb1f4b8b4bcf15b4cc3",
+    "vendor/atlas-routing-engine/src/Engine.cpp": "91b5047226b64a445fbcbb9d5044118593f6427bebdaf550528e3acd9cb6c1cf",
+    "vendor/weather-routing-engine/src/QuickEngine.cpp": "e49a72c1edaa456a4f93cc97cc5b770dc242df792f399d1a4c28a41c7bc59021",
+    "vendor/weather-routing-engine/src/AlternativeEngine.cpp": "6f50b498788ca816ae028c6327d071a1b2e91c0192d7106406d84c5e436890e3"
+  }
+}
