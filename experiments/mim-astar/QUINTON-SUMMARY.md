@@ -91,3 +91,8 @@ The prototype is a useful test of the idea, but the measurements do not yet
 justify replacing the existing engines. The next experiment should target the
 cost of physical integrations and the pruning/work-allocation decisions on the
 retained failure cases.
+
+**Tonga / CM93 follow-up — 24 October 2026**
+
+[Concise results for Quinton](TONGA-CM93-SUMMARY.md), including actual v1.34
+plugin tests, and [the date-line assessment](V134-DATELINE-ASSESSMENT.md).

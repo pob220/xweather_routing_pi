@@ -91,3 +91,7 @@ fixtures and validation is deliberate, not a formal source-isolation clean-room
 claim. Mathematical background includes
 [Chen's thesis, section 3.2.3](https://research.chalmers.se/publication/542501/file/542501_Fulltext.pdf)
 and [time-dependent shortest paths](https://people.csail.mit.edu/bdean/tdsp.pdf).
+
+Real-CM93 follow-up: [short results](TONGA-CM93-SUMMARY.md),
+[detailed comparisons](TONGA-TEST-DETAILS.md), and
+[installed v1.34 date-line assessment](V134-DATELINE-ASSESSMENT.md).
