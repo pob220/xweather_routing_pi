@@ -20,13 +20,17 @@
   "protected_baseline_file_hashes_match": 91,
   "engines_rerun_for_report": false,
   "files": {
-    "MATRIX.md": "9ee4d15be87ba579e8a51bab6c2ee80081710ed0a65992a93c183c310cbbf7dc",
-    "README.md": "a45ea97aa225cc683365025e3997be010529fe1260f352905ac63307780e9c30",
+    "MATRIX.md": "abcbbb9a563f115316d4eef7240892d1006b406057957469969eb3b7b2bb4189",
+    "README.md": "4033e4af39b6d746363821dc78ae3599f3cc083d613fbcc609b146db41a46bc7",
     "headless-matrix.png": "595363549fa7dbc7e958c8c5e74da3a6f6f9b3e925a36f2f210368a708fb78f5",
-    "matrix.html": "ebf71eeea2cfecbcb047289a6f47ac142fb3b741e930135e99be27528fbc7c59",
+    "matrix.html": "36b9b5be9ebfdd83f354bf99d596baaf96ffbf2d9c2f1553b5746f6f11be0b6d",
     "measurements.json": "8c7a31e4f21768a560b863b74af64e56b655a771328670be639acc2f53721a32",
+    "professional-deadline-audit.json": "b50a1ff3fd20e5127ae0e13168c22ef99586a8dea94426ac5d447dfc3b07fc54",
+    "professional-deadline-probe.patch": "31f7aec3c13574cec2cdf96857bece4a1c6d814b0e8d96479bd377579bdd4c32",
     "statistics.json": "7dcf521972cc9f6e7594332cb58b1ff088147eb865400b29c44791785c66670b",
     "synthetic-matrix.png": "52fceb70aa0d75c1760a07158c4b443221f3a53e9cd1c93411b9e9ef30cbbf2c",
     "tonga-matrix.png": "ce106a67dc79e2b584cf56cf46f2ee334a6ee3228e3ab26faeebdbafba68fdc2"
-  }
+  },
+  "diagnostic_runs_separate_from_matrix": 2,
+  "professional_deadline_audit_confirmed": true
 }

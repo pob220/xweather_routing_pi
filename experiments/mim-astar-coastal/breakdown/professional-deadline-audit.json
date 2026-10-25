@@ -1,0 +1,153 @@
+{
+  "date": "2026-10-25",
+  "diagnostic_case": "headless_lab_upwind",
+  "requested_total_deadline_seconds": 20,
+  "standalone_quick": {
+    "valid": true,
+    "seconds": 0.105963314,
+    "status": "complete"
+  },
+  "combined_professional": {
+    "valid": false,
+    "seconds": 20.120567897,
+    "status": "cancelled",
+    "internal_quick_status": "complete",
+    "internal_quick_validated": true,
+    "internal_quick_seconds": 0.103442855,
+    "internal_quick_fresh_replay_passed": true,
+    "internal_quick_arrival_seconds": 89345,
+    "parent_deadline_expired": true
+  },
+  "affected_archived_cases": [
+    {
+      "case": "headless_real_cape-hout",
+      "quick_seconds": 0.124420342,
+      "professional_seconds": 20.002409146,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-conwy-420",
+      "quick_seconds": 3.927810479,
+      "professional_seconds": 20.006476567,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-conwy-660",
+      "quick_seconds": 11.020827161,
+      "professional_seconds": 20.055343028,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-conwy-720",
+      "quick_seconds": 4.647708289,
+      "professional_seconds": 20.060080279,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "quick_seconds": 3.918275903,
+      "professional_seconds": 20.106685312,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-douglas-12",
+      "quick_seconds": 3.291823019,
+      "professional_seconds": 20.024721004,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-douglas-6",
+      "quick_seconds": 4.044201234,
+      "professional_seconds": 20.027974985,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-foyle-12",
+      "quick_seconds": 7.934662288,
+      "professional_seconds": 20.326927753,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_holyhead-foyle-18",
+      "quick_seconds": 8.116715149,
+      "professional_seconds": 20.279992983,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_hao-rangiroa",
+      "quick_seconds": 4.884382743,
+      "professional_seconds": 20.021172826,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_real_rangiroa-hao",
+      "quick_seconds": 2.932607584,
+      "professional_seconds": 20.031009025,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_pacific_offshore_f",
+      "quick_seconds": 2.949802586,
+      "professional_seconds": 20.117052689,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_pacific_real_ocean_bounded_f",
+      "quick_seconds": 1.327550335,
+      "professional_seconds": 20.330207014,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_pacific_real_ocean_f",
+      "quick_seconds": 1.334408491,
+      "professional_seconds": 20.478312312,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_atlantic_offshore_f",
+      "quick_seconds": 4.608042801,
+      "professional_seconds": 21.641994259,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_full_polar_range",
+      "quick_seconds": 9.160023207,
+      "professional_seconds": 20.331331554,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_reach_full_polar_range",
+      "quick_seconds": 8.086647091,
+      "professional_seconds": 20.764110636,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_reach_west_fine",
+      "quick_seconds": 3.915339769,
+      "professional_seconds": 20.121139846,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_upwind",
+      "quick_seconds": 0.101704782,
+      "professional_seconds": 20.197774506,
+      "professional_status": "cancelled"
+    },
+    {
+      "case": "headless_lab_high_latitude",
+      "quick_seconds": 0.208038059,
+      "professional_seconds": 21.711858459,
+      "professional_status": "cancelled"
+    }
+  ],
+  "affected_count": 20,
+  "engine_implementation_changed": false,
+  "probe_changes": "Added a copy and timestamp of the internal Quick candidate and a fresh replay after the timed combined call. Reused unchanged compiled engine libraries. Diagnostic rows are separate from the published matrix.",
+  "diagnostic_source_sha256": "1d0ce68f006282e9245642a308e94a360b8ef100fc410dfc15527257728ed9f9",
+  "frozen_professional_source_sha256": "2830bd614e5f4235b4b28cf5d97e8b25caf0a3beb729a2e11d660c5401820393",
+  "source_references": {
+    "benchmark": "vendor/atlas-routing-engine/tests/Benchmark.cpp:94-126",
+    "whole_request_cancellation": "vendor/weather-routing-engine/src/Engine.cpp:4159-4168",
+    "normal_plugin_request": "v1.34.1-alpha.1 src/engine/native/OpenCpnAdapter.cpp:1075"
+  }
+}

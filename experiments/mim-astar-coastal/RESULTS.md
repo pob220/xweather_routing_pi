@@ -5,6 +5,13 @@ route coverage over the first prototype**. It is an experiment for reading,
 replaying and modifying, not a proposed replacement for an installed engine.
 The first experiment and six frozen comparison engines remain unchanged.
 
+**Professional deadline qualification:** the table counts final returned results.
+The shared hard deadline can cancel Professional after its internal Quick has
+already found a valid route. A later diagnostic replay confirmed this, and all
+20 archived cases where standalone Quick succeeded but Professional failed were
+deadline cancellations. See [the explanation and evidence](breakdown/README.md#why-professional-can-appear-worse-than-its-internal-quick).
+Its lower completion count must not be read as lower route-finding capability.
+
 ## What was tested
 
 All calculations used the same Linux laptop, Release build and serial comparison

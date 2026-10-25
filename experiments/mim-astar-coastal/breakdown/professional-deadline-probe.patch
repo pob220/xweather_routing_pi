@@ -1,0 +1,20 @@
+--- a/Benchmark.cpp
++++ b/Benchmark.cpp
+@@ -124,0 +125,2 @@
++      wr::RoutingResult quickWitness;
++      double quickWitnessSeconds = 0;
+@@ -192,0 +195,2 @@
++        quickWitness = incumbent;
++        quickWitnessSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+@@ -263,0 +268,11 @@
++      }
++      if (engine == "main") {
++        v["internal_quick_status"] = wr::toString(quickWitness.status);
++        v["internal_quick_validated"] = quickWitness.validation.passed;
++        v["internal_quick_seconds"] = quickWitnessSeconds;
++        v["parent_deadline_expired"] = request.cancellation.cancelled();
++        if (!quickWitness.legs.empty()) {
++          auto witnessReplay = wr::RouteValidator{}.validate(r, env, *performance, quickWitness.legs);
++          v["internal_quick_fresh_replay_passed"] = witnessReplay.passed;
++          v["internal_quick_arrival_seconds"] = Json::Int64(quickWitness.metrics.elapsed.count());
++        }

@@ -4,6 +4,8 @@ S = independently valid completion; F = no valid completion; R = expected reject
 
 Each campaign is a separate set of measurements. Eight engines were measured for every mixed/archived case. Only four were measured on Tonga. Do not pool the campaigns.
 
+**Professional deadline qualification:** these cells record final returns, not every valid route discovered along the way. A shared hard deadline can cancel Professional after its internal Quick has found a valid route. All 20 archived Quick-success/Professional-noncompletion differences are deadline cancellations. See [the diagnostic explanation](README.md#why-professional-can-appear-worse-than-its-internal-quick).
+
 One cold observation per cell; this is descriptive evidence, not statistical significance. Expected rejections are excluded from positive-route statistics. R records no valid completion on a rejection case; it does not by itself prove the reason was correct. A small failure time is not a fast solution.
 
 Route settings describe the test intent; length bands use direct endpoint distance, not sailed length or measured coastal exposure. The dataset intentionally has many Holyhead departure variants, so it is not a representative sample of worldwide passages.

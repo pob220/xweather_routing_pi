@@ -20,7 +20,9 @@ Expected rejection cases are separate. Intended positive cases are attempts to
 find routes, not proofs that every supplied forecast makes a passage feasible.
 
 The archived suite has 59 positive cases and six rejection cases. Its positive
-results are:
+results are **final returned completions**, not a count of every valid route
+discovered during a multi-stage operation. Professional needs the specific
+deadline qualification below.
 
 | Engine | Valid / 59 | Median successful calculation | Mean successful calculation |
 | --- | ---: | ---: | ---: |
@@ -32,6 +34,42 @@ results are:
 | Standard | 51 | 0.922 s | 1.639 s |
 | Alternative | 50 | 1.448 s | 1.782 s |
 | Professional | 31 | 6.164 s | 7.216 s |
+
+### Why Professional can appear worse than its internal Quick
+
+The benchmark runs Quick, then Professional's additional search, with **one shared
+20-second whole-operation cancellation token**. It records only the final return.
+If the deadline expires during improvement, Professional deliberately honours
+whole-request cancellation instead of returning its earlier Quick route.
+
+All **20 cases where standalone Quick completed and Professional did not** were
+recorded as cancelled at this deadline. This does not establish that Professional
+failed to find those routes. The original summary should have made that distinction
+explicit before using the count as route-finding coverage.
+
+A separate diagnostic replay of `headless_lab_upwind` confirmed the mechanism:
+
+| Observation | Result |
+| --- | --- |
+| Standalone Quick | Valid route in 0.106 s |
+| Quick inside Professional | Complete and validated in 0.103 s |
+| Fresh replay of that internal Quick route | Passed |
+| Final combined Professional return | Cancelled after 20.121 s; no route returned |
+
+These two extra diagnostic observations are not substituted into the matrix.
+[Audit evidence](professional-deadline-audit.json) records them and the 20 affected
+case IDs. Internal Quick also enables a bounded Professional bridge option, so
+the two invocations are not strictly identical configurations. We have not
+measured the internal candidate on all 59 cases and must not simply replace
+Professional's count with 50.
+
+The normal plugin request uses the overlay's actual cancellation flag, rather
+than this benchmark's additional 20-second deadline. Explicit Stop should still
+cancel the whole operation. A fair follow-up benchmark should distinguish that
+from an optional improvement budget expiring: record time to first independently
+valid route, whether that route is retained, and the final improved result.
+It should test every engine's incumbent/timeout behaviour consistently. No
+production engine or cancellation policy was changed for this investigation.
 
 Success-only columns can cover different cases. The full report also supplies
 failure medians/means and comparisons restricted to the **same 19 cases all
