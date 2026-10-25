@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather-routing case matrix</title>
+<style>
+:root { color-scheme:light dark; --bg:#fff; --fg:#17232d; --line:#ccd4dc; --muted:#53616f; --pass:#d7efdc; --fail:#f8d8d6; --reject:#dbeaf7; --error:#ffd08a; --missing:#ececec; }
+@media(prefers-color-scheme:dark) { :root { --bg:#142029; --fg:#e3edf5; --line:#4e6473; --muted:#b9c6d0; --pass:#204e36; --fail:#622d30; --reject:#24465e; --error:#6b481c; --missing:#303e49; } }
+* { box-sizing:border-box; } body { margin:0 auto; max-width:1540px; padding:24px; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,sans-serif; } h1 { font-size:1.7rem; margin:0 0 8px; } h2 { font-size:1.15rem; margin:24px 0 8px; } p { max-width:100ch; } .muted { color:var(--muted); } .filters { display:flex; flex-wrap:wrap; gap:12px; margin:18px 0; } label { display:flex; flex-direction:column; gap:3px; } select,input { font:inherit; padding:7px; max-width:100%; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:3px; } input { min-width:180px; } .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; } th,td { padding:6px 9px; border-bottom:1px solid var(--line); text-align:right; } th:first-child,td:first-child { text-align:left; } th { font-weight:600; } .summary { min-width:760px; } .matrix { min-width:1040px; } .matrix th:first-child { width:32%; } .matrix td { padding:2px; } .matrix td:first-child { padding:7px; } .case-id { display:block; font-size:.76rem; color:var(--muted); overflow-wrap:anywhere; } .case-meta { display:block; font-size:.83rem; color:var(--muted); } .matrix button { width:100%; min-height:38px; border:1px solid transparent; border-radius:2px; color:var(--fg); font:inherit; cursor:pointer; white-space:nowrap; } button:focus-visible { outline:3px solid currentColor; outline-offset:-3px; } [data-state="S"] { background:var(--pass); } [data-state="F"] { background:var(--fail); } [data-state="R"] { background:var(--reject); } [data-state="!"] { background:var(--error); } [data-state="—"] { background:var(--missing); } .legend { display:flex; flex-wrap:wrap; gap:14px; margin:12px 0; } .legend span { padding:3px 7px; } #detail { padding:10px 0; border-bottom:1px solid var(--line); min-height:3.5em; } details { margin-top:24px; } a { color:inherit; } @media(max-width:600px) { body { padding:12px; } label { flex:1 1 140px; } }
+</style>
+</head>
+<body>
+<h1>Weather-routing case matrix</h1>
+<p class="muted">Recorded calculation times, not passage durations. One cold trial per cell. The three campaigns have different inputs and limits and are shown separately.</p>
+<div class="filters">
+<label>Campaign<select id="campaign"></select></label>
+<label>Route setting<select id="group"><option value="">All settings</option></select></label>
+<label>Direct distance<select id="length"><option value="">All distances</option></select></label>
+<label>Forecast<select id="forecast"><option value="">Both weather types</option></select></label>
+<label>Case name<input id="search" type="search" placeholder="Find a case"></label>
+</div>
+<p id="scope" aria-live="polite"></p>
+<div class="scroll"><table class="summary"><caption class="muted">Positive cases only; success and failure times kept separate. Means and medians are seconds.</caption><thead><tr><th>Engine</th><th>Valid / run</th><th>Success median</th><th>Success mean</th><th>Failure median</th><th>Failure mean</th><th>All median</th></tr></thead><tbody id="summary"></tbody></table></div>
+<p class="muted" id="common"></p>
+<div class="legend"><span data-state="S">S · valid</span><span data-state="F">F · failed</span><span data-state="R">R · expected rejection</span><span data-state="!">! · error / unexpected acceptance</span><span data-state="—">— · not run</span></div>
+<p id="detail" aria-live="polite">Select a timing for the recorded outcome, stopping reason and passage time.</p>
+<div class="scroll"><table class="matrix"><thead id="matrix-head"></thead><tbody id="matrix"></tbody></table></div>
+<details><summary>How to read this comparison</summary>
+<p>A quick failure is not a fast solution. Success-only timings can cover different cases; the common-success line uses exactly the same subset for all eight engines. Groups with few cases are descriptive examples, not evidence of a universal ranking. Holyhead departure variants are over-represented.</p>
+<p>Route settings describe scenario intent. Distances are great-circle endpoint distances, not sailed lengths or measured coastal exposure. Expected rejection cases are visible but excluded from route-success statistics. R records no valid completion on a rejection case; the stopping reason still matters. Missing Tonga measurements are marked “not run”.</p>
+<p>Six archived control columns reuse an earlier campaign after matching inputs, source and adapter behaviour. The earlier first-prototype column is excluded and replaced by the qualified prototype run. All clients use their supported weather adapters and GSHHG, not chart-depth authority. These data cannot measure OpenCPN UI overhead.</p>
+<p>This file is self-contained and makes no network requests. The accompanying MATRIX.md, statistics.json and measurements.json give the tables and source receipts.</p>
+</details>
+<script>
+const data = /* MEASUREMENT_DATA */;
+const el = id => document.getElementById(id);
+const engines = data.engines;
+const mean = values => values.length ? values.reduce((a,b)=>a+b,0)/values.length : null;
+const median = values => { if (!values.length) return null; const a=[...values].sort((a,b)=>a-b), n=a.length; return n%2 ? a[(n-1)/2] : (a[n/2-1]+a[n/2])/2; };
+const fmt = value => value===null ? '—' : value<.001 ? '<0.001' : value.toFixed(3);
+function node(tag,text) { const n=document.createElement(tag); if(text!==undefined)n.textContent=text; return n; }
+function appendOptions(id,values) { for (const value of values) { const o=node('option',value);o.value=value;el(id).append(o); } }
+for(const campaign of data.campaigns) {const o=node('option',campaign.title);o.value=campaign.id;el('campaign').append(o);}
+for(const [id,key] of [['group','group'],['length','length'],['forecast','forecast']]) appendOptions(id,[...new Set(data.campaigns.flatMap(c=>c.cases.map(r=>r[key])))]);
+const header=node('tr');header.append(node('th','Case / direct distance'));for(const engine of engines)header.append(node('th',data.titles[engine]));el('matrix-head').append(header);
+function render() {
+ const campaign=data.campaigns.find(c=>c.id===el('campaign').value);
+ const query=el('search').value.toLowerCase();
+ const cases=campaign.cases.filter(c=>(!el('group').value||c.group===el('group').value)&&(!el('length').value||c.length===el('length').value)&&(!el('forecast').value||c.forecast===el('forecast').value)&&(!query||(c.id+' '+c.label).toLowerCase().includes(query)));
+ const positive=cases.filter(c=>!c.expected_rejection);
+ el('scope').textContent=`${cases.length} displayed cases: ${positive.length} positive and ${cases.length-positive.length} expected rejections. Requested solver deadline ${campaign.deadline_seconds} s; synchronous work can return later.`;
+ el('summary').replaceChildren();
+ for(const engine of engines) {
+  const results=positive.map(c=>c.results[engine]).filter(Boolean), good=results.filter(r=>r.valid&&!r.process_error).map(r=>r.seconds), bad=results.filter(r=>!r.valid||r.process_error).map(r=>r.seconds);
+  const row=node('tr');row.append(node('td',data.titles[engine]),node('td',!results.length&&positive.length?'Not run':`${good.length}/${results.length}`));
+  for(const value of [median(good),mean(good),median(bad),mean(bad),median([...good,...bad])])row.append(node('td',fmt(value)));
+  el('summary').append(row);
+ }
+ const common=positive.filter(c=>engines.every(e=>c.results[e]?.valid&&!c.results[e].process_error));
+ const unmeasured=positive.some(c=>engines.some(e=>!c.results[e]));
+ el('common').textContent=unmeasured?'An all-eight comparison is unavailable: some engines were not measured.':`Same-case comparison — all eight solved ${common.length} of these positive cases.`+(common.length?' Median seconds: '+engines.map(e=>`${data.titles[e]} ${fmt(median(common.map(c=>c.results[e].seconds)))}`).join('; ')+'.':'');
+ el('matrix').replaceChildren();
+ for(const item of cases) {
+  const row=node('tr'), title=node('th');title.scope='row';title.append(node('span',item.label));const id=node('span',item.id);id.className='case-id';title.append(id);const meta=node('span',`${item.group} · ${item.direct_nm.toFixed(1)} NM · ${item.forecast}`);meta.className='case-meta';title.append(meta);row.append(title);
+  for(const engine of engines) {
+   const r=item.results[engine];const state=!r?'—':r.process_error||item.expected_rejection&&r.valid?'!':item.expected_rejection?'R':r.valid?'S':'F';
+   const td=node('td'), button=node('button',r?`${state} ${fmt(r.seconds)}`:'—');button.type='button';button.dataset.state=state;
+   const status=!r?'Not run':state==='S'?'Valid completion':state==='R'?'Expected rejection':state==='F'?'No valid completion':'Error or unexpected acceptance';
+   button.setAttribute('aria-label',`${item.label}, ${data.titles[engine]}: ${status}${r?', '+fmt(r.seconds)+' seconds':''}`);
+   button.addEventListener('click',()=>{el('detail').textContent=`${item.id} · ${data.titles[engine]} · ${status}`+(r?` · calculation ${fmt(r.seconds)} s · ${r.status} · ${r.reason}`+(r.arrival_seconds!==null?` · passage ${(r.arrival_seconds/3600).toFixed(2)} h`:''):'');});td.append(button);row.append(td);
+  }
+  el('matrix').append(row);
+ }
+ if(!cases.length){const row=node('tr'),td=node('td','No cases match these filters.');td.colSpan=engines.length+1;row.append(td);el('matrix').append(row);}
+ el('detail').textContent='Select a timing for the recorded outcome, stopping reason and passage time.';
+}
+for(const id of ['campaign','group','length','forecast'])el(id).addEventListener('change',render);
+el('search').addEventListener('input',render);
+render();
+</script>
+</body>
+</html>

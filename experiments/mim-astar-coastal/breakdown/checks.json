@@ -1,0 +1,32 @@
+{
+  "case_entries": 115,
+  "observed_calculations": 908,
+  "headless_archived_cells": 520,
+  "complete_mixed_and_archived_matrices": true,
+  "headline_counts_checked": true,
+  "common_success_subset_checked": 19,
+  "finite_nonnegative_calculation_times": true,
+  "no_private_forecasts_charts_polars_or_local_paths_exported": true,
+  "document_links_checked": true,
+  "browser_checks": [
+    "campaign and route-setting filters",
+    "stored-GRIB filter",
+    "all 520 archived timing cells",
+    "12 unmeasured Tonga cells",
+    "cell outcome details",
+    "empty filter result",
+    "narrow-screen page overflow"
+  ],
+  "protected_baseline_file_hashes_match": 91,
+  "engines_rerun_for_report": false,
+  "files": {
+    "MATRIX.md": "9ee4d15be87ba579e8a51bab6c2ee80081710ed0a65992a93c183c310cbbf7dc",
+    "README.md": "a45ea97aa225cc683365025e3997be010529fe1260f352905ac63307780e9c30",
+    "headless-matrix.png": "595363549fa7dbc7e958c8c5e74da3a6f6f9b3e925a36f2f210368a708fb78f5",
+    "matrix.html": "ebf71eeea2cfecbcb047289a6f47ac142fb3b741e930135e99be27528fbc7c59",
+    "measurements.json": "8c7a31e4f21768a560b863b74af64e56b655a771328670be639acc2f53721a32",
+    "statistics.json": "7dcf521972cc9f6e7594332cb58b1ff088147eb865400b29c44791785c66670b",
+    "synthetic-matrix.png": "52fceb70aa0d75c1760a07158c4b443221f3a53e9cd1c93411b9e9ef30cbbf2c",
+    "tonga-matrix.png": "ce106a67dc79e2b584cf56cf46f2ee334a6ee3228e3ab26faeebdbafba68fdc2"
+  }
+}

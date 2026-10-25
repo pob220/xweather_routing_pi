@@ -6,6 +6,8 @@ unchanged. This folder is not registered with the OpenCPN plugin build.
 
 [Testing instructions](QUINTON-TESTING.md) give the headless build and replay
 commands. [Results](RESULTS.md) records what the tests actually establish.
+[The per-route breakdown](breakdown/README.md) adds coloured timing matrices,
+grouped medians and means, and discussion of Auto/All and chart-aware refinement.
 
 ## What is different?
 

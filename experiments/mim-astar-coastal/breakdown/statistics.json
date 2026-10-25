@@ -1,0 +1,3888 @@
+{
+  "synthetic": {
+    "overall": {
+      "positive_cases": 39,
+      "negative_cases": 8,
+      "engines": [
+        {
+          "engine": "quick2",
+          "eligible": 39,
+          "run": 39,
+          "successes": 35,
+          "success_median": 0.156828719,
+          "success_mean": 0.23525956354285715,
+          "failure_median": 2.3900955035,
+          "failure_mean": 1.9742615635,
+          "all_median": 0.176073427,
+          "all_mean": 0.41361874302564106
+        },
+        {
+          "engine": "mim_coastal",
+          "eligible": 39,
+          "run": 39,
+          "successes": 33,
+          "success_median": 0.242675318,
+          "success_mean": 0.29727273287878786,
+          "failure_median": 3.0170526165,
+          "failure_mean": 2.996255098333333,
+          "all_median": 0.339610042,
+          "all_mean": 0.7125007891025641
+        },
+        {
+          "engine": "atlas",
+          "eligible": 39,
+          "run": 39,
+          "successes": 36,
+          "success_median": 0.781694528,
+          "success_mean": 1.1971283831666666,
+          "failure_median": 5.00033964,
+          "failure_mean": 5.0003470886666666,
+          "all_median": 0.865933901,
+          "all_mean": 1.4896836682051282
+        },
+        {
+          "engine": "mim_astar",
+          "eligible": 39,
+          "run": 39,
+          "successes": 36,
+          "success_median": 1.4292233685000002,
+          "success_mean": 1.653868551888889,
+          "failure_median": 5.000428009,
+          "failure_mean": 4.958046373666667,
+          "all_median": 1.537135624,
+          "all_mean": 1.9080360766410256
+        },
+        {
+          "engine": "original",
+          "eligible": 39,
+          "run": 39,
+          "successes": 28,
+          "success_median": 0.507641535,
+          "success_mean": 0.6386559708928572,
+          "failure_median": 5.005512951,
+          "failure_mean": 4.773336713727272,
+          "all_median": 0.792254116,
+          "all_mean": 1.8048479752820512
+        },
+        {
+          "engine": "quick",
+          "eligible": 39,
+          "run": 39,
+          "successes": 35,
+          "success_median": 0.640732955,
+          "success_mean": 0.7208492510857143,
+          "failure_median": 5.0001186365,
+          "failure_mean": 5.00011178375,
+          "all_median": 0.671547748,
+          "all_mean": 1.1597479723846154
+        },
+        {
+          "engine": "alternative",
+          "eligible": 39,
+          "run": 39,
+          "successes": 35,
+          "success_median": 1.069564332,
+          "success_mean": 1.411930660857143,
+          "failure_median": 5.0002688335,
+          "failure_mean": 3.7536414927500004,
+          "all_median": 1.201069744,
+          "all_mean": 1.652106130794872
+        },
+        {
+          "engine": "main",
+          "eligible": 39,
+          "run": 39,
+          "successes": 20,
+          "success_median": 2.822921503,
+          "success_mean": 2.63341363695,
+          "failure_median": 5.013977438,
+          "failure_mean": 5.322304666210527,
+          "all_median": 4.91523163,
+          "all_mean": 3.9433861896666667
+        }
+      ],
+      "common_success_cases_all_eight": [
+        "generated_0005",
+        "generated_0002",
+        "island_north_south",
+        "trivial",
+        "motor_calm",
+        "generated_0000",
+        "generated_0001",
+        "dead_downwind",
+        "reach",
+        "tidal_adverse",
+        "tidal_east",
+        "upwind",
+        "favourable_current_jet",
+        "generated_0004",
+        "dateline_east",
+        "dateline_west"
+      ],
+      "common_success_timings": {
+        "quick2": {
+          "median_seconds": 0.108987622,
+          "mean_seconds": 0.11966688774999999
+        },
+        "mim_coastal": {
+          "median_seconds": 0.2232522495,
+          "mean_seconds": 0.2227660440625
+        },
+        "atlas": {
+          "median_seconds": 0.36283743150000003,
+          "mean_seconds": 0.647765149
+        },
+        "mim_astar": {
+          "median_seconds": 0.8654121539999999,
+          "mean_seconds": 0.9772089970625
+        },
+        "original": {
+          "median_seconds": 0.35177022700000005,
+          "mean_seconds": 0.5495819981875
+        },
+        "quick": {
+          "median_seconds": 0.4209327545,
+          "mean_seconds": 0.3630435295625
+        },
+        "alternative": {
+          "median_seconds": 0.7202670634999999,
+          "mean_seconds": 0.7373649913125
+        },
+        "main": {
+          "median_seconds": 2.6689816205,
+          "mean_seconds": 2.5252552324375
+        }
+      }
+    },
+    "groups": {
+      "group": {
+        "Coastal / harbour": {
+          "positive_cases": 6,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 0.17401270400000002,
+              "success_mean": 0.35702619300000005,
+              "failure_median": 1.5584276235,
+              "failure_mean": 1.5584276235,
+              "all_median": 0.18589432150000001,
+              "all_mean": 0.7574933365000001
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 0.0221455305,
+              "success_mean": 0.02482692525,
+              "failure_median": 2.9577250175,
+              "failure_mean": 2.9577250175,
+              "all_median": 0.033922934,
+              "all_mean": 1.0024596226666667
+            },
+            {
+              "engine": "atlas",
+              "eligible": 6,
+              "run": 6,
+              "successes": 3,
+              "success_median": 4.010170203,
+              "success_mean": 3.7871247903333334,
+              "failure_median": 5.00033964,
+              "failure_mean": 5.0003470886666666,
+              "all_median": 4.9990721745,
+              "all_mean": 4.3937359395
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 2.017120352,
+              "success_mean": 1.7856444262,
+              "failure_median": 4.873199131,
+              "failure_mean": 4.873199131,
+              "all_median": 2.2449553205,
+              "all_mean": 2.300236877
+            },
+            {
+              "engine": "original",
+              "eligible": 6,
+              "run": 6,
+              "successes": 6,
+              "success_median": 0.41648683799999997,
+              "success_mean": 0.5616882228333333,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.41648683799999997,
+              "all_mean": 0.5616882228333333
+            },
+            {
+              "engine": "quick",
+              "eligible": 6,
+              "run": 6,
+              "successes": 6,
+              "success_median": 1.202251557,
+              "success_mean": 1.1208472148333333,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.202251557,
+              "all_mean": 1.1208472148333333
+            },
+            {
+              "engine": "alternative",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 0.7966761139999999,
+              "success_mean": 1.29457312125,
+              "failure_median": 2.5069337345,
+              "failure_mean": 2.5069337345,
+              "all_median": 0.7966761139999999,
+              "all_mean": 1.6986933256666668
+            },
+            {
+              "engine": "main",
+              "eligible": 6,
+              "run": 6,
+              "successes": 3,
+              "success_median": 2.870702529,
+              "success_mean": 2.817514213,
+              "failure_median": 5.275527183,
+              "failure_mean": 5.488844794,
+              "all_median": 4.385199128,
+              "all_mean": 4.1531795035
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        },
+        "Ocean / offshore": {
+          "positive_cases": 2,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 2.3900955035,
+              "failure_mean": 2.3900955035,
+              "all_median": 2.3900955035,
+              "all_mean": 2.3900955035
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.003998715,
+              "failure_mean": 5.003998715,
+              "all_median": 5.003998715,
+              "all_mean": 5.003998715
+            },
+            {
+              "engine": "atlas",
+              "eligible": 2,
+              "run": 2,
+              "successes": 2,
+              "success_median": 2.7372714465,
+              "success_mean": 2.7372714465,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.7372714465,
+              "all_mean": 2.7372714465
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000469995,
+              "failure_mean": 5.000469995,
+              "all_median": 5.000469995,
+              "all_mean": 5.000469995
+            },
+            {
+              "engine": "original",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.004711840500001,
+              "failure_mean": 5.004711840500001,
+              "all_median": 5.004711840500001,
+              "all_mean": 5.004711840500001
+            },
+            {
+              "engine": "quick",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000104931,
+              "failure_mean": 5.000104931,
+              "all_median": 5.000104931,
+              "all_mean": 5.000104931
+            },
+            {
+              "engine": "alternative",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000349251,
+              "failure_mean": 5.000349251,
+              "all_median": 5.000349251,
+              "all_mean": 5.000349251
+            },
+            {
+              "engine": "main",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.0043764415,
+              "failure_mean": 5.0043764415,
+              "all_median": 5.0043764415,
+              "all_mean": 5.0043764415
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        },
+        "Artificial obstacles": {
+          "positive_cases": 12,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 12,
+              "run": 12,
+              "successes": 12,
+              "success_median": 0.19778511999999998,
+              "success_mean": 0.2672919549166667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.19778511999999998,
+              "all_mean": 0.2672919549166667
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 12,
+              "run": 12,
+              "successes": 11,
+              "success_median": 0.082407956,
+              "success_mean": 0.3079257958181818,
+              "failure_median": 0.57563002,
+              "failure_mean": 0.57563002,
+              "all_median": 0.16254163700000002,
+              "all_mean": 0.33023448116666665
+            },
+            {
+              "engine": "atlas",
+              "eligible": 12,
+              "run": 12,
+              "successes": 12,
+              "success_median": 0.757315513,
+              "success_mean": 0.9166007602499999,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.757315513,
+              "all_mean": 0.9166007602499999
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 12,
+              "run": 12,
+              "successes": 12,
+              "success_median": 1.4292233685000002,
+              "success_mean": 1.7644205031666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.4292233685000002,
+              "all_mean": 1.7644205031666667
+            },
+            {
+              "engine": "original",
+              "eligible": 12,
+              "run": 12,
+              "successes": 6,
+              "success_median": 0.6799754245,
+              "success_mean": 0.6225259166666667,
+              "failure_median": 5.0064921375,
+              "failure_mean": 5.0065540515,
+              "all_median": 3.1079985829999996,
+              "all_mean": 2.8145399840833334
+            },
+            {
+              "engine": "quick",
+              "eligible": 12,
+              "run": 12,
+              "successes": 10,
+              "success_median": 0.5207392375,
+              "success_mean": 0.6324720127,
+              "failure_median": 5.0001186365,
+              "failure_mean": 5.0001186365,
+              "all_median": 0.7755773255,
+              "all_mean": 1.3604131166666666
+            },
+            {
+              "engine": "alternative",
+              "eligible": 12,
+              "run": 12,
+              "successes": 12,
+              "success_median": 1.3047536635,
+              "success_mean": 1.5158600094999999,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.3047536635,
+              "all_mean": 1.5158600094999999
+            },
+            {
+              "engine": "main",
+              "eligible": 12,
+              "run": 12,
+              "successes": 3,
+              "success_median": 3.538072881,
+              "success_mean": 2.842764235,
+              "failure_median": 5.010251415,
+              "failure_mean": 5.382501245333334,
+              "all_median": 5.007270214,
+              "all_mean": 4.74756699275
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "generated_0005",
+            "generated_0002",
+            "island_north_south"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.122307763,
+              "mean_seconds": 0.088533146
+            },
+            "mim_coastal": {
+              "median_seconds": 0.025190604,
+              "mean_seconds": 0.16453016133333334
+            },
+            "atlas": {
+              "median_seconds": 0.708675867,
+              "mean_seconds": 0.665607074
+            },
+            "mim_astar": {
+              "median_seconds": 1.011829843,
+              "mean_seconds": 0.8866478676666667
+            },
+            "original": {
+              "median_seconds": 0.288888148,
+              "mean_seconds": 0.30850138633333335
+            },
+            "quick": {
+              "median_seconds": 0.328470511,
+              "mean_seconds": 0.24018862833333335
+            },
+            "alternative": {
+              "median_seconds": 0.518967414,
+              "mean_seconds": 0.41470703966666667
+            },
+            "main": {
+              "median_seconds": 3.538072881,
+              "mean_seconds": 2.842764235
+            }
+          }
+        },
+        "Open-water controls": {
+          "positive_cases": 16,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 16,
+              "run": 16,
+              "successes": 16,
+              "success_median": 0.166451073,
+              "success_mean": 0.19762177475,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.166451073,
+              "all_mean": 0.19762177475
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 16,
+              "run": 16,
+              "successes": 15,
+              "success_median": 0.339610042,
+              "success_mean": 0.3188397082,
+              "failure_median": 1.478453105,
+              "failure_mean": 1.478453105,
+              "all_median": 0.373284831,
+              "all_mean": 0.39131554550000003
+            },
+            {
+              "engine": "atlas",
+              "eligible": 16,
+              "run": 16,
+              "successes": 16,
+              "success_median": 0.826548947,
+              "success_mean": 0.8858440103125,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.826548947,
+              "all_mean": 0.8858440103125
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 16,
+              "run": 16,
+              "successes": 16,
+              "success_median": 1.5660601490000001,
+              "success_mean": 1.61321389525,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.5660601490000001,
+              "all_mean": 1.61321389525
+            },
+            {
+              "engine": "original",
+              "eligible": 16,
+              "run": 16,
+              "successes": 13,
+              "success_median": 0.325594256,
+              "success_mean": 0.621151196,
+              "failure_median": 5.005437418,
+              "failure_mean": 4.152651953666666,
+              "all_median": 0.5288913535,
+              "all_mean": 1.2833075880625
+            },
+            {
+              "engine": "quick",
+              "eligible": 16,
+              "run": 16,
+              "successes": 16,
+              "success_median": 0.6561403515,
+              "success_mean": 0.63309128,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.6561403515,
+              "all_mean": 0.63309128
+            },
+            {
+              "engine": "alternative",
+              "eligible": 16,
+              "run": 16,
+              "successes": 16,
+              "success_median": 1.1988840710000002,
+              "success_mean": 1.3487714585625,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.1988840710000002,
+              "all_mean": 1.3487714585625
+            },
+            {
+              "engine": "main",
+              "eligible": 16,
+              "run": 16,
+              "successes": 12,
+              "success_median": 2.6689816205,
+              "success_mean": 2.48269303575,
+              "failure_median": 5.0140689515000005,
+              "failure_mean": 5.21504033025,
+              "all_median": 3.6696719915,
+              "all_mean": 3.165779859375
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "trivial",
+            "motor_calm",
+            "generated_0000",
+            "generated_0001",
+            "dead_downwind",
+            "reach",
+            "tidal_adverse",
+            "tidal_east",
+            "upwind",
+            "favourable_current_jet",
+            "generated_0004"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.128851716,
+              "mean_seconds": 0.13272022554545454
+            },
+            "mim_coastal": {
+              "median_seconds": 0.16188523,
+              "mean_seconds": 0.21696474127272727
+            },
+            "atlas": {
+              "median_seconds": 0.35613308,
+              "mean_seconds": 0.6973402210909091
+            },
+            "mim_astar": {
+              "median_seconds": 0.690660895,
+              "mean_seconds": 1.0222341856363637
+            },
+            "original": {
+              "median_seconds": 0.325594256,
+              "mean_seconds": 0.5849818310909091
+            },
+            "quick": {
+              "median_seconds": 0.466040386,
+              "mean_seconds": 0.3790158200909091
+            },
+            "alternative": {
+              "median_seconds": 0.853433346,
+              "mean_seconds": 0.7925736456363637
+            },
+            "main": {
+              "median_seconds": 2.562822764,
+              "mean_seconds": 2.361879095272727
+            }
+          }
+        },
+        "Geographic stress": {
+          "positive_cases": 3,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.095667481,
+              "success_mean": 0.14550936566666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.095667481,
+              "all_mean": 0.14550936566666667
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.368692898,
+              "success_mean": 0.5136377023333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.368692898,
+              "all_mean": 0.5136377023333334
+            },
+            {
+              "engine": "atlas",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.351270738,
+              "success_mean": 0.36266374733333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.351270738,
+              "all_mean": 0.36266374733333334
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.900064709,
+              "success_mean": 1.208859125,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.900064709,
+              "all_mean": 1.208859125
+            },
+            {
+              "engine": "original",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.718974875,
+              "success_mean": 0.9007056,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.718974875,
+              "all_mean": 0.9007056
+            },
+            {
+              "engine": "quick",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.46354336,
+              "success_mean": 0.6834866306666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.46354336,
+              "all_mean": 0.6834866306666667
+            },
+            {
+              "engine": "alternative",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.940133822,
+              "success_mean": 1.4895390646666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.940133822,
+              "all_mean": 1.4895390646666666
+            },
+            {
+              "engine": "main",
+              "eligible": 3,
+              "run": 3,
+              "successes": 2,
+              "success_median": 2.947560483,
+              "success_mean": 2.947560483,
+              "failure_median": 5.345828864,
+              "failure_mean": 5.345828864,
+              "all_median": 3.506280787,
+              "all_mean": 3.7469832766666666
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "dateline_east",
+            "dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.0945741425,
+              "mean_seconds": 0.0945741425
+            },
+            "mim_coastal": {
+              "median_seconds": 0.34202703349999997,
+              "mean_seconds": 0.34202703349999997
+            },
+            "atlas": {
+              "median_seconds": 0.348339365,
+              "mean_seconds": 0.348339365
+            },
+            "mim_astar": {
+              "median_seconds": 0.8654121539999999,
+              "mean_seconds": 0.8654121539999999
+            },
+            "original": {
+              "median_seconds": 0.716503835,
+              "mean_seconds": 0.716503835
+            },
+            "quick": {
+              "median_seconds": 0.4594782835,
+              "mean_seconds": 0.4594782835
+            },
+            "alternative": {
+              "median_seconds": 0.9177043199999999,
+              "mean_seconds": 0.9177043199999999
+            },
+            "main": {
+              "median_seconds": 2.947560483,
+              "mean_seconds": 2.947560483
+            }
+          }
+        }
+      },
+      "length": {
+        "Short (<50 NM)": {
+          "positive_cases": 33,
+          "negative_cases": 8,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 33,
+              "run": 33,
+              "successes": 31,
+              "success_median": 0.132825695,
+              "success_mean": 0.19267743206451612,
+              "failure_median": 1.5584276235,
+              "failure_mean": 1.5584276235,
+              "all_median": 0.132825695,
+              "all_mean": 0.27545017093939395
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 33,
+              "run": 33,
+              "successes": 31,
+              "success_median": 0.16188523,
+              "success_mean": 0.2611424769032258,
+              "failure_median": 2.565641074,
+              "failure_mean": 2.565641074,
+              "all_median": 0.242675318,
+              "all_mean": 0.40080905854545457
+            },
+            {
+              "engine": "atlas",
+              "eligible": 33,
+              "run": 33,
+              "successes": 30,
+              "success_median": 0.752792279,
+              "success_mean": 1.0201945344333334,
+              "failure_median": 5.00033964,
+              "failure_mean": 5.0003470886666666,
+              "all_median": 0.761470654,
+              "all_mean": 1.3820265848181819
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 33,
+              "run": 33,
+              "successes": 32,
+              "success_median": 1.1038729835,
+              "success_mean": 1.49321385925,
+              "failure_median": 4.873199131,
+              "failure_mean": 4.873199131,
+              "all_median": 1.16074282,
+              "all_mean": 1.5956376553636364
+            },
+            {
+              "engine": "original",
+              "eligible": 33,
+              "run": 33,
+              "successes": 25,
+              "success_median": 0.385387339,
+              "success_mean": 0.58092800836,
+              "failure_median": 5.0064921375,
+              "failure_mean": 4.686480344,
+              "all_median": 0.714032795,
+              "all_mean": 1.576213423060606
+            },
+            {
+              "engine": "quick",
+              "eligible": 33,
+              "run": 33,
+              "successes": 31,
+              "success_median": 0.618704044,
+              "success_mean": 0.6133866599354839,
+              "failure_median": 5.0001186365,
+              "failure_mean": 5.0001186365,
+              "all_median": 0.625454335,
+              "all_mean": 0.879249203969697
+            },
+            {
+              "engine": "alternative",
+              "eligible": 33,
+              "run": 33,
+              "successes": 31,
+              "success_median": 0.940133822,
+              "success_mean": 1.1714659693225806,
+              "failure_median": 2.5069337345,
+              "failure_mean": 2.5069337345,
+              "all_median": 0.940133822,
+              "all_mean": 1.2524034096363637
+            },
+            {
+              "engine": "main",
+              "eligible": 33,
+              "run": 33,
+              "successes": 20,
+              "success_median": 2.822921503,
+              "success_mean": 2.63341363695,
+              "failure_median": 5.013977438,
+              "failure_mean": 5.422481187230769,
+              "all_median": 4.084850584,
+              "all_mean": 3.7321372173636362
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "generated_0005",
+            "generated_0002",
+            "island_north_south",
+            "trivial",
+            "motor_calm",
+            "generated_0000",
+            "generated_0001",
+            "dead_downwind",
+            "reach",
+            "tidal_adverse",
+            "tidal_east",
+            "upwind",
+            "favourable_current_jet",
+            "generated_0004",
+            "dateline_east",
+            "dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.108987622,
+              "mean_seconds": 0.11966688774999999
+            },
+            "mim_coastal": {
+              "median_seconds": 0.2232522495,
+              "mean_seconds": 0.2227660440625
+            },
+            "atlas": {
+              "median_seconds": 0.36283743150000003,
+              "mean_seconds": 0.647765149
+            },
+            "mim_astar": {
+              "median_seconds": 0.8654121539999999,
+              "mean_seconds": 0.9772089970625
+            },
+            "original": {
+              "median_seconds": 0.35177022700000005,
+              "mean_seconds": 0.5495819981875
+            },
+            "quick": {
+              "median_seconds": 0.4209327545,
+              "mean_seconds": 0.3630435295625
+            },
+            "alternative": {
+              "median_seconds": 0.7202670634999999,
+              "mean_seconds": 0.7373649913125
+            },
+            "main": {
+              "median_seconds": 2.6689816205,
+              "mean_seconds": 2.5252552324375
+            }
+          }
+        },
+        "Regional (50\u2013<300 NM)": {
+          "positive_cases": 4,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 4,
+              "run": 4,
+              "successes": 4,
+              "success_median": 0.48870575650000003,
+              "success_mean": 0.5652710825,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.48870575650000003,
+              "all_mean": 0.5652710825
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 4,
+              "run": 4,
+              "successes": 2,
+              "success_median": 0.8572917005,
+              "success_mean": 0.8572917005,
+              "failure_median": 1.4191255059999999,
+              "failure_mean": 1.4191255059999999,
+              "all_median": 1.1087611339999999,
+              "all_mean": 1.13820860325
+            },
+            {
+              "engine": "atlas",
+              "eligible": 4,
+              "run": 4,
+              "successes": 4,
+              "success_median": 1.3073800764999999,
+              "success_mean": 1.754060717,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.3073800764999999,
+              "all_mean": 1.754060717
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 4,
+              "run": 4,
+              "successes": 4,
+              "success_median": 3.14998908,
+              "success_mean": 2.939106093,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 3.14998908,
+              "all_mean": 2.939106093
+            },
+            {
+              "engine": "original",
+              "eligible": 4,
+              "run": 4,
+              "successes": 3,
+              "success_median": 1.26910913,
+              "success_mean": 1.1197223253333333,
+              "failure_median": 5.005437418,
+              "failure_mean": 5.005437418,
+              "all_median": 1.3054439704999998,
+              "all_mean": 2.0911510984999997
+            },
+            {
+              "engine": "quick",
+              "eligible": 4,
+              "run": 4,
+              "successes": 4,
+              "success_median": 1.5538903275,
+              "success_mean": 1.5536843325,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.5538903275,
+              "all_mean": 1.5536843325
+            },
+            {
+              "engine": "alternative",
+              "eligible": 4,
+              "run": 4,
+              "successes": 4,
+              "success_median": 3.1029979565000003,
+              "success_mean": 3.27553202025,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 3.1029979565000003,
+              "all_mean": 3.27553202025
+            },
+            {
+              "engine": "main",
+              "eligible": 4,
+              "run": 4,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.1360543585,
+              "failure_mean": 5.15569508525,
+              "all_median": 5.1360543585,
+              "all_mean": 5.15569508525
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        },
+        "Long (\u2265300 NM)": {
+          "positive_cases": 2,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 2.3900955035,
+              "failure_mean": 2.3900955035,
+              "all_median": 2.3900955035,
+              "all_mean": 2.3900955035
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.003998715,
+              "failure_mean": 5.003998715,
+              "all_median": 5.003998715,
+              "all_mean": 5.003998715
+            },
+            {
+              "engine": "atlas",
+              "eligible": 2,
+              "run": 2,
+              "successes": 2,
+              "success_median": 2.7372714465,
+              "success_mean": 2.7372714465,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.7372714465,
+              "all_mean": 2.7372714465
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000469995,
+              "failure_mean": 5.000469995,
+              "all_median": 5.000469995,
+              "all_mean": 5.000469995
+            },
+            {
+              "engine": "original",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.004711840500001,
+              "failure_mean": 5.004711840500001,
+              "all_median": 5.004711840500001,
+              "all_mean": 5.004711840500001
+            },
+            {
+              "engine": "quick",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000104931,
+              "failure_mean": 5.000104931,
+              "all_median": 5.000104931,
+              "all_mean": 5.000104931
+            },
+            {
+              "engine": "alternative",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.000349251,
+              "failure_mean": 5.000349251,
+              "all_median": 5.000349251,
+              "all_mean": 5.000349251
+            },
+            {
+              "engine": "main",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 5.0043764415,
+              "failure_mean": 5.0043764415,
+              "all_median": 5.0043764415,
+              "all_mean": 5.0043764415
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        }
+      },
+      "forecast": {
+        "Synthetic weather": {
+          "positive_cases": 39,
+          "negative_cases": 8,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 39,
+              "run": 39,
+              "successes": 35,
+              "success_median": 0.156828719,
+              "success_mean": 0.23525956354285715,
+              "failure_median": 2.3900955035,
+              "failure_mean": 1.9742615635,
+              "all_median": 0.176073427,
+              "all_mean": 0.41361874302564106
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 39,
+              "run": 39,
+              "successes": 33,
+              "success_median": 0.242675318,
+              "success_mean": 0.29727273287878786,
+              "failure_median": 3.0170526165,
+              "failure_mean": 2.996255098333333,
+              "all_median": 0.339610042,
+              "all_mean": 0.7125007891025641
+            },
+            {
+              "engine": "atlas",
+              "eligible": 39,
+              "run": 39,
+              "successes": 36,
+              "success_median": 0.781694528,
+              "success_mean": 1.1971283831666666,
+              "failure_median": 5.00033964,
+              "failure_mean": 5.0003470886666666,
+              "all_median": 0.865933901,
+              "all_mean": 1.4896836682051282
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 39,
+              "run": 39,
+              "successes": 36,
+              "success_median": 1.4292233685000002,
+              "success_mean": 1.653868551888889,
+              "failure_median": 5.000428009,
+              "failure_mean": 4.958046373666667,
+              "all_median": 1.537135624,
+              "all_mean": 1.9080360766410256
+            },
+            {
+              "engine": "original",
+              "eligible": 39,
+              "run": 39,
+              "successes": 28,
+              "success_median": 0.507641535,
+              "success_mean": 0.6386559708928572,
+              "failure_median": 5.005512951,
+              "failure_mean": 4.773336713727272,
+              "all_median": 0.792254116,
+              "all_mean": 1.8048479752820512
+            },
+            {
+              "engine": "quick",
+              "eligible": 39,
+              "run": 39,
+              "successes": 35,
+              "success_median": 0.640732955,
+              "success_mean": 0.7208492510857143,
+              "failure_median": 5.0001186365,
+              "failure_mean": 5.00011178375,
+              "all_median": 0.671547748,
+              "all_mean": 1.1597479723846154
+            },
+            {
+              "engine": "alternative",
+              "eligible": 39,
+              "run": 39,
+              "successes": 35,
+              "success_median": 1.069564332,
+              "success_mean": 1.411930660857143,
+              "failure_median": 5.0002688335,
+              "failure_mean": 3.7536414927500004,
+              "all_median": 1.201069744,
+              "all_mean": 1.652106130794872
+            },
+            {
+              "engine": "main",
+              "eligible": 39,
+              "run": 39,
+              "successes": 20,
+              "success_median": 2.822921503,
+              "success_mean": 2.63341363695,
+              "failure_median": 5.013977438,
+              "failure_mean": 5.322304666210527,
+              "all_median": 4.91523163,
+              "all_mean": 3.9433861896666667
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "generated_0005",
+            "generated_0002",
+            "island_north_south",
+            "trivial",
+            "motor_calm",
+            "generated_0000",
+            "generated_0001",
+            "dead_downwind",
+            "reach",
+            "tidal_adverse",
+            "tidal_east",
+            "upwind",
+            "favourable_current_jet",
+            "generated_0004",
+            "dateline_east",
+            "dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.108987622,
+              "mean_seconds": 0.11966688774999999
+            },
+            "mim_coastal": {
+              "median_seconds": 0.2232522495,
+              "mean_seconds": 0.2227660440625
+            },
+            "atlas": {
+              "median_seconds": 0.36283743150000003,
+              "mean_seconds": 0.647765149
+            },
+            "mim_astar": {
+              "median_seconds": 0.8654121539999999,
+              "mean_seconds": 0.9772089970625
+            },
+            "original": {
+              "median_seconds": 0.35177022700000005,
+              "mean_seconds": 0.5495819981875
+            },
+            "quick": {
+              "median_seconds": 0.4209327545,
+              "mean_seconds": 0.3630435295625
+            },
+            "alternative": {
+              "median_seconds": 0.7202670634999999,
+              "mean_seconds": 0.7373649913125
+            },
+            "main": {
+              "median_seconds": 2.6689816205,
+              "mean_seconds": 2.5252552324375
+            }
+          }
+        }
+      }
+    }
+  },
+  "headless": {
+    "overall": {
+      "positive_cases": 59,
+      "negative_cases": 6,
+      "engines": [
+        {
+          "engine": "quick2",
+          "eligible": 59,
+          "run": 59,
+          "successes": 50,
+          "success_median": 0.3219118225,
+          "success_mean": 0.46346796894,
+          "failure_median": 2.270678387,
+          "failure_mean": 1.432696117111111,
+          "all_median": 0.322096207,
+          "all_mean": 0.6113163305254238
+        },
+        {
+          "engine": "mim_coastal",
+          "eligible": 59,
+          "run": 59,
+          "successes": 27,
+          "success_median": 0.352750742,
+          "success_mean": 0.6102064145185185,
+          "failure_median": 1.541938122,
+          "failure_mean": 1.73205304390625,
+          "all_median": 1.064872597,
+          "all_mean": 1.218665603338983
+        },
+        {
+          "engine": "atlas",
+          "eligible": 59,
+          "run": 59,
+          "successes": 47,
+          "success_median": 1.3921565,
+          "success_mean": 1.4166780061489361,
+          "failure_median": 2.9510591305,
+          "failure_mean": 3.2671786735833335,
+          "all_median": 1.865693894,
+          "all_mean": 1.7930510232542374
+        },
+        {
+          "engine": "mim_astar",
+          "eligible": 59,
+          "run": 59,
+          "successes": 45,
+          "success_median": 1.360518481,
+          "success_mean": 1.7308968126222222,
+          "failure_median": 3.4788552395,
+          "failure_mean": 3.9175700810714287,
+          "all_median": 1.400600453,
+          "all_mean": 2.249768435644068
+        },
+        {
+          "engine": "original",
+          "eligible": 59,
+          "run": 59,
+          "successes": 50,
+          "success_median": 3.0890184155,
+          "success_mean": 3.08066271016,
+          "failure_median": 10.173570005,
+          "failure_mean": 9.256091927,
+          "all_median": 3.605524568,
+          "all_mean": 4.022677336457627
+        },
+        {
+          "engine": "quick",
+          "eligible": 59,
+          "run": 59,
+          "successes": 51,
+          "success_median": 0.921690106,
+          "success_mean": 1.6390421295098039,
+          "failure_median": 0.3898577355,
+          "failure_mean": 7.59845668625,
+          "all_median": 0.883668619,
+          "all_mean": 2.4470983405932203
+        },
+        {
+          "engine": "alternative",
+          "eligible": 59,
+          "run": 59,
+          "successes": 50,
+          "success_median": 1.4479053519999998,
+          "success_mean": 1.7822799068,
+          "failure_median": 9.181955349,
+          "failure_mean": 9.474786720666666,
+          "all_median": 1.466087558,
+          "all_mean": 2.9557131495932203
+        },
+        {
+          "engine": "main",
+          "eligible": 59,
+          "run": 59,
+          "successes": 31,
+          "success_median": 6.163839606,
+          "success_mean": 7.216094940290322,
+          "failure_median": 20.119096267499998,
+          "failure_mean": 19.591062274607143,
+          "all_median": 14.607257575,
+          "all_mean": 13.088960793864407
+        }
+      ],
+      "common_success_cases_all_eight": [
+        "headless_real_holyhead-conwy-360",
+        "headless_lab_holyhead_conwy_c",
+        "headless_lab_dublin_full_margin_f",
+        "headless_lab_harbour_margin_rejected_f",
+        "headless_lab_holyhead_dublin_c",
+        "headless_lab_holyhead_dublin_f",
+        "headless_lab_tonga_offshore_c",
+        "headless_lab_tonga_offshore_f",
+        "headless_lab_pacific_real_short_f",
+        "headless_lab_buffered_island",
+        "headless_lab_buffered_island_reverse",
+        "headless_lab_island_detour",
+        "headless_lab_short_final_2nm",
+        "headless_lab_tidal_current",
+        "headless_lab_reach_east",
+        "headless_lab_reach_west",
+        "headless_lab_variable_wind",
+        "headless_lab_dateline_east",
+        "headless_lab_dateline_west"
+      ],
+      "common_success_timings": {
+        "quick2": {
+          "median_seconds": 0.191596782,
+          "mean_seconds": 0.1802223647368421
+        },
+        "mim_coastal": {
+          "median_seconds": 0.319319589,
+          "mean_seconds": 0.5064627368947369
+        },
+        "atlas": {
+          "median_seconds": 0.379062929,
+          "mean_seconds": 0.6154732525789474
+        },
+        "mim_astar": {
+          "median_seconds": 1.655743943,
+          "mean_seconds": 1.9458097915789474
+        },
+        "original": {
+          "median_seconds": 1.526218177,
+          "mean_seconds": 1.7284435841052632
+        },
+        "quick": {
+          "median_seconds": 0.370261844,
+          "mean_seconds": 0.6156598805263158
+        },
+        "alternative": {
+          "median_seconds": 0.726176202,
+          "mean_seconds": 1.1530066248947368
+        },
+        "main": {
+          "median_seconds": 4.674624122,
+          "mean_seconds": 5.614083375368421
+        }
+      }
+    },
+    "groups": {
+      "group": {
+        "Coastal / harbour": {
+          "positive_cases": 32,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 32,
+              "run": 32,
+              "successes": 29,
+              "success_median": 0.406841677,
+              "success_mean": 0.531653609,
+              "failure_median": 0.078148983,
+              "failure_mean": 0.932363344,
+              "all_median": 0.387731073,
+              "all_mean": 0.56922014665625
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 32,
+              "run": 32,
+              "successes": 11,
+              "success_median": 0.118948842,
+              "success_mean": 0.26838487754545454,
+              "failure_median": 1.588035197,
+              "failure_mean": 1.4616493778571429,
+              "all_median": 1.0527124045,
+              "all_mean": 1.051464705875
+            },
+            {
+              "engine": "atlas",
+              "eligible": 32,
+              "run": 32,
+              "successes": 23,
+              "success_median": 1.943843232,
+              "success_mean": 2.035191179478261,
+              "failure_median": 2.965919867,
+              "failure_mean": 3.66817874,
+              "all_median": 1.9782541755,
+              "all_mean": 2.494468930875
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 32,
+              "run": 32,
+              "successes": 26,
+              "success_median": 1.2517112125,
+              "success_mean": 1.2179795778461537,
+              "failure_median": 3.4788552395,
+              "failure_mean": 2.530584456,
+              "all_median": 1.2810617495,
+              "all_mean": 1.4640929925
+            },
+            {
+              "engine": "original",
+              "eligible": 32,
+              "run": 32,
+              "successes": 25,
+              "success_median": 3.918275903,
+              "success_mean": 3.96391482404,
+              "failure_median": 11.654903064,
+              "failure_mean": 10.985667401142857,
+              "all_median": 4.0487434295,
+              "all_mean": 5.49992320028125
+            },
+            {
+              "engine": "quick",
+              "eligible": 32,
+              "run": 32,
+              "successes": 27,
+              "success_median": 0.883668619,
+              "success_mean": 1.0497519632592593,
+              "failure_median": 20.000047043,
+              "failure_mean": 12.1063388704,
+              "all_median": 0.986015956,
+              "all_mean": 2.7773436675
+            },
+            {
+              "engine": "alternative",
+              "eligible": 32,
+              "run": 32,
+              "successes": 29,
+              "success_median": 1.30951853,
+              "success_mean": 1.5968267039655173,
+              "failure_median": 0.002847199,
+              "failure_mean": 3.062222444666667,
+              "all_median": 1.3054186475,
+              "all_mean": 1.73420755465625
+            },
+            {
+              "engine": "main",
+              "eligible": 32,
+              "run": 32,
+              "successes": 16,
+              "success_median": 7.0615641865,
+              "success_mean": 8.636367754625,
+              "failure_median": 20.0577116535,
+              "failure_mean": 18.8899030575,
+              "all_median": 17.642064225,
+              "all_mean": 13.7631354060625
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_real_holyhead-conwy-360",
+            "headless_lab_holyhead_conwy_c",
+            "headless_lab_dublin_full_margin_f",
+            "headless_lab_harbour_margin_rejected_f",
+            "headless_lab_holyhead_dublin_c",
+            "headless_lab_holyhead_dublin_f"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.19083978299999999,
+              "mean_seconds": 0.18870141783333333
+            },
+            "mim_coastal": {
+              "median_seconds": 0.111129881,
+              "mean_seconds": 0.14132035566666667
+            },
+            "atlas": {
+              "median_seconds": 1.025439032,
+              "mean_seconds": 1.0260054201666666
+            },
+            "mim_astar": {
+              "median_seconds": 1.5712186895,
+              "mean_seconds": 1.5068115555000001
+            },
+            "original": {
+              "median_seconds": 3.3743181405,
+              "mean_seconds": 3.1982009625
+            },
+            "quick": {
+              "median_seconds": 0.33417771350000003,
+              "mean_seconds": 0.458194107
+            },
+            "alternative": {
+              "median_seconds": 0.6283698295,
+              "mean_seconds": 0.6340197105
+            },
+            "main": {
+              "median_seconds": 5.7856085375,
+              "mean_seconds": 7.930324313333333
+            }
+          }
+        },
+        "Island passages": {
+          "positive_cases": 6,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 0.918153619,
+              "success_mean": 0.8331059496,
+              "failure_median": 0.002977898,
+              "failure_mean": 0.002977898,
+              "all_median": 0.5251346,
+              "all_mean": 0.6947512743333333
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 6,
+              "run": 6,
+              "successes": 2,
+              "success_median": 0.299619404,
+              "success_mean": 0.299619404,
+              "failure_median": 1.58989716,
+              "failure_mean": 1.5430434,
+              "all_median": 1.3230532460000002,
+              "all_mean": 1.1285687346666666
+            },
+            {
+              "engine": "atlas",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 1.3921565,
+              "success_mean": 1.1428421262,
+              "failure_median": 3.906939917,
+              "failure_mean": 3.906939917,
+              "all_median": 1.4193392215,
+              "all_mean": 1.6035250913333332
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 6,
+              "run": 6,
+              "successes": 3,
+              "success_median": 0.851827632,
+              "success_mean": 1.1117129356666666,
+              "failure_median": 2.07112406,
+              "failure_mean": 1.913292775,
+              "all_median": 1.5292335874999998,
+              "all_mean": 1.5125028553333333
+            },
+            {
+              "engine": "original",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 3.786421702,
+              "success_mean": 3.5194618914,
+              "failure_median": 6.366008426,
+              "failure_mean": 6.366008426,
+              "all_median": 4.002411997,
+              "all_mean": 3.9938863138333334
+            },
+            {
+              "engine": "quick",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 1.418795355,
+              "success_mean": 1.386618334,
+              "failure_median": 0.005785447,
+              "failure_mean": 0.005785447,
+              "all_median": 0.8907328975000001,
+              "all_mean": 1.1564795195
+            },
+            {
+              "engine": "alternative",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 1.952066635,
+              "success_mean": 2.801109325,
+              "failure_median": 0.005465876,
+              "failure_mean": 0.005465876,
+              "all_median": 1.3391214185,
+              "all_mean": 2.3351687501666665
+            },
+            {
+              "engine": "main",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 9.035384388,
+              "success_mean": 9.472242233,
+              "failure_median": 20.0260909255,
+              "failure_mean": 20.0260909255,
+              "all_median": 13.2157104115,
+              "all_mean": 12.990191797166666
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_tonga_offshore_c",
+            "headless_lab_tonga_offshore_f"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.0950996845,
+              "mean_seconds": 0.0950996845
+            },
+            "mim_coastal": {
+              "median_seconds": 0.299619404,
+              "mean_seconds": 0.299619404
+            },
+            "atlas": {
+              "median_seconds": 0.4795541755,
+              "mean_seconds": 0.4795541755
+            },
+            "mim_astar": {
+              "median_seconds": 0.7679786925000001,
+              "mean_seconds": 0.7679786925000001
+            },
+            "original": {
+              "median_seconds": 4.002411997,
+              "mean_seconds": 4.002411997
+            },
+            "quick": {
+              "median_seconds": 0.3070878465,
+              "mean_seconds": 0.3070878465
+            },
+            "alternative": {
+              "median_seconds": 0.672034598,
+              "mean_seconds": 0.672034598
+            },
+            "main": {
+              "median_seconds": 5.7287740545000005,
+              "mean_seconds": 5.7287740545000005
+            }
+          }
+        },
+        "Ocean / offshore": {
+          "positive_cases": 6,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 6,
+              "run": 6,
+              "successes": 1,
+              "success_median": 0.245531361,
+              "success_mean": 0.245531361,
+              "failure_median": 2.319869567,
+              "failure_mean": 2.0188394248,
+              "all_median": 2.295273977,
+              "all_mean": 1.7232880808333333
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 6,
+              "run": 6,
+              "successes": 1,
+              "success_median": 0.922883527,
+              "success_mean": 0.922883527,
+              "failure_median": 4.684988544,
+              "failure_mean": 3.1610845480000003,
+              "all_median": 2.9368273585000004,
+              "all_mean": 2.7880510445
+            },
+            {
+              "engine": "atlas",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 1.9849613400000001,
+              "success_mean": 2.15738490475,
+              "failure_median": 1.142797753,
+              "failure_mean": 1.142797753,
+              "all_median": 1.9849613400000001,
+              "all_mean": 1.8191891875000001
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 6,
+              "run": 6,
+              "successes": 1,
+              "success_median": 3.200182897,
+              "success_mean": 3.200182897,
+              "failure_median": 9.437887789,
+              "failure_mean": 6.7845192147999995,
+              "all_median": 7.064908438,
+              "all_mean": 6.1871298285
+            },
+            {
+              "engine": "original",
+              "eligible": 6,
+              "run": 6,
+              "successes": 5,
+              "success_median": 1.334408491,
+              "success_mean": 2.0604682236,
+              "failure_median": 0.039147109,
+              "failure_mean": 0.039147109,
+              "all_median": 1.3309794130000001,
+              "all_mean": 1.7235813711666668
+            },
+            {
+              "engine": "quick",
+              "eligible": 6,
+              "run": 6,
+              "successes": 4,
+              "success_median": 10.8126186355,
+              "success_mean": 8.85845837425,
+              "failure_median": 0.1250868455,
+              "failure_mean": 0.1250868455,
+              "all_median": 5.501208256,
+              "all_mean": 5.9473345313333335
+            },
+            {
+              "engine": "alternative",
+              "eligible": 6,
+              "run": 6,
+              "successes": 1,
+              "success_median": 2.048092003,
+              "success_mean": 2.048092003,
+              "failure_median": 20.001126689,
+              "failure_mean": 15.2161894552,
+              "all_median": 18.037242882999998,
+              "all_mean": 13.0215065465
+            },
+            {
+              "engine": "main",
+              "eligible": 6,
+              "run": 6,
+              "successes": 1,
+              "success_median": 3.244612196,
+              "success_mean": 3.244612196,
+              "failure_median": 20.478312312,
+              "failure_mean": 20.6265795834,
+              "all_median": 20.404259662999998,
+              "all_mean": 17.729585018833333
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_pacific_real_short_f"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.245531361,
+              "mean_seconds": 0.245531361
+            },
+            "mim_coastal": {
+              "median_seconds": 0.922883527,
+              "mean_seconds": 0.922883527
+            },
+            "atlas": {
+              "median_seconds": 0.820017336,
+              "mean_seconds": 0.820017336
+            },
+            "mim_astar": {
+              "median_seconds": 3.200182897,
+              "mean_seconds": 3.200182897
+            },
+            "original": {
+              "median_seconds": 0.082536905,
+              "mean_seconds": 0.082536905
+            },
+            "quick": {
+              "median_seconds": 0.831793418,
+              "mean_seconds": 0.831793418
+            },
+            "alternative": {
+              "median_seconds": 2.048092003,
+              "mean_seconds": 2.048092003
+            },
+            "main": {
+              "median_seconds": 3.244612196,
+              "mean_seconds": 3.244612196
+            }
+          }
+        },
+        "Artificial obstacles": {
+          "positive_cases": 3,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.03169337,
+              "success_mean": 0.09932242866666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.03169337,
+              "all_mean": 0.09932242866666667
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.020728048,
+              "success_mean": 0.13121216966666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.020728048,
+              "all_mean": 0.13121216966666666
+            },
+            {
+              "engine": "atlas",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.345080326,
+              "success_mean": 0.405362362,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.345080326,
+              "all_mean": 0.405362362
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.801290202,
+              "success_mean": 1.5653730246666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.801290202,
+              "all_mean": 1.5653730246666666
+            },
+            {
+              "engine": "original",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 1.814478903,
+              "success_mean": 1.5379850216666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.814478903,
+              "all_mean": 1.5379850216666666
+            },
+            {
+              "engine": "quick",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.082616898,
+              "success_mean": 0.30221951766666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.082616898,
+              "all_mean": 0.30221951766666666
+            },
+            {
+              "engine": "alternative",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.265570582,
+              "success_mean": 0.7207812033333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.265570582,
+              "all_mean": 0.7207812033333334
+            },
+            {
+              "engine": "main",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 2.655492054,
+              "success_mean": 3.144325492666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.655492054,
+              "all_mean": 3.144325492666667
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_buffered_island",
+            "headless_lab_buffered_island_reverse",
+            "headless_lab_island_detour"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.03169337,
+              "mean_seconds": 0.09932242866666667
+            },
+            "mim_coastal": {
+              "median_seconds": 0.020728048,
+              "mean_seconds": 0.13121216966666666
+            },
+            "atlas": {
+              "median_seconds": 0.345080326,
+              "mean_seconds": 0.405362362
+            },
+            "mim_astar": {
+              "median_seconds": 0.801290202,
+              "mean_seconds": 1.5653730246666666
+            },
+            "original": {
+              "median_seconds": 1.814478903,
+              "mean_seconds": 1.5379850216666666
+            },
+            "quick": {
+              "median_seconds": 0.082616898,
+              "mean_seconds": 0.30221951766666666
+            },
+            "alternative": {
+              "median_seconds": 0.265570582,
+              "mean_seconds": 0.7207812033333334
+            },
+            "main": {
+              "median_seconds": 2.655492054,
+              "mean_seconds": 3.144325492666667
+            }
+          }
+        },
+        "Open-water controls": {
+          "positive_cases": 9,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 0.19326445,
+              "success_mean": 0.2027426452222222,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.19326445,
+              "all_mean": 0.2027426452222222
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 9,
+              "run": 9,
+              "successes": 7,
+              "success_median": 0.936218875,
+              "success_mean": 0.9070840688571429,
+              "failure_median": 1.3767320650000001,
+              "failure_mean": 1.3767320650000001,
+              "all_median": 0.960317249,
+              "all_mean": 1.0114502902222222
+            },
+            {
+              "engine": "atlas",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 0.210090224,
+              "success_mean": 0.31731857166666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.210090224,
+              "all_mean": 0.31731857166666666
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 1.823289486,
+              "success_mean": 1.9104777966666666,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.823289486,
+              "all_mean": 1.9104777966666666
+            },
+            {
+              "engine": "original",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 0.101704782,
+              "success_mean": 2.4337027306666665,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.101704782,
+              "all_mean": 2.4337027306666665
+            },
+            {
+              "engine": "quick",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 0.797037003,
+              "success_mean": 0.7870506186666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.797037003,
+              "all_mean": 0.7870506186666667
+            },
+            {
+              "engine": "alternative",
+              "eligible": 9,
+              "run": 9,
+              "successes": 9,
+              "success_median": 1.657810079,
+              "success_mean": 1.6802934927777777,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.657810079,
+              "all_mean": 1.6802934927777777
+            },
+            {
+              "engine": "main",
+              "eligible": 9,
+              "run": 9,
+              "successes": 5,
+              "success_median": 3.123413491,
+              "success_mean": 2.64620724,
+              "failure_median": 20.26455303,
+              "failure_mean": 20.3535891355,
+              "all_median": 3.612313429,
+              "all_mean": 10.516154749111111
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_short_final_2nm",
+            "headless_lab_tidal_current",
+            "headless_lab_reach_east",
+            "headless_lab_reach_west",
+            "headless_lab_variable_wind"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.191596782,
+              "mean_seconds": 0.1567796434
+            },
+            "mim_coastal": {
+              "median_seconds": 0.820186557,
+              "mean_seconds": 0.702742031
+            },
+            "atlas": {
+              "median_seconds": 0.206560181,
+              "mean_seconds": 0.398932579
+            },
+            "mim_astar": {
+              "median_seconds": 1.727977728,
+              "mean_seconds": 1.4091205601999999
+            },
+            "original": {
+              "median_seconds": 0.067475073,
+              "mean_seconds": 0.1279219454
+            },
+            "quick": {
+              "median_seconds": 0.790147209,
+              "mean_seconds": 0.6566428774
+            },
+            "alternative": {
+              "median_seconds": 1.516981358,
+              "mean_seconds": 1.2654935566
+            },
+            "main": {
+              "median_seconds": 3.123413491,
+              "mean_seconds": 2.64620724
+            }
+          }
+        },
+        "Geographic stress": {
+          "positive_cases": 3,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.391759303,
+              "success_mean": 0.40724386133333335,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.391759303,
+              "all_mean": 0.40724386133333335
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 1.712663444,
+              "success_mean": 1.752664071,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.712663444,
+              "all_mean": 1.752664071
+            },
+            {
+              "engine": "atlas",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.286470425,
+              "success_mean": 0.45292156,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.286470425,
+              "all_mean": 0.45292156
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 5.879891704,
+              "success_mean": 5.932382198666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 5.879891704,
+              "all_mean": 5.932382198666667
+            },
+            {
+              "engine": "original",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 0.159032818,
+              "success_mean": 0.17277823033333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.159032818,
+              "all_mean": 0.17277823033333334
+            },
+            {
+              "engine": "quick",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 1.655736606,
+              "success_mean": 1.6302687696666667,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.655736606,
+              "all_mean": 1.6302687696666667
+            },
+            {
+              "engine": "alternative",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 3.203920205,
+              "success_mean": 3.155799084,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 3.203920205,
+              "all_mean": 3.155799084
+            },
+            {
+              "engine": "main",
+              "eligible": 3,
+              "run": 3,
+              "successes": 2,
+              "success_median": 10.859732634499998,
+              "success_mean": 10.859732634499998,
+              "failure_median": 21.711858459,
+              "failure_mean": 21.711858459,
+              "all_median": 10.989035364,
+              "all_mean": 14.477107909333332
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_dateline_east",
+            "headless_lab_dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.38721009500000003,
+              "mean_seconds": 0.38721009500000003
+            },
+            "mim_coastal": {
+              "median_seconds": 1.672700434,
+              "mean_seconds": 1.672700434
+            },
+            "atlas": {
+              "median_seconds": 0.27404180499999997,
+              "mean_seconds": 0.27404180499999997
+            },
+            "mim_astar": {
+              "median_seconds": 5.725827275,
+              "mean_seconds": 5.725827275
+            },
+            "original": {
+              "median_seconds": 0.155148316,
+              "mean_seconds": 0.155148316
+            },
+            "quick": {
+              "median_seconds": 1.6562655185000001,
+              "mean_seconds": 1.6562655185000001
+            },
+            "alternative": {
+              "median_seconds": 3.110517509,
+              "mean_seconds": 3.110517509
+            },
+            "main": {
+              "median_seconds": 10.859732634499998,
+              "mean_seconds": 10.859732634499998
+            }
+          }
+        }
+      },
+      "length": {
+        "Short (<50 NM)": {
+          "positive_cases": 27,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 27,
+              "run": 27,
+              "successes": 25,
+              "success_median": 0.322096207,
+              "success_mean": 0.36833283356,
+              "failure_median": 1.3979736055,
+              "failure_mean": 1.3979736055,
+              "all_median": 0.322096207,
+              "all_mean": 0.44460252037037035
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 27,
+              "run": 27,
+              "successes": 13,
+              "success_median": 0.115029917,
+              "success_mean": 0.23767561053846153,
+              "failure_median": 1.0938018755,
+              "failure_mean": 1.5145875501428572,
+              "all_median": 0.927656214,
+              "all_mean": 0.8997780977407407
+            },
+            {
+              "engine": "atlas",
+              "eligible": 27,
+              "run": 27,
+              "successes": 22,
+              "success_median": 1.9171939365,
+              "success_mean": 1.6771505056818181,
+              "failure_median": 2.936198394,
+              "failure_mean": 2.580862959,
+              "all_median": 1.942214099,
+              "all_mean": 1.8445046637037037
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 27,
+              "run": 27,
+              "successes": 25,
+              "success_median": 1.021593051,
+              "success_mean": 1.03853990896,
+              "failure_median": 2.2094791205,
+              "failure_mean": 2.2094791205,
+              "all_median": 1.021593051,
+              "all_mean": 1.125276146851852
+            },
+            {
+              "engine": "original",
+              "eligible": 27,
+              "run": 27,
+              "successes": 22,
+              "success_median": 3.4486737935000003,
+              "success_mean": 3.112109941090909,
+              "failure_median": 11.654903064,
+              "failure_mean": 12.017400247200001,
+              "all_median": 3.786421702,
+              "all_mean": 4.761237775555555
+            },
+            {
+              "engine": "quick",
+              "eligible": 27,
+              "run": 27,
+              "successes": 25,
+              "success_median": 0.769732417,
+              "success_mean": 0.8351681587600001,
+              "failure_median": 10.26508475,
+              "failure_mean": 10.26508475,
+              "all_median": 0.769732417,
+              "all_mean": 1.5336804988518518
+            },
+            {
+              "engine": "alternative",
+              "eligible": 27,
+              "run": 27,
+              "successes": 25,
+              "success_median": 1.077635956,
+              "success_mean": 1.086947509,
+              "failure_median": 4.592401274,
+              "failure_mean": 4.592401274,
+              "all_median": 1.077635956,
+              "all_mean": 1.346610750851852
+            },
+            {
+              "engine": "main",
+              "eligible": 27,
+              "run": 27,
+              "successes": 15,
+              "success_median": 6.163839606,
+              "success_mean": 7.1796263872,
+              "failure_median": 20.041659006499998,
+              "failure_mean": 20.098346738333333,
+              "all_median": 16.091268679,
+              "all_mean": 12.921279876592592
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_real_holyhead-conwy-360",
+            "headless_lab_holyhead_conwy_c",
+            "headless_lab_dublin_full_margin_f",
+            "headless_lab_tonga_offshore_c",
+            "headless_lab_tonga_offshore_f",
+            "headless_lab_buffered_island",
+            "headless_lab_buffered_island_reverse",
+            "headless_lab_short_final_2nm"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.0488841755,
+              "mean_seconds": 0.10974613275
+            },
+            "mim_coastal": {
+              "median_seconds": 0.06787898249999999,
+              "mean_seconds": 0.12318392724999999
+            },
+            "atlas": {
+              "median_seconds": 0.3561151935,
+              "mean_seconds": 0.6441089465
+            },
+            "mim_astar": {
+              "median_seconds": 0.774355962,
+              "mean_seconds": 0.90693528775
+            },
+            "original": {
+              "median_seconds": 2.4792079955,
+              "mean_seconds": 2.509889027875
+            },
+            "quick": {
+              "median_seconds": 0.1949106755,
+              "mean_seconds": 0.32422695025
+            },
+            "alternative": {
+              "median_seconds": 0.44046750450000005,
+              "mean_seconds": 0.47272952775
+            },
+            "main": {
+              "median_seconds": 5.410118413,
+              "mean_seconds": 5.922866578
+            }
+          }
+        },
+        "Regional (50\u2013<300 NM)": {
+          "positive_cases": 25,
+          "negative_cases": 6,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 25,
+              "run": 25,
+              "successes": 23,
+              "success_median": 0.247555569,
+              "success_mean": 0.47425655860869564,
+              "failure_median": 0.0020603595,
+              "failure_mean": 0.0020603595,
+              "all_median": 0.245531361,
+              "all_mean": 0.43648086267999997
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 25,
+              "run": 25,
+              "successes": 14,
+              "success_median": 0.929551201,
+              "success_mean": 0.9561278753571428,
+              "failure_median": 1.588035197,
+              "failure_mean": 1.4165300222727273,
+              "all_median": 1.366110651,
+              "all_mean": 1.15870482
+            },
+            {
+              "engine": "atlas",
+              "eligible": 25,
+              "run": 25,
+              "successes": 21,
+              "success_median": 0.628783882,
+              "success_mean": 0.9505051925714286,
+              "failure_median": 5.560866293,
+              "failure_mean": 5.0273234662499995,
+              "all_median": 0.820017336,
+              "all_mean": 1.60279611636
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 25,
+              "run": 25,
+              "successes": 20,
+              "success_median": 1.811235454,
+              "success_mean": 2.5963429422,
+              "failure_median": 3.345624749,
+              "failure_mean": 2.4047668496,
+              "all_median": 1.823289486,
+              "all_mean": 2.55802772368
+            },
+            {
+              "engine": "original",
+              "eligible": 25,
+              "run": 25,
+              "successes": 22,
+              "success_median": 2.430720822,
+              "success_mean": 3.069541921090909,
+              "failure_median": 6.366008426,
+              "failure_mean": 7.726226332666667,
+              "all_median": 3.085946508,
+              "all_mean": 3.62834405048
+            },
+            {
+              "engine": "quick",
+              "eligible": 25,
+              "run": 25,
+              "successes": 21,
+              "success_median": 0.921690106,
+              "success_mean": 1.1052278064285714,
+              "failure_median": 10.002936704,
+              "failure_mean": 10.00182757475,
+              "all_median": 0.921690106,
+              "all_mean": 2.5286837693599997
+            },
+            {
+              "engine": "alternative",
+              "eligible": 25,
+              "run": 25,
+              "successes": 23,
+              "success_median": 1.868175994,
+              "success_mean": 2.2274302965652173,
+              "failure_median": 0.003665331,
+              "failure_mean": 0.003665331,
+              "all_median": 1.808272821,
+              "all_mean": 2.04952909932
+            },
+            {
+              "engine": "main",
+              "eligible": 25,
+              "run": 25,
+              "successes": 16,
+              "success_median": 6.089934133,
+              "success_mean": 7.2502842088124995,
+              "failure_median": 20.326927753,
+              "failure_mean": 18.242722562333334,
+              "all_median": 10.730429905,
+              "all_mean": 11.207562016079999
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_harbour_margin_rejected_f",
+            "headless_lab_holyhead_dublin_c",
+            "headless_lab_holyhead_dublin_f",
+            "headless_lab_pacific_real_short_f",
+            "headless_lab_island_detour",
+            "headless_lab_tidal_current",
+            "headless_lab_reach_east",
+            "headless_lab_reach_west",
+            "headless_lab_variable_wind",
+            "headless_lab_dateline_east",
+            "headless_lab_dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.220670957,
+              "mean_seconds": 0.23147780618181818
+            },
+            "mim_coastal": {
+              "median_seconds": 0.820186557,
+              "mean_seconds": 0.7852109620909091
+            },
+            "atlas": {
+              "median_seconds": 0.528345497,
+              "mean_seconds": 0.5946472933636364
+            },
+            "mim_astar": {
+              "median_seconds": 1.823289486,
+              "mean_seconds": 2.7013548852727274
+            },
+            "original": {
+              "median_seconds": 0.159032818,
+              "mean_seconds": 1.160119625
+            },
+            "quick": {
+              "median_seconds": 0.790147209,
+              "mean_seconds": 0.8276111025454546
+            },
+            "alternative": {
+              "median_seconds": 1.641298321,
+              "mean_seconds": 1.6477536046363637
+            },
+            "main": {
+              "median_seconds": 4.23561706,
+              "mean_seconds": 5.389513773454546
+            }
+          }
+        },
+        "Long (\u2265300 NM)": {
+          "positive_cases": 7,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 7,
+              "run": 7,
+              "successes": 2,
+              "success_median": 1.52858838,
+              "success_mean": 1.52858838,
+              "failure_median": 2.319869567,
+              "failure_mean": 2.0188394248,
+              "all_median": 2.270678387,
+              "all_mean": 1.8787676977142858
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 7,
+              "run": 7,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 1.683953273,
+              "failure_mean": 2.6628059225714287,
+              "all_median": 1.683953273,
+              "all_mean": 2.6628059225714287
+            },
+            {
+              "engine": "atlas",
+              "eligible": 7,
+              "run": 7,
+              "successes": 4,
+              "success_median": 2.0103263115,
+              "success_mean": 2.43148653,
+              "failure_median": 2.285053758,
+              "failure_mean": 2.064178474333333,
+              "all_median": 2.104228786,
+              "all_mean": 2.2740687918571427
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 7,
+              "run": 7,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 4.691929087,
+              "failure_mean": 5.486169806571429,
+              "all_median": 4.691929087,
+              "all_mean": 5.486169806571429
+            },
+            {
+              "engine": "original",
+              "eligible": 7,
+              "run": 7,
+              "successes": 6,
+              "success_median": 2.941205085,
+              "success_mean": 3.0061324233333333,
+              "failure_median": 0.039147109,
+              "failure_mean": 0.039147109,
+              "all_median": 2.932607584,
+              "all_mean": 2.5822773784285715
+            },
+            {
+              "engine": "quick",
+              "eligible": 7,
+              "run": 7,
+              "successes": 5,
+              "success_median": 10.170623094,
+              "success_mean": 7.9004321401999995,
+              "failure_median": 0.1250868455,
+              "failure_mean": 0.1250868455,
+              "all_median": 2.8421372,
+              "all_mean": 5.6789049131428575
+            },
+            {
+              "engine": "alternative",
+              "eligible": 7,
+              "run": 7,
+              "successes": 2,
+              "success_median": 5.354705397,
+              "success_mean": 5.354705397,
+              "failure_median": 20.001126689,
+              "failure_mean": 15.2161894552,
+              "all_median": 16.073359077,
+              "all_mean": 12.39862258142857
+            },
+            {
+              "engine": "main",
+              "eligible": 7,
+              "run": 7,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 20.330207014,
+              "failure_mean": 20.45501139542857,
+              "all_median": 20.330207014,
+              "all_mean": 20.45501139542857
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        }
+      },
+      "forecast": {
+        "Stored GRIB": {
+          "positive_cases": 34,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 34,
+              "run": 34,
+              "successes": 28,
+              "success_median": 0.5067880665,
+              "success_mean": 0.6754803418214286,
+              "failure_median": 0.040563440500000006,
+              "failure_mean": 0.9309864786666666,
+              "all_median": 0.4953583675,
+              "all_mean": 0.7205696600882353
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 34,
+              "run": 34,
+              "successes": 6,
+              "success_median": 0.195702299,
+              "success_mean": 0.34365507,
+              "failure_median": 1.541938122,
+              "failure_mean": 1.5264461612857143,
+              "all_median": 1.133531877,
+              "all_mean": 1.317718321647059
+            },
+            {
+              "engine": "atlas",
+              "eligible": 34,
+              "run": 34,
+              "successes": 23,
+              "success_median": 1.943843232,
+              "success_mean": 2.177422300434783,
+              "failure_median": 2.965919867,
+              "failure_mean": 3.437343295090909,
+              "all_median": 1.9844605574999998,
+              "all_mean": 2.5850437987058825
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 34,
+              "run": 34,
+              "successes": 23,
+              "success_median": 1.242893635,
+              "success_mean": 1.2521157057391303,
+              "failure_median": 2.409468512,
+              "failure_mean": 2.8513977392727274,
+              "all_median": 1.2810617495,
+              "all_mean": 1.7695304812941177
+            },
+            {
+              "engine": "original",
+              "eligible": 34,
+              "run": 34,
+              "successes": 25,
+              "success_median": 3.605524568,
+              "success_mean": 3.6567784176,
+              "failure_median": 10.173570005,
+              "failure_mean": 9.256091927,
+              "all_median": 4.3459547615,
+              "all_mean": 5.13894964067647
+            },
+            {
+              "engine": "quick",
+              "eligible": 34,
+              "run": 34,
+              "successes": 26,
+              "success_median": 1.3721506875,
+              "success_mean": 1.7283697311153845,
+              "failure_median": 0.3898577355,
+              "failure_mean": 7.59845668625,
+              "all_median": 1.3381879415,
+              "all_mean": 3.109566661735294
+            },
+            {
+              "engine": "alternative",
+              "eligible": 34,
+              "run": 34,
+              "successes": 28,
+              "success_median": 1.4479053519999998,
+              "success_mean": 2.081823626428571,
+              "failure_median": 0.0041565375,
+              "failure_mean": 6.014200703666666,
+              "all_median": 1.4240362544999998,
+              "all_mean": 2.775772522411765
+            },
+            {
+              "engine": "main",
+              "eligible": 34,
+              "run": 34,
+              "successes": 14,
+              "success_median": 9.305015044000001,
+              "success_mean": 9.962059356,
+              "failure_median": 20.0577116535,
+              "failure_mean": 19.1778898214,
+              "all_median": 20.0044428565,
+              "all_mean": 15.38313610035294
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_real_holyhead-conwy-360",
+            "headless_lab_pacific_real_short_f"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.326186519,
+              "mean_seconds": 0.326186519
+            },
+            "mim_coastal": {
+              "median_seconds": 0.5726432619999999,
+              "mean_seconds": 0.5726432619999999
+            },
+            "atlas": {
+              "median_seconds": 1.4032760645,
+              "mean_seconds": 1.4032760645
+            },
+            "mim_astar": {
+              "median_seconds": 2.1864400594999998,
+              "mean_seconds": 2.1864400594999998
+            },
+            "original": {
+              "median_seconds": 1.587313614,
+              "mean_seconds": 1.587313614
+            },
+            "quick": {
+              "median_seconds": 1.0690667624999999,
+              "mean_seconds": 1.0690667624999999
+            },
+            "alternative": {
+              "median_seconds": 1.5628639795,
+              "mean_seconds": 1.5628639795
+            },
+            "main": {
+              "median_seconds": 11.218735983499998,
+              "mean_seconds": 11.218735983499998
+            }
+          }
+        },
+        "Synthetic weather": {
+          "positive_cases": 25,
+          "negative_cases": 6,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 25,
+              "run": 25,
+              "successes": 22,
+              "success_median": 0.192430616,
+              "success_mean": 0.1936340398181818,
+              "failure_median": 2.319869567,
+              "failure_mean": 2.4361153939999998,
+              "all_median": 0.198183695,
+              "all_mean": 0.46273180232
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 25,
+              "run": 25,
+              "successes": 21,
+              "success_median": 0.484208891,
+              "success_mean": 0.6863639415238095,
+              "failure_median": 3.1447569145,
+              "failure_mean": 3.17130122225,
+              "all_median": 0.820186557,
+              "all_mean": 1.0839539064400001
+            },
+            {
+              "engine": "atlas",
+              "eligible": 25,
+              "run": 25,
+              "successes": 24,
+              "success_median": 0.3561151935,
+              "success_mean": 0.6876313907916667,
+              "failure_median": 1.395367837,
+              "failure_mean": 1.395367837,
+              "all_median": 0.367150061,
+              "all_mean": 0.71594084864
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 25,
+              "run": 25,
+              "successes": 22,
+              "success_median": 1.7288148685,
+              "success_mean": 2.231440697090909,
+              "failure_median": 9.87435861,
+              "failure_mean": 7.826868667666666,
+              "all_median": 1.823289486,
+              "all_mean": 2.90289205356
+            },
+            {
+              "engine": "original",
+              "eligible": 25,
+              "run": 25,
+              "successes": 25,
+              "success_median": 1.866325668,
+              "success_mean": 2.50454700272,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 1.866325668,
+              "all_mean": 2.50454700272
+            },
+            {
+              "engine": "quick",
+              "eligible": 25,
+              "run": 25,
+              "successes": 25,
+              "success_median": 0.742430836,
+              "success_mean": 1.54614142384,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.742430836,
+              "all_mean": 1.54614142384
+            },
+            {
+              "engine": "alternative",
+              "eligible": 25,
+              "run": 25,
+              "successes": 22,
+              "success_median": 1.3997194949999998,
+              "success_mean": 1.4010424454545454,
+              "failure_median": 20.002858692,
+              "failure_mean": 16.395958754666665,
+              "all_median": 1.516981358,
+              "all_mean": 3.20043240256
+            },
+            {
+              "engine": "main",
+              "eligible": 25,
+              "run": 25,
+              "successes": 17,
+              "success_median": 4.674624122,
+              "success_mean": 4.954712480294117,
+              "failure_median": 20.26455303,
+              "failure_mean": 20.623993407625,
+              "all_median": 5.925299476,
+              "all_mean": 9.96888237704
+            }
+          ],
+          "common_success_cases_all_eight": [
+            "headless_lab_holyhead_conwy_c",
+            "headless_lab_dublin_full_margin_f",
+            "headless_lab_harbour_margin_rejected_f",
+            "headless_lab_holyhead_dublin_c",
+            "headless_lab_holyhead_dublin_f",
+            "headless_lab_tonga_offshore_c",
+            "headless_lab_tonga_offshore_f",
+            "headless_lab_buffered_island",
+            "headless_lab_buffered_island_reverse",
+            "headless_lab_island_detour",
+            "headless_lab_short_final_2nm",
+            "headless_lab_tidal_current",
+            "headless_lab_reach_east",
+            "headless_lab_reach_west",
+            "headless_lab_variable_wind",
+            "headless_lab_dateline_east",
+            "headless_lab_dateline_west"
+          ],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": 0.177730678,
+              "mean_seconds": 0.16305011129411764
+            },
+            "mim_coastal": {
+              "median_seconds": 0.319319589,
+              "mean_seconds": 0.4986767927647059
+            },
+            "atlas": {
+              "median_seconds": 0.367150061,
+              "mean_seconds": 0.5227905688235294
+            },
+            "mim_astar": {
+              "median_seconds": 1.655743943,
+              "mean_seconds": 1.9175003482941178
+            },
+            "original": {
+              "median_seconds": 1.526218177,
+              "mean_seconds": 1.74504711
+            },
+            "quick": {
+              "median_seconds": 0.36267044,
+              "mean_seconds": 0.5623178944117647
+            },
+            "alternative": {
+              "median_seconds": 0.647143071,
+              "mean_seconds": 1.1047881125882353
+            },
+            "main": {
+              "median_seconds": 4.674624122,
+              "mean_seconds": 4.954712480294117
+            }
+          }
+        }
+      }
+    }
+  },
+  "tonga": {
+    "overall": {
+      "positive_cases": 3,
+      "negative_cases": 0,
+      "engines": [
+        {
+          "engine": "quick2",
+          "eligible": 3,
+          "run": 3,
+          "successes": 3,
+          "success_median": 2.402398384,
+          "success_mean": 1.8562824083333334,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": 2.402398384,
+          "all_mean": 1.8562824083333334
+        },
+        {
+          "engine": "mim_coastal",
+          "eligible": 3,
+          "run": 3,
+          "successes": 1,
+          "success_median": 0.251062286,
+          "success_mean": 0.251062286,
+          "failure_median": 1.267359619,
+          "failure_mean": 1.267359619,
+          "all_median": 1.25737643,
+          "all_mean": 0.9285938413333333
+        },
+        {
+          "engine": "atlas",
+          "eligible": 3,
+          "run": 3,
+          "successes": 3,
+          "success_median": 2.437057602,
+          "success_mean": 2.843043921,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": 2.437057602,
+          "all_mean": 2.843043921
+        },
+        {
+          "engine": "mim_astar",
+          "eligible": 3,
+          "run": 3,
+          "successes": 1,
+          "success_median": 0.129654864,
+          "success_mean": 0.129654864,
+          "failure_median": 2.5672963810000002,
+          "failure_mean": 2.5672963810000002,
+          "all_median": 2.341884676,
+          "all_mean": 1.7547492086666667
+        },
+        {
+          "engine": "original",
+          "eligible": 3,
+          "run": 0,
+          "successes": 0,
+          "success_median": null,
+          "success_mean": null,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": null,
+          "all_mean": null
+        },
+        {
+          "engine": "quick",
+          "eligible": 3,
+          "run": 0,
+          "successes": 0,
+          "success_median": null,
+          "success_mean": null,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": null,
+          "all_mean": null
+        },
+        {
+          "engine": "alternative",
+          "eligible": 3,
+          "run": 0,
+          "successes": 0,
+          "success_median": null,
+          "success_mean": null,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": null,
+          "all_mean": null
+        },
+        {
+          "engine": "main",
+          "eligible": 3,
+          "run": 0,
+          "successes": 0,
+          "success_median": null,
+          "success_mean": null,
+          "failure_median": null,
+          "failure_mean": null,
+          "all_median": null,
+          "all_mean": null
+        }
+      ],
+      "common_success_cases_all_eight": [],
+      "common_success_timings": {
+        "quick2": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "mim_coastal": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "atlas": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "mim_astar": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "original": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "quick": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "alternative": {
+          "median_seconds": null,
+          "mean_seconds": null
+        },
+        "main": {
+          "median_seconds": null,
+          "mean_seconds": null
+        }
+      }
+    },
+    "groups": {
+      "group": {
+        "Island passages": {
+          "positive_cases": 3,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 2.402398384,
+              "success_mean": 1.8562824083333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.402398384,
+              "all_mean": 1.8562824083333334
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 3,
+              "run": 3,
+              "successes": 1,
+              "success_median": 0.251062286,
+              "success_mean": 0.251062286,
+              "failure_median": 1.267359619,
+              "failure_mean": 1.267359619,
+              "all_median": 1.25737643,
+              "all_mean": 0.9285938413333333
+            },
+            {
+              "engine": "atlas",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 2.437057602,
+              "success_mean": 2.843043921,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.437057602,
+              "all_mean": 2.843043921
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 3,
+              "run": 3,
+              "successes": 1,
+              "success_median": 0.129654864,
+              "success_mean": 0.129654864,
+              "failure_median": 2.5672963810000002,
+              "failure_mean": 2.5672963810000002,
+              "all_median": 2.341884676,
+              "all_mean": 1.7547492086666667
+            },
+            {
+              "engine": "original",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "quick",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "alternative",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "main",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        }
+      },
+      "length": {
+        "Short (<50 NM)": {
+          "positive_cases": 1,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 1,
+              "run": 1,
+              "successes": 1,
+              "success_median": 0.088228933,
+              "success_mean": 0.088228933,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.088228933,
+              "all_mean": 0.088228933
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 1,
+              "run": 1,
+              "successes": 1,
+              "success_median": 0.251062286,
+              "success_mean": 0.251062286,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.251062286,
+              "all_mean": 0.251062286
+            },
+            {
+              "engine": "atlas",
+              "eligible": 1,
+              "run": 1,
+              "successes": 1,
+              "success_median": 2.401204663,
+              "success_mean": 2.401204663,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.401204663,
+              "all_mean": 2.401204663
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 1,
+              "run": 1,
+              "successes": 1,
+              "success_median": 0.129654864,
+              "success_mean": 0.129654864,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 0.129654864,
+              "all_mean": 0.129654864
+            },
+            {
+              "engine": "original",
+              "eligible": 1,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "quick",
+              "eligible": 1,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "alternative",
+              "eligible": 1,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "main",
+              "eligible": 1,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        },
+        "Long (\u2265300 NM)": {
+          "positive_cases": 2,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 2,
+              "run": 2,
+              "successes": 2,
+              "success_median": 2.740309146,
+              "success_mean": 2.740309146,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.740309146,
+              "all_mean": 2.740309146
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 1.267359619,
+              "failure_mean": 1.267359619,
+              "all_median": 1.267359619,
+              "all_mean": 1.267359619
+            },
+            {
+              "engine": "atlas",
+              "eligible": 2,
+              "run": 2,
+              "successes": 2,
+              "success_median": 3.06396355,
+              "success_mean": 3.06396355,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 3.06396355,
+              "all_mean": 3.06396355
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 2,
+              "run": 2,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": 2.5672963810000002,
+              "failure_mean": 2.5672963810000002,
+              "all_median": 2.5672963810000002,
+              "all_mean": 2.5672963810000002
+            },
+            {
+              "engine": "original",
+              "eligible": 2,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "quick",
+              "eligible": 2,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "alternative",
+              "eligible": 2,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "main",
+              "eligible": 2,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        }
+      },
+      "forecast": {
+        "Stored GRIB": {
+          "positive_cases": 3,
+          "negative_cases": 0,
+          "engines": [
+            {
+              "engine": "quick2",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 2.402398384,
+              "success_mean": 1.8562824083333334,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.402398384,
+              "all_mean": 1.8562824083333334
+            },
+            {
+              "engine": "mim_coastal",
+              "eligible": 3,
+              "run": 3,
+              "successes": 1,
+              "success_median": 0.251062286,
+              "success_mean": 0.251062286,
+              "failure_median": 1.267359619,
+              "failure_mean": 1.267359619,
+              "all_median": 1.25737643,
+              "all_mean": 0.9285938413333333
+            },
+            {
+              "engine": "atlas",
+              "eligible": 3,
+              "run": 3,
+              "successes": 3,
+              "success_median": 2.437057602,
+              "success_mean": 2.843043921,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": 2.437057602,
+              "all_mean": 2.843043921
+            },
+            {
+              "engine": "mim_astar",
+              "eligible": 3,
+              "run": 3,
+              "successes": 1,
+              "success_median": 0.129654864,
+              "success_mean": 0.129654864,
+              "failure_median": 2.5672963810000002,
+              "failure_mean": 2.5672963810000002,
+              "all_median": 2.341884676,
+              "all_mean": 1.7547492086666667
+            },
+            {
+              "engine": "original",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "quick",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "alternative",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            },
+            {
+              "engine": "main",
+              "eligible": 3,
+              "run": 0,
+              "successes": 0,
+              "success_median": null,
+              "success_mean": null,
+              "failure_median": null,
+              "failure_mean": null,
+              "all_median": null,
+              "all_mean": null
+            }
+          ],
+          "common_success_cases_all_eight": [],
+          "common_success_timings": {
+            "quick2": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_coastal": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "atlas": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "mim_astar": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "original": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "quick": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "alternative": {
+              "median_seconds": null,
+              "mean_seconds": null
+            },
+            "main": {
+              "median_seconds": null,
+              "mean_seconds": null
+            }
+          }
+        }
+      }
+    }
+  }
+}
