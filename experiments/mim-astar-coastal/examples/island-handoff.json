@@ -1,0 +1,10 @@
+{
+  "name": "island_handoff_40nm",
+  "start": [30.0, -140.0],
+  "east_nm": 40,
+  "north_nm": 0,
+  "isotropic": true,
+  "wind_from": 0,
+  "max_hours": 48,
+  "rectangles_nm": [[15, -2, 20, 2]]
+}

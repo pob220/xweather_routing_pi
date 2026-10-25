@@ -1,0 +1,29 @@
+{
+  "name": "my_offline_route",
+  "headless_suite": "professional",
+  "start": [
+    53.3378,
+    -4.61454
+  ],
+  "end": [
+    53.306779,
+    -3.9211623
+  ],
+  "epoch": 1792398600,
+  "grib": "/absolute/path/to/forecast.grb",
+  "polar": "/absolute/path/to/polar-whitespace.pol",
+  "shoreline": "/absolute/path/to/uncompressed-poly-f-2.3.7.dat",
+  "currents": true,
+  "waves": false,
+  "allow_missing_current_waves": false,
+  "wind_strength": 1,
+  "from_angle": 40,
+  "to_angle": 160,
+  "step_seconds": 3600,
+  "heading_step": 5,
+  "tack_seconds": 300,
+  "gybe_seconds": 300,
+  "margin_nm": 0.4,
+  "max_hours": 72,
+  "cache": true
+}

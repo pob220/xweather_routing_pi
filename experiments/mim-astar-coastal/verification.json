@@ -1,0 +1,425 @@
+{
+  "date": "2026-10-25",
+  "scope": "Experimental standalone Linux client; no plugin integration or installation",
+  "protected_files_unchanged": 91,
+  "regression_groups": {
+    "release_passed": 8,
+    "asan_ubsan_passed": 8,
+    "leak_detection_enabled": false
+  },
+  "library_only_build": "passed",
+  "scoped_clang_tidy": "no diagnostics",
+  "strict_json_smoke": "passed",
+  "search_object_sha256": "fb8776fdfd6de22ad94002dfc6cb30c80033fb765b8a5a6609e990990985c0ad",
+  "timed_and_publication_search_objects_identical": true,
+  "publication_benchmark_sha256": "d593b0f67909c860d24b91d9e8c7f7fce44792d5b9c2a5f2308be89f88e5ec42",
+  "campaigns": {
+    "synthetic": {
+      "requested_deadline_seconds": 5,
+      "repeats": 1,
+      "cache": "cold",
+      "cpu": 4,
+      "unchanged_control_measurements_retained": true,
+      "controls_binary_sha256": "5183f798614dbb80ffb26b0b339b498ccedd0aa18e9754aacf79abc70eb2ea3a",
+      "second_binary_sha256": "8d417292b01de24aff9ca8a7e05f05a819150dc5062f1b7df5e1a4aebfa0572c",
+      "matching_scenarios": 47,
+      "summary": {
+        "positive_cases": 39,
+        "negative_cases": 8,
+        "trials": 423,
+        "engines": [
+          {
+            "engine": "mim",
+            "title": "First engine: MIM only",
+            "valid": 35,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.641495762,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "mim_astar",
+            "title": "First MIM+A*",
+            "valid": 36,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 1.537135624,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "quick2",
+            "title": "Quick2",
+            "valid": 35,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.176073427,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "atlas",
+            "title": "Atlas",
+            "valid": 36,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.865933901,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "original",
+            "title": "Quick",
+            "valid": 28,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.792254116,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "quick",
+            "title": "Standard",
+            "valid": 35,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.671547748,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "alternative",
+            "title": "Alternative",
+            "valid": 35,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 1.201069744,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "main",
+            "title": "Professional",
+            "valid": 20,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 4.91523163,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "mim_coastal",
+            "title": "Second MIM+coastal A*",
+            "valid": 33,
+            "cases": 39,
+            "real_valid": 0,
+            "real_cases": 0,
+            "median_seconds": 0.339610042,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          }
+        ],
+        "paired": {
+          "second_only_vs_first": [],
+          "first_only_vs_second": [
+            "holyhead_dublin",
+            "offset_narrow",
+            "wind_reversal"
+          ],
+          "shared_completions": 33,
+          "second_earlier_by_over_one_second": [
+            "changing_weather",
+            "generated_0001",
+            "generated_0002",
+            "generated_0004",
+            "hadley_arrival",
+            "slalom",
+            "tidal_adverse"
+          ],
+          "second_later_by_over_one_second": [
+            "dateline_east",
+            "dateline_west",
+            "dead_downwind",
+            "favourable_current_jet",
+            "generated_0000",
+            "generated_0003",
+            "generated_0007",
+            "hadley_departure",
+            "island_chain",
+            "island_north_south",
+            "moving_storm",
+            "narrow_400m",
+            "provincetown_arrival",
+            "provincetown_departure",
+            "reach",
+            "tidal_east",
+            "u_trap",
+            "upwind",
+            "wait_gate",
+            "wait_gate_no_wait"
+          ],
+          "second_exclusive_vs_all_six_controls": []
+        }
+      }
+    },
+    "headless": {
+      "requested_deadline_seconds": 20,
+      "repeats": 1,
+      "cache": "cold",
+      "cpu": 4,
+      "unchanged_control_measurements_retained": true,
+      "controls_binary_sha256": "5183f798614dbb80ffb26b0b339b498ccedd0aa18e9754aacf79abc70eb2ea3a",
+      "second_binary_sha256": "8d417292b01de24aff9ca8a7e05f05a819150dc5062f1b7df5e1a4aebfa0572c",
+      "matching_scenarios": 65,
+      "summary": {
+        "positive_cases": 59,
+        "negative_cases": 6,
+        "trials": 130,
+        "engines": [
+          {
+            "engine": "mim_astar",
+            "title": "First MIM+A*",
+            "valid": 45,
+            "cases": 59,
+            "real_valid": 23,
+            "real_cases": 34,
+            "median_seconds": 1.400600453,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "mim_coastal",
+            "title": "Second MIM+coastal A*",
+            "valid": 27,
+            "cases": 59,
+            "real_valid": 6,
+            "real_cases": 34,
+            "median_seconds": 1.064872597,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          }
+        ],
+        "paired": {
+          "second_only_vs_first": [
+            "headless_lab_holyhead_conwy_f",
+            "headless_real_cape-hout"
+          ],
+          "first_only_vs_second": [
+            "headless_lab_full_polar_range",
+            "headless_lab_reach_full_polar_range",
+            "headless_real_holyhead-calf-12",
+            "headless_real_holyhead-calf-18",
+            "headless_real_holyhead-calf-6",
+            "headless_real_holyhead-conwy-480",
+            "headless_real_holyhead-conwy-510",
+            "headless_real_holyhead-conwy-540",
+            "headless_real_holyhead-conwy-570",
+            "headless_real_holyhead-conwy-600",
+            "headless_real_holyhead-conwy-660",
+            "headless_real_holyhead-conwy-720",
+            "headless_real_holyhead-douglas-12",
+            "headless_real_holyhead-douglas-18",
+            "headless_real_holyhead-douglas-6",
+            "headless_real_holyhead-peel-12",
+            "headless_real_holyhead-peel-18",
+            "headless_real_holyhead-peel-6",
+            "headless_real_hout-simonstown",
+            "headless_real_kaneohe-hanalei"
+          ],
+          "shared_completions": 25,
+          "second_earlier_by_over_one_second": [
+            "headless_lab_dublin_full_margin_f",
+            "headless_lab_harbour_margin_rejected_f",
+            "headless_lab_high_latitude",
+            "headless_lab_holyhead_conwy_c",
+            "headless_lab_holyhead_dublin_f",
+            "headless_lab_reach_west",
+            "headless_lab_variable_wind",
+            "headless_real_farallon-pinole",
+            "headless_real_holyhead-conwy-360",
+            "headless_real_holyhead-conwy-420",
+            "headless_real_pinole-farallon"
+          ],
+          "second_later_by_over_one_second": [
+            "headless_lab_buffered_island",
+            "headless_lab_buffered_island_reverse",
+            "headless_lab_dateline_east",
+            "headless_lab_dateline_west",
+            "headless_lab_holyhead_dublin_c",
+            "headless_lab_island_detour",
+            "headless_lab_tonga_offshore_f",
+            "headless_lab_upwind"
+          ]
+        }
+      }
+    },
+    "tonga": {
+      "requested_deadline_seconds": 20,
+      "repeats": 1,
+      "cache": "cold",
+      "cpu": 4,
+      "unchanged_control_measurements_retained": true,
+      "controls_binary_sha256": "5183f798614dbb80ffb26b0b339b498ccedd0aa18e9754aacf79abc70eb2ea3a",
+      "second_binary_sha256": "8d417292b01de24aff9ca8a7e05f05a819150dc5062f1b7df5e1a4aebfa0572c",
+      "matching_scenarios": 3,
+      "summary": {
+        "positive_cases": 3,
+        "negative_cases": 0,
+        "trials": 12,
+        "engines": [
+          {
+            "engine": "mim_astar",
+            "title": "First MIM+A*",
+            "valid": 1,
+            "cases": 3,
+            "real_valid": 1,
+            "real_cases": 3,
+            "median_seconds": 2.341884676,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "quick2",
+            "title": "Quick2",
+            "valid": 3,
+            "cases": 3,
+            "real_valid": 3,
+            "real_cases": 3,
+            "median_seconds": 2.402398384,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "atlas",
+            "title": "Atlas",
+            "valid": 3,
+            "cases": 3,
+            "real_valid": 3,
+            "real_cases": 3,
+            "median_seconds": 2.437057602,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          },
+          {
+            "engine": "mim_coastal",
+            "title": "Second MIM+coastal A*",
+            "valid": 1,
+            "cases": 3,
+            "real_valid": 1,
+            "real_cases": 3,
+            "median_seconds": 1.25737643,
+            "negative_acceptances": 0,
+            "process_errors": 0
+          }
+        ],
+        "paired": {
+          "second_only_vs_first": [],
+          "first_only_vs_second": [],
+          "shared_completions": 1,
+          "second_earlier_by_over_one_second": [
+            "tonga_screenshot_lalona_uoleva"
+          ],
+          "second_later_by_over_one_second": []
+        }
+      }
+    }
+  },
+  "additional_six_control_checks": [
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "quick2",
+      "valid": false,
+      "seconds": 2.842838746
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "atlas",
+      "valid": false,
+      "seconds": 1.467326446
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "original",
+      "valid": true,
+      "seconds": 4.271339709
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "quick",
+      "valid": true,
+      "seconds": 0.602295613
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "alternative",
+      "valid": false,
+      "seconds": 9.348001451
+    },
+    {
+      "case": "headless_lab_holyhead_conwy_f",
+      "engine": "main",
+      "valid": false,
+      "seconds": 20.03353865
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "quick2",
+      "valid": false,
+      "seconds": 0.078228708
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "atlas",
+      "valid": false,
+      "seconds": 3.051968036
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "original",
+      "valid": true,
+      "seconds": 0.130348454
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "quick",
+      "valid": false,
+      "seconds": 0.551882814
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "alternative",
+      "valid": false,
+      "seconds": 0.002826507
+    },
+    {
+      "case": "headless_real_cape-hout",
+      "engine": "main",
+      "valid": true,
+      "seconds": 19.446290726
+    }
+  ],
+  "source_sha256": {
+    "CMakeLists.txt": "bf274c6d006dd175a144f56f476f932fc45c00b75bd763e971b84aeec6ce4575",
+    "include/mim_coastal/Router.h": "9ae62e85701fa606b7a12ef7e5eccbd517eb01fab1d1e8dac234734098eae3af",
+    "src/GeographyHints.h": "f538c8190cf462d7637317bf66a551e30d36d70854aa89dbb2efd5e53831d77d",
+    "src/Router.cpp": "be58be60a8598220b17da23cf2d6b2ad2e4f99866ed7705b06db569ae5c380c6",
+    "src/SearchStorage.h": "30e6f6ae80f31930d5ef20f8e315c258f6bfc1be4cbd2d3eead0372345c72c3f",
+    "tests/Contracts.cpp": "3382ddfbce900ffb79165851782e21e93865a4b7962e5101933d188a256872d9",
+    "tools/analyze.py": "d259f37028739e60f3066d1865f735608c0b29a19431a60a1e4db49dfb760819",
+    "tools/check_baseline.py": "131daf8607d22790dca424672c89aaf74414f29f0e7c9049a065580c26713ae9",
+    "tools/generate_runner.py": "1160115a47be591f34dd450c01e516fc25d7922cc29fffef3a9f54dcf8473fe3",
+    "tools/prepare_case.py": "4f1f96ca183d5ca8ca849950a8363d70b481d6bb0715f289bbb19da304c80315",
+    "tools/run_comparison.py": "1519ae944899899fd21e3508d6a9e56cc499f6314956405cbe145f18ae6bc2c6",
+    "tools/shoreline_files.py": "d83aedd8b4eee0da40b4e1c0602f6621ba6db023274df55674e69083ab88057a"
+  },
+  "source_archive_adapter_smoke": "passed"
+}
