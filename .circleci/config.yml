@@ -11,8 +11,8 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Compare clean host and plugin shutdown on wxWidgets 3.3.4
-          command: python ci/diagnose-windows-shutdown.py
+          name: Capture the stock wxWidgets 3.3.4 host shutdown backtrace
+          command: python ci/debug-host-shutdown.py
           no_output_timeout: 15m
       - store_artifacts:
           path: shutdown-artifacts
