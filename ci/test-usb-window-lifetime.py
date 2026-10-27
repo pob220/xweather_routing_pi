@@ -63,7 +63,7 @@ for version, filename in [('3.2.9', 'windows64-sdk.json'), ('3.3.4', 'windows64-
     family = '32' if version == '3.2.9' else '334'
     build = ROOT / ('usb-build-' + family)
     subprocess.run(['cmake', '-S', project, '-B', build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
-                    '-DCORE=' + str(CORE), '-DBASELINE=' + str(baseline), '-DWX=' + str(wx),
+                    '-DCORE=' + CORE.as_posix(), '-DBASELINE=' + baseline.as_posix(), '-DWX=' + wx.as_posix(),
                     '-DFAMILY=' + family], check=True)
     subprocess.run(['cmake', '--build', build, '--config', 'Release', '--parallel', '4'], check=True)
     env = dict(os.environ, PATH=str(wx / 'lib/vc14x_x64_dll') + os.pathsep + os.environ['PATH'])
@@ -73,7 +73,7 @@ for version, filename in [('3.2.9', 'windows64-sdk.json'), ('3.3.4', 'windows64-
         label = version + '-' + variant + '-' + str(expected_success)
         run = subprocess.run([build / 'Release' / ('usb_' + variant + '.exe'),
                               '--gtest_filter=' + test_filter,
-                              '--gtest_output=xml:' + str(OUT / (label + '.xml'))],
+                              '--gtest_output=xml:' + str(OUT / (label + '.xml')) if expected_success else '--gtest_catch_exceptions=1'],
                              text=True, capture_output=True, env=env, timeout=30)
         (OUT / (label + '.log')).write_text(run.stdout + run.stderr)
         print(run.stdout + run.stderr, flush=True)

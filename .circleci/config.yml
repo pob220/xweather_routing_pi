@@ -1,6 +1,7 @@
 version: 2.1
 parameters:
   run_workflow_deploy: {type: boolean, default: false}
+  run_full_host: {type: boolean, default: false}
 orbs:
   win: circleci/windows@5.1.0
 jobs:
@@ -34,7 +35,7 @@ jobs:
           command: ci\build-fixed-host.bat deps
           no_output_timeout: 30m
       - save_cache:
-          key: core-wx334-dependencies-v1
+          key: core-wx334-dependencies-v1-{{ epoch }}
           paths: [core-source/cache]
       - run:
           name: Build OpenCPN and test window-close, remote quit, routing and reinstall
@@ -45,4 +46,7 @@ jobs:
       - store_test_results: {path: shutdown-artifacts}
 workflows:
   qualify-core-fix:
-    jobs: [watcher-regression, fixed-host]
+    jobs: [watcher-regression]
+  full-core-fix:
+    when: << pipeline.parameters.run_full_host >>
+    jobs: [fixed-host]
