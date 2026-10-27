@@ -61,6 +61,12 @@ results = []
 for portable, weather, grib in [(False, False, False), (False, False, True),
                                 (False, True, False), (False, True, True),
                                 (True, False, False), (True, True, True)]:
+    plugin = HOST / 'plugins/weather_routing_pi.dll'
+    removed = HOST / 'weather_routing_pi.disabled'
+    if not weather and plugin.exists():
+        plugin.rename(removed)
+    elif weather and removed.exists():
+        removed.rename(plugin)
     label = ('portable' if portable else 'normal') + '-weather' + str(int(weather)) + '-grib' + str(int(grib))
     case = OUT / label
     case.mkdir()
@@ -92,7 +98,7 @@ for portable, weather, grib in [(False, False, False), (False, False, True),
         path = location / filename
         if path.exists():
             shutil.copy2(path, case / filename)
-    record = dict(case=label, exit_code=code, quit_exit_code=quit_result.returncode)
+    record = dict(case=label, exit_code=code, quit_exit_code=quit_result.returncode, weather_dll_present=plugin.exists())
     results.append(record)
     print(json.dumps(record), flush=True)
     (OUT / 'controls.json').write_text(json.dumps(results, indent=2))
