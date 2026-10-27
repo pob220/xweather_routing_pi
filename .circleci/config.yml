@@ -12,7 +12,8 @@ jobs:
       - checkout
       - run:
           name: Reproduce the old watcher bug and verify the fix with wxWidgets 3.2.9 and 3.3.4
-          command: python ci/test-usb-window-lifetime.py
+          shell: cmd.exe
+          command: ci\build-fixed-host.bat regression
           no_output_timeout: 15m
       - store_artifacts: {path: shutdown-artifacts}
       - store_test_results: {path: shutdown-artifacts}
