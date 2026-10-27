@@ -4,18 +4,44 @@ parameters:
 orbs:
   win: circleci/windows@5.1.0
 jobs:
-  shutdown-diagnostics:
+  watcher-regression:
     executor:
       name: win/server-2022
       shell: bash.exe
     steps:
       - checkout
       - run:
-          name: Capture the stock wxWidgets 3.3.4 host shutdown backtrace
-          command: python ci/debug-host-shutdown.py
+          name: Reproduce the old watcher bug and verify the fix with wxWidgets 3.2.9 and 3.3.4
+          command: python ci/test-usb-window-lifetime.py
           no_output_timeout: 15m
-      - store_artifacts:
-          path: shutdown-artifacts
+      - store_artifacts: {path: shutdown-artifacts}
+      - store_test_results: {path: shutdown-artifacts}
+  fixed-host:
+    executor:
+      name: win/server-2022
+      shell: bash.exe
+    steps:
+      - checkout
+      - run:
+          name: Prepare the pinned official OpenCPN source and USB lifetime fix
+          command: python ci/prepare-core-fix.py
+      - restore_cache:
+          keys: [core-wx334-dependencies-v1]
+      - run:
+          name: Prepare official core build dependencies
+          shell: cmd.exe
+          command: ci\build-fixed-host.bat deps
+          no_output_timeout: 30m
+      - save_cache:
+          key: core-wx334-dependencies-v1
+          paths: [core-source/cache]
+      - run:
+          name: Build OpenCPN and test window-close, remote quit, routing and reinstall
+          shell: cmd.exe
+          command: ci\build-fixed-host.bat all
+          no_output_timeout: 45m
+      - store_artifacts: {path: shutdown-artifacts}
+      - store_test_results: {path: shutdown-artifacts}
 workflows:
-  diagnose:
-    jobs: [shutdown-diagnostics]
+  qualify-core-fix:
+    jobs: [watcher-regression, fixed-host]

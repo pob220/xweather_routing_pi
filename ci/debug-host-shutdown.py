@@ -15,9 +15,9 @@ import urllib.request
 
 assert sys.platform == 'win32' and os.environ.get('CIRCLECI') == 'true'
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'shutdown-artifacts'
-OUT.mkdir()
-HOST = ROOT / '.debug-host'
+OUT = Path(os.environ.get('WR_DEBUG_OUTPUT', str(ROOT / 'shutdown-artifacts')))
+OUT.mkdir(parents=True, exist_ok=True)
+HOST = Path(os.environ.get('WR_DEBUG_EXISTING_HOST', str(ROOT / '.debug-host')))
 PIN = json.loads((ROOT / 'ci/windows64-wx334-sdk.json').read_text())
 ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
 
@@ -28,19 +28,20 @@ def download(url, path, checksum):
     assert hashlib.sha256(path.read_bytes()).hexdigest() == checksum, str(path)
 
 
-archive = ROOT / 'host.exe'
-download(PIN['host_url'], archive, PIN['host_sha256'])
-subprocess.run(['7z', 'x', '-y', '-o' + str(HOST), archive], check=True,
-               stdout=subprocess.DEVNULL)
-# No third-party plugin is downloaded or installed in this control.
-assert not (HOST / 'plugins/weather_routing_pi.dll').exists()
-host_symbols = ROOT / 'host-symbols.tar.gz'
-download('https://dl.cloudsmith.io/public/david-register/opencpn-unstable/raw/files/opencpn+79.02cf5334.pdb.tar.gz',
-         host_symbols, 'd67ff467945c3fd98a8fceb9c233571a8f5966b354ff7938934049f65f07e5b7')
-with tarfile.open(host_symbols) as archive:
-    matches = [entry for entry in archive.getmembers() if Path(entry.name).name == 'opencpn.pdb']
-    assert len(matches) == 1
-    (HOST / 'opencpn.pdb').write_bytes(archive.extractfile(matches[0]).read())
+if not os.environ.get('WR_DEBUG_EXISTING_HOST'):
+    archive = ROOT / 'host.exe'
+    download(PIN['host_url'], archive, PIN['host_sha256'])
+    subprocess.run(['7z', 'x', '-y', '-o' + str(HOST), archive], check=True,
+                   stdout=subprocess.DEVNULL)
+    # No third-party plugin is downloaded or installed in this control.
+    assert not (HOST / 'plugins/weather_routing_pi.dll').exists()
+    host_symbols = ROOT / 'host-symbols.tar.gz'
+    download('https://dl.cloudsmith.io/public/david-register/opencpn-unstable/raw/files/opencpn+79.02cf5334.pdb.tar.gz',
+             host_symbols, 'd67ff467945c3fd98a8fceb9c233571a8f5966b354ff7938934049f65f07e5b7')
+    with tarfile.open(host_symbols) as archive:
+        matches = [entry for entry in archive.getmembers() if Path(entry.name).name == 'opencpn.pdb']
+        assert len(matches) == 1
+        (HOST / 'opencpn.pdb').write_bytes(archive.extractfile(matches[0]).read())
 wx_symbols = ROOT / 'wx-symbols.7z'
 download('https://github.com/wxWidgets/wxWidgets/releases/download/v3.3.4/wxMSW-3.3.4_vc14x_x64_ReleasePDB.7z',
          wx_symbols, 'a91c3b8a71d963c6a16417dfd89e96f3dfc8fcffebd8da9916ace45d1f7d366f')
@@ -80,7 +81,7 @@ def quit_when_ready():
         log = config_dir / 'opencpn.log'
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
-            if log.is_file() and 'Initialization complete' in log.read_text(errors='replace'):
+            if log.is_file() and 'Finalize Canvases' in log.read_text(errors='replace'):
                 break
             time.sleep(1)
         time.sleep(5)

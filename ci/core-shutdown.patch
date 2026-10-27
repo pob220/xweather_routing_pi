@@ -1,0 +1,139 @@
+diff --git a/model/include/model/win_usb_watch.h b/model/include/model/win_usb_watch.h
+index ff9358b..0ba2437 100644
+--- a/model/include/model/win_usb_watch.h
++++ b/model/include/model/win_usb_watch.h
+@@ -28,6 +28,9 @@
+ #include <winsock2.h>
+ #include <windows.h>
+ 
++#include <wx/frame.h>
++#include <wx/weakref.h>
++
+ #include "model/usb_watch_daemon.h"
+ 
+ /**
+@@ -37,12 +40,14 @@
+  */
+ class WinUsbWatchDaemon : public UsbWatchDaemon {
+ public:
+-  WinUsbWatchDaemon(SystemEvents& se) : UsbWatchDaemon(se), m_frame(0) {}
++  WinUsbWatchDaemon(SystemEvents& se) : UsbWatchDaemon(se) {}
+   virtual ~WinUsbWatchDaemon() = default;
+ 
+   void Start();
+   void Stop();
+ 
+ private:
+-  wxFrame* m_frame;
++  // The parent or wxWidgets shutdown can destroy the hidden listener before
++  // MyApp::OnExit() stops the daemon. Do not retain a dangling window pointer.
++  wxWeakRef<wxFrame> m_frame;
+ };
+diff --git a/model/src/win_usb_watch.cpp b/model/src/win_usb_watch.cpp
+index a0f9c62..3eb6c21 100644
+--- a/model/src/win_usb_watch.cpp
++++ b/model/src/win_usb_watch.cpp
+@@ -30,7 +30,6 @@
+ #include <wx/log.h>
+ #include <wx/window.h>
+ 
+-#include "model/gui.h"
+ #include "model/sys_events.h"
+ #include "model/win_usb_watch.h"
+ 
+@@ -57,7 +56,7 @@ void WinUsbWatchDaemon::Start() {
+ }
+ 
+ void WinUsbWatchDaemon::Stop() {
+-  if (!m_frame) return;
+-  delete m_frame;
+-  m_frame = 0;
++  wxFrame* frame = m_frame.get();
++  m_frame = nullptr;
++  delete frame;
+ }
+diff --git a/test/CMakeLists.txt b/test/CMakeLists.txt
+index 2304cc2..f3cc7c9 100644
+--- a/test/CMakeLists.txt
++++ b/test/CMakeLists.txt
+@@ -146,6 +146,16 @@ include(GoogleTest)
+ gtest_add_tests(TARGET tests)
+ gtest_add_tests(TARGET buffer_tests)
+ 
++if (MSVC)
++  add_executable(win_usb_watch_tests win_usb_watch_tests.cpp
++                 ${MODEL_SRC_DIR}/win_usb_watch.cpp)
++  target_include_directories(win_usb_watch_tests
++                             PRIVATE ${CMAKE_SOURCE_DIR}/model/include)
++  target_link_libraries(win_usb_watch_tests PRIVATE observable::observable
++                        ocpn::gtest ${wxWidgets_LIBRARIES})
++  gtest_add_tests(TARGET win_usb_watch_tests)
++endif ()
++
+ if (LINUX AND NOT DEFINED ENV{FLATPAK_ID} AND NOT OCPN_DISTRO_BUILD)
+   # We don't have a session bus available when testing flatpak
+   # so these can just be run in native builds.
+diff --git a/test/win_usb_watch_tests.cpp b/test/win_usb_watch_tests.cpp
+new file mode 100644
+index 0000000..5903465
+--- /dev/null
++++ b/test/win_usb_watch_tests.cpp
+@@ -0,0 +1,58 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#include <wx/app.h>
++#include <wx/frame.h>
++
++#include <gtest/gtest.h>
++
++#include "model/sys_events.h"
++#include "model/win_usb_watch.h"
++
++class UsbWatchTestApp : public wxApp {
++public:
++  bool OnInit() override { return true; }
++};
++
++wxIMPLEMENT_APP_NO_MAIN(UsbWatchTestApp);
++
++TEST(WinUsbWatch, RepeatedStartAndStop) {
++  auto* parent = new wxFrame(nullptr, wxID_ANY, "USB watcher test");
++  wxTheApp->SetTopWindow(parent);
++  WinUsbWatchDaemon daemon(SystemEvents::GetInstance());
++  const auto children = parent->GetChildren().GetCount();
++  daemon.Start();
++  daemon.Start();
++  EXPECT_EQ(parent->GetChildren().GetCount(), children + 1);
++  daemon.Stop();
++  daemon.Stop();
++  EXPECT_EQ(parent->GetChildren().GetCount(), children);
++  delete parent;
++  wxTheApp->SetTopWindow(nullptr);
++}
++
++TEST(WinUsbWatch, ParentDestructionBeforeStopAndRestart) {
++  WinUsbWatchDaemon daemon(SystemEvents::GetInstance());
++  for (int i = 0; i < 3; ++i) {
++    auto* parent = new wxFrame(nullptr, wxID_ANY, "USB watcher parent");
++    wxTheApp->SetTopWindow(parent);
++    daemon.Start();
++    // wxWidgets 3.3 destroys the application's windows before OnExit(),
++    // where OpenCPN calls Stop(). The parent owns this hidden child frame.
++    delete parent;
++    wxTheApp->SetTopWindow(nullptr);
++    daemon.Stop();
++    daemon.Stop();
++  }
++}
++
++int main(int argc, char** argv) {
++  ::testing::InitGoogleTest(&argc, argv);
++  if (!wxEntryStart(argc, argv)) return 1;
++  if (!wxTheApp->CallOnInit()) {
++    wxEntryCleanup();
++    return 1;
++  }
++  const int result = RUN_ALL_TESTS();
++  wxTheApp->OnExit();
++  wxEntryCleanup();
++  return result;
++}
