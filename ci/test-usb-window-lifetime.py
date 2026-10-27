@@ -60,7 +60,8 @@ for version, filename in [('3.2.9', 'windows64-sdk.json'), ('3.3.4', 'windows64-
             shutil.copyfileobj(response, target)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == checksum
         subprocess.run(['7z', 'x', '-y', '-o' + str(wx), path], check=True, stdout=subprocess.DEVNULL)
-    family = '32' if version == '3.2.9' else '334'
+    # wx3.3.4 names its import libraries by series (33), its DLLs by patch (334).
+    family = '32' if version == '3.2.9' else '33'
     build = ROOT / ('usb-build-' + family)
     subprocess.run(['cmake', '-S', project, '-B', build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
                     '-DCORE=' + CORE.as_posix(), '-DBASELINE=' + baseline.as_posix(), '-DWX=' + wx.as_posix(),
