@@ -8,6 +8,8 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
+from windows_pe_fixture import pe_image
+
 
 spec = importlib.util.spec_from_file_location(
     "prepare", Path(__file__).parents[1] / "prepare-alpha-artifacts.py")
@@ -29,7 +31,8 @@ class AlphaArtifacts(unittest.TestCase):
                    "libxweather_routing_pi.dylib" if name == "macos-arm64" else
                    "libxweather_routing_pi.so")
         with tarfile.open(archive, "w:gz") as package:
-            content = b"fixture"
+            content = (pe_image("32" if name.endswith("wx329") else "334")
+                       if name.startswith("windows-x64") else b"fixture")
             member = tarfile.TarInfo(f"plugin/lib/{library}")
             member.size = len(content)
             package.addfile(member, io.BytesIO(content))
@@ -104,20 +107,20 @@ class AlphaArtifacts(unittest.TestCase):
                           embedded.findtext("tarball-url"))
             self.assertNotIn("--pkg_repo--", embedded.findtext("tarball-url"))
 
-    def test_wx334_download_cannot_collide_with_the_wx32_catalogue_package(self):
+    def test_legacy_wx329_download_cannot_collide_with_the_wx334_catalogue_package(self):
         for name in prepare.TARGETS:
             self.pair(name)
-        directory, _, _ = self.pair('windows-x64-wx334')
+        directory, _, _ = self.pair('windows-x64-wx329')
         compatibility = self.root / 'compatibility'
         compatibility.mkdir()
         directory.parent.rename(compatibility / directory.parent.name)
         output = self.root / 'release'
-        prepare.prepare(self.root / 'artifacts', output, 'abcdef1', '23', compatibility)
+        prepare.prepare(self.root / 'artifacts', output, 'abcdef1', '23', compatibility_root=compatibility)
         uploads = json.loads((output / 'uploads.json').read_text())
         self.assertEqual(len({item['name'] for item in uploads}), len(uploads))
         supplemental = [item for item in uploads if not item['catalogue']]
         self.assertEqual(len(supplemental), 2)
-        self.assertTrue(all(Path(item['file']).parent == output / 'windows-x64-wx334'
+        self.assertTrue(all(Path(item['file']).parent == output / 'windows-x64-wx329'
                             for item in supplemental))
         # Ordinary catalogue readers enumerate only the top-level metadata.
         self.assertEqual(len(list(output.glob('*.xml'))), len(prepare.TARGETS))
@@ -129,19 +132,19 @@ class AlphaArtifacts(unittest.TestCase):
         output = self.root / 'release'
         with self.assertRaisesRegex(ValueError, 'compatibility matrix'):
             prepare.prepare(self.root / 'artifacts', output, 'abcdef1', '23',
-                            self.root / 'compatibility')
+                            compatibility_root=self.root / 'compatibility')
         self.assertFalse(output.exists())
 
     def test_compatibility_variant_must_have_the_same_release_version(self):
         for name in prepare.TARGETS:
             self.pair(name)
-        directory, _, _ = self.pair('windows-x64-wx334', version='1.18.4')
+        directory, _, _ = self.pair('windows-x64-wx329', version='1.18.4')
         compatibility = self.root / 'compatibility'
         compatibility.mkdir()
         directory.parent.rename(compatibility / directory.parent.name)
         output = self.root / 'release'
         with self.assertRaisesRegex(ValueError, 'Mixed versions'):
-            prepare.prepare(self.root / 'artifacts', output, 'abcdef1', '23', compatibility)
+            prepare.prepare(self.root / 'artifacts', output, 'abcdef1', '23', compatibility_root=compatibility)
         self.assertFalse(output.exists())
 
 
