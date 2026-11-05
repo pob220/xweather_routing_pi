@@ -5,7 +5,7 @@ version: 2.1
 parameters:
   run_workflow_deploy:
     type: boolean
-    default: true
+    default: false
   run_windows_only:
     type: boolean
     default: false

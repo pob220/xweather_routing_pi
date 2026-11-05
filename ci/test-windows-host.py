@@ -17,9 +17,10 @@ import xml.etree.ElementTree as ET
 def test(host, archive_path, output, source):
     host = host.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    package = 'xweather_routing_pi'
     with tarfile.open(archive_path) as archive:
         metadata = ET.fromstring(archive.extractfile('metadata.xml').read())
+        package = ('xweather_routing_pi' if metadata.findtext('name').strip() ==
+                   'xWeatherRouting' else 'weather_routing_pi')
         major, minor, _ = metadata.findtext('version').strip().split('.')
         config_version = int(major) * 100 + int(minor)
         for member in archive.getmembers():
@@ -50,7 +51,7 @@ def test(host, archive_path, output, source):
         '[Settings]\nConfigVersionString=Version ' + full_version + ' Build ' + build_date + '\n'
         'NavMessageShown=1\nOpenGL=0\nDisableOpenGL=1\nShowMenuBar=1\n'
         '[PlugIns/grib_pi.dll]\nbEnabled=1\n'
-        '[PlugIns/xweather_routing_pi.dll]\nbEnabled=1\n'
+        '[PlugIns/' + package + '.dll]\nbEnabled=1\n'
         # A CI profile has no customised boat/polar data to migrate. Record
         # the current data version so its interactive migration choice does
         # not block the scenario inside WeatherRouting's constructor.
