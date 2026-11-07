@@ -51,8 +51,8 @@ jobs:
             .windows-deps/binary-cache
             .windows-deps/vcpkg/downloads
           key: wr-v2-msvc2022-release-${{ hashFiles('ci/windows-generator/vcpkg.json', 'ci/vcpkg-triplets/**', 'ci/vcpkg-overlay-ports/**') }}
-      - name: Build, test and stage independent GRIB helper
-        run: python ci/build-windows-generator.py
+      - name: Prepare scientific dependencies
+        run: python ci/build-windows-generator.py --dependencies-only
       - uses: actions/cache/save@v4
         if: always() && steps.dependencies.outputs.cache-hit != 'true'
         with:
@@ -60,6 +60,8 @@ jobs:
             .windows-deps/binary-cache
             .windows-deps/vcpkg/downloads
           key: ${{ steps.dependencies.outputs.cache-primary-key }}
+      - name: Build, test and stage independent GRIB helper
+        run: python ci/build-windows-generator.py
       - uses: actions/upload-artifact@v4
         with:
           name: windows-generator-stage

@@ -3,6 +3,7 @@
 Run from an x64 VS 2022 developer prompt. Dependencies live in .windows-deps,
 with an immutable vcpkg checkout and a release-only dynamic triplet.
 """
+import argparse
 import hashlib
 import json
 import os
@@ -25,6 +26,10 @@ def run(*args, **kwargs):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--dependencies-only', action='store_true',
+                        help='Prepare/cache dependencies before the helper build')
+    args = parser.parse_args()
     visual_studio = select_msvc()
     WORK.mkdir(parents=True, exist_ok=True)
     (WORK / 'binary-cache').mkdir(exist_ok=True)
@@ -50,6 +55,9 @@ def main():
     dependencies = subprocess.check_output([str(vcpkg / 'vcpkg.exe'), 'list',
                                            '--x-install-root=' + str(installed)], text=True)
     (logs / 'dependencies.txt').write_text(dependencies, encoding='utf-8')
+    if args.dependencies_only:
+        print('Windows scientific dependencies ready', flush=True)
+        return
     prefix = installed / TRIPLET
     env = dict(os.environ, PATH=str(prefix / 'bin') + os.pathsep + os.environ['PATH'],
                ECCODES_DEFINITION_PATH=str(prefix / 'share/eccodes/definitions'),
