@@ -21,6 +21,8 @@ cd /d C:\src\xwr
 python ci\circleci-build-windows64.py
 ```
 
+Use the recursive clone above: GitHub's Download ZIP omits `opencpn-libs`.
+
 The script fetches checksum-pinned SDK/host archives, builds import libraries
 from the matched x64 host, builds the GRIB helper and plugin separately, runs
 their tests, packages them, and calculates an offline route in an extracted

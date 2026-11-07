@@ -215,8 +215,14 @@ project(${PACKAGE})
 # same feature-test contract.
 if(MSVC)
   add_compile_options(/Zc:__cplusplus)
+endif()
+if(WIN32)
   # Windows headers otherwise rewrite std::min/max and numeric_limits::max.
   add_compile_definitions(NOMINMAX)
+  if(MSVC)
+    # Labels and boat/polar metadata use UTF-8 regardless of the build locale.
+    add_compile_options(/utf-8)
+  endif()
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
