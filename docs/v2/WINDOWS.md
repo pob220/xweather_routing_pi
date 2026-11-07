@@ -1,8 +1,35 @@
 # Windows x64 source builds for 2.0.0
 
-Use `feature/xweather-2.0.0` in `pob220/xweather_routing_pi`. This is the
+Use [feature/xweather-2.0.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.0.0)
+in `pob220/xweather_routing_pi`. This is the
 development line; version 1 remains the catalogue release. Native Windows
 qualification is recorded in [VALIDATION.md](VALIDATION.md).
+
+## Verified builds — 7 November 2026
+
+[Native Windows CI passed](https://github.com/pob220/xweather_routing_pi/actions/runs/42409887075)
+for source commit `743c443`, using both pinned x64 hosts:
+
+| OpenCPN host | wxWidgets | Artifact name |
+| --- | --- | --- |
+| 5.15.0, e41f0de | 3.3.4 | xWeatherRouting-2.0.0-windows-x64-wx3.3.4 |
+| 5.14.2, de7e706 | 3.2.9 | xWeatherRouting-2.0.0-windows-x64-wx3.2.9 |
+
+Each plugin build passed **627 enabled tests**, normal package import,
+shoreline routing with the original/quick/main engines, preservation of personal
+boats/polars on reinstall, and portable forecast-only, Climatology-only and
+forecast-expiry fallback routes. One existing timing comparison remains disabled.
+The helper passed 12 native tests and generated/read GRIB data with build
+dependencies removed from PATH. Its 36 executable/DLL images were checked as AMD64.
+
+The Windows package is approximately **36–37 MiB compressed** and **113 MiB of
+installed file contents**. Test hosts, build/dependency directories, forecasts
+and generated shoreline caches are additional to that plugin measurement.
+
+The run's artifacts contain the package and matching metadata under `package/`,
+plus checksums and test receipts. For a source build and a matching private test
+host, follow the commands below. Broader Windows UI/DPI, provider and custom-host
+testing remains useful; these are development packages for testing 2.0.0.
 
 ## Prerequisites
 
@@ -60,6 +87,8 @@ offline and deliberately makes no claim about a live provider's availability.
 The portable test host starts without your personal charts or waypoints.
 Add test charts/routes there if needed. Do not copy a plugin into a working
 installation merely to try the new UI.
+The generated profile retains the automated acceptance passages and test boat;
+the optional example passage selects the illustrative 40 ft monohull.
 
 Only disposable CI runners also test the normal OpenCPN CLI package import,
 first-run data installation, shoreline routes and preservation on reinstall.

@@ -1,9 +1,9 @@
-# Initial Linux qualification — 7 November 2026
+# Linux and Windows x64 qualification — 7 November 2026
 
-This records the first local x86-64 Linux build of 2.0.0, based on 1.36
-commit f2b78a7. It is separate from the stable plugin catalogue.
+This records local Linux and native Windows x64 validation of 2.0.0, based on
+1.36 commit f2b78a7. It is separate from the stable plugin catalogue.
 
-## Checks completed
+## Linux checks completed
 
 - Release build against stock API 1.22 headers, retaining the API 1.21 host
   contract; pinned static Jasper; private staged installation and TGZ package.
@@ -29,7 +29,7 @@ commit f2b78a7. It is separate from the stable plugin catalogue.
 - Hashes of the working launcher, working OpenCPN executable, working desktop
   entry and working 1.36 plugin were unchanged after testing.
 
-## Measured size
+## Measured Linux size
 
 The Linux archive is approximately **53.8 MiB**. Installed file contents total
 **134.0 MiB**; filesystem allocation on this laptop is approximately **159 MiB**.
@@ -50,10 +50,49 @@ comes from the independent GRIB service. Unused BUFR, aviation and GRIB3
 definitions are excluded. Dataset months are loaded lazily with a bounded cache;
 installed bytes are not a measure of startup memory consumption.
 
+## Windows x64 checks completed
+
+[Successful native CI run](https://github.com/pob220/xweather_routing_pi/actions/runs/42409887075)
+qualified source commit `743c443` against the checksum-pinned OpenCPN 5.15.0 /
+wxWidgets 3.3.4 and OpenCPN 5.14.2 / wxWidgets 3.2.9 hosts. Both report the
+`msvc-64:10` ABI. SDK/runtime byte checks and actual host/wx imported symbols
+were checked separately; that catalogue ABI label alone does not identify wx.
+
+- Both plugin builds passed 627 enabled CTest cases. The existing timing
+  comparison remains disabled. The independent GRIB helper passed 12 native
+  CTest cases and app-local runtime checks over 36 AMD64 executable/DLL images.
+- The helper generated and read GRIB data with only Windows System32 on PATH,
+  using bundled DLLs, ecCodes definitions/samples and PROJ data. Checks were
+  repeated on the archived package and after normal OpenCPN package import.
+- The stock OpenCPN CLI imported each package. All 792 bundled data assets,
+  36 translation catalogs and help were verified. Original, quick and main
+  engines completed offshore and shoreline routes, followed by a successful
+  reinstall/restart preserving personal boat and polar changes.
+- Each portable host completed forecast-only, bundled-Climatology-only and
+  short-forecast expiry/fallback routes. The latter two explicitly reported
+  Climatology wind use. Native tests load the v2 reader directly.
+- Private boats, polars, preferences and shoreline caches use the version 2
+  namespace. Acceptance found and corrected the inherited shoreline cache
+  directory, and wx 3.3 uses the public array API to avoid private STL imports
+  absent from the prebuilt SDK.
+- All 52 dataset output checksums survived a simulated Windows autocrlf
+  checkout, and native CMake retained the strict dataset checksum checks.
+
+| Windows wx SDK | Compressed archive | Installed file contents |
+| --- | ---: | ---: |
+| 3.3.4 | 36.47 MiB | 112.73 MiB |
+| 3.2.9 | 36.44 MiB | 112.69 MiB |
+
+These measurements exclude the host, source/build/dependency trees,
+downloaded forecasts and generated cache files. Instructions and artifact names
+are in [WINDOWS.md](WINDOWS.md). Developer scripts extract portable hosts; normal
+installation tests are restricted to disposable CI runners.
+
 ## Remaining qualification
 
-Windows and macOS dependency packaging, Android's generator adapter and touch
-workspace, the corresponding CI builds, and broader passage/provider testing
-remain before catalogue publication. This local validation does not qualify
-those platforms or claim the complete UI redesign is finished. The desktop
-generator and advanced editors retain parts of their existing interfaces.
+macOS dependency packaging, Android's generator adapter and touch workspace,
+Windows x86, additional/custom hosts, Windows UI/DPI review and broader live
+passage/provider testing remain before catalogue publication. Windows generator
+checks here are offline; Linux additionally exercised a live NOAA request.
+The desktop generator and advanced editors retain parts of their existing
+interfaces. Qualification does not claim the complete UI redesign is finished.
