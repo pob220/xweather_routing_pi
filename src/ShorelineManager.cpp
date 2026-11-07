@@ -76,7 +76,7 @@ std::filesystem::path Root() {
       !overridePath.empty())
     return Path(overridePath) / "2.3.7";
   return Path(*GetpPrivateApplicationDataLocation()) / "plugins" /
-         "weather_routing" / "shoreline" / "2.3.7";
+         "xweather_routing_v2" / "shoreline" / "2.3.7";
 }
 std::filesystem::path Archive(const Spec& s) {
   if (!Bundled(s)) return {};

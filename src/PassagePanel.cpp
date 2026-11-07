@@ -303,7 +303,14 @@ void PassagePanel::RefreshPassage() {
     if (item->routemapoverlay == current) selected = index;
     ++index;
   }
-  if (passages_->GetStrings() != names) passages_->Set(names);
+  // wx 3.3 exports its string vector from the toolkit DLL. Comparing that
+  // vector with newer MSVC STL helpers can import symbols absent from the
+  // matched SDK. Compare via the stable wx array API instead.
+  const auto displayed = passages_->GetStrings();
+  bool sameNames = displayed.GetCount() == names.GetCount();
+  for (size_t i = 0; sameNames && i < names.GetCount(); ++i)
+    sameNames = displayed.Item(i) == names.Item(i);
+  if (!sameNames) passages_->Set(names);
   if (selected >= 0) passages_->SetSelection(selected);
   if (!current) return;
   const auto c = PlanningConfiguration(current->GetConfiguration());
