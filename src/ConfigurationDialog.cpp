@@ -339,7 +339,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
         "uncheck this and set Minimum Depth to 0 m."));
 
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
   m_cbUseExperimentalChartSafety->SetValue(
       (bool)pConf->Read(
           _T("UseExperimentalChartSafety"),
@@ -643,7 +643,7 @@ ConfigurationDialog::~ConfigurationDialog() {
     return;
   }
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
 
   wxPoint p = GetPosition();
   pConf->Write(_T ( "ConfigurationX" ), p.x);
@@ -2142,7 +2142,7 @@ void ConfigurationDialog::Update() {
   m_WeatherRouting.UpdateCurrentConfigurations();
 
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
   // Disabled stock-host controls show the effective state (off), but must not
   // erase preferences saved for a compatible enhanced host using the same
   // profile.
@@ -2204,7 +2204,7 @@ bool ConfigurationDialog::RunEngineHostContract() {
   passed &= m_cbAutoEngines[1]->IsChecked() && m_cbAutoEngines[2]->IsChecked() &&
             !m_cbAutoEngines[3]->IsChecked() && m_cbAllEngines[3]->IsChecked();
   if (auto* config = GetOCPNConfigObject())
-    passed &= config->ReadLong("/PlugIns/WeatherRouting/LastUsedConfiguration/AutoEngineMask", -1) ==
+    passed &= config->ReadLong("/PlugIns/xWeatherRouting2/LastUsedConfiguration/AutoEngineMask", -1) ==
               changed.EngineSettings.autoEngines;
   else passed = false;
   choose(m_cRoutingEngine, weather_routing::EngineSelection(weather_routing::RoutingEngine::Atlas));
@@ -2259,11 +2259,11 @@ bool ConfigurationDialog::RunComfortHostContract() {
   if (auto* config = GetOCPNConfigObject()) {
     passed =
         passed &&
-        config->ReadBool("/PlugIns/WeatherRouting/LastUsedConfiguration/ExploreComfortAlternatives",
+        config->ReadBool("/PlugIns/xWeatherRouting2/LastUsedConfiguration/ExploreComfortAlternatives",
                          false) &&
-        config->ReadLong("/PlugIns/WeatherRouting/LastUsedConfiguration/ComfortAdditionalPercent",
+        config->ReadLong("/PlugIns/xWeatherRouting2/LastUsedConfiguration/ComfortAdditionalPercent",
                          0) == 400 &&
-        config->ReadLong("/PlugIns/WeatherRouting/LastUsedConfiguration/ComfortMaximumSeconds",
+        config->ReadLong("/PlugIns/xWeatherRouting2/LastUsedConfiguration/ComfortMaximumSeconds",
                          0) == 3;
   } else
     passed = false;

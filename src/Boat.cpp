@@ -38,6 +38,73 @@ Boat::Boat() {}
 
 Boat::~Boat() {}
 
+wxString Boat::ImportXML(const wxString& source, const wxString& dataDirectory,
+                         wxString& importedPath) {
+  importedPath.clear();
+  TiXmlDocument doc;
+  if (!doc.LoadFile(source.utf8_str()) || !doc.RootElement() ||
+      strcmp(doc.RootElement()->Value(), "OpenCPNWeatherRoutingBoat"))
+    return _("Choose a Weather Routing boat XML file.");
+  struct Entry {
+    TiXmlElement* element;
+    wxString path;
+  };
+  std::vector<Entry> entries;
+  for (auto* e = doc.RootElement()->FirstChildElement("Polar"); e;
+       e = e->NextSiblingElement("Polar")) {
+    const char* attribute = e->Attribute("FileName");
+    if (!attribute) return _("A polar in this boat has no filename.");
+    wxString path = wxString::FromUTF8(attribute);
+    path.Replace("\\", wxFileName::GetPathSeparator());
+    const wxString parent = wxFileName(source).GetPathWithSep();
+    wxArrayString candidates;
+    if (wxFileName(path).IsAbsolute())
+      candidates.Add(path);
+    else {
+      candidates.Add(parent + path);
+      candidates.Add(parent + "../polars/" + path);
+      candidates.Add(dataDirectory + "/polars/" + path);
+    }
+    bool found = false;
+    for (const auto& candidate : candidates)
+      if (wxFileExists(candidate)) {
+        path = candidate;
+        found = true;
+        break;
+      }
+    if (!found) return _("Cannot locate this boat's polar: ") + path;
+    Polar polar;
+    wxString error;
+    if (!polar.Open(path, error)) return error;
+    entries.push_back({e, path});
+  }
+  if (entries.empty()) return _("This boat contains no polars.");
+  wxString id =
+      wxString::Format("import-%lld", wxGetUTCTimeMillis().GetValue());
+  while (wxDirExists(dataDirectory + "/polars/" + id)) id += "-1";
+  const wxString directory = dataDirectory + "/polars/" + id;
+  if ((!wxDirExists(directory) &&
+       !wxFileName::Mkdir(directory, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) ||
+      (!wxDirExists(dataDirectory + "/boats") &&
+       !wxFileName::Mkdir(dataDirectory + "/boats", wxS_DIR_DEFAULT,
+                          wxPATH_MKDIR_FULL)))
+    return _("Unable to create the imported boat's directory.");
+  int index = 0;
+  for (const auto& entry : entries) {
+    const wxString target = directory + "/" + wxString::Format("%d-", ++index) +
+                            wxFileName(entry.path).GetFullName();
+    if (!wxCopyFile(entry.path, target, false))
+      return _("Unable to copy polar: ") + entry.path;
+    entry.element->SetAttribute("FileName", target.utf8_str());
+    entry.element->RemoveAttribute("CrossOverContours");
+  }
+  const wxString target = dataDirectory + "/boats/" + id + ".xml";
+  if (!doc.SaveFile(target.utf8_str()))
+    return _("Unable to save the imported boat.");
+  importedPath = target;
+  return {};
+}
+
 wxString Boat::OpenXML(wxString filename, bool shortcut) {
   wxDateTime last_filetime = wxFileName(filename).GetModificationTime();
   /* shortcut if already loaded, and boat wasn't modified */

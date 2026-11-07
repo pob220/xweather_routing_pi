@@ -29,6 +29,8 @@
 class Boat {
 public:
   Boat();
+  static wxString ImportXML(const wxString& source, const wxString& dataDirectory,
+                            wxString& importedPath);
   ~Boat();
 
   wxString OpenXML(wxString filename, bool shortcut = true);

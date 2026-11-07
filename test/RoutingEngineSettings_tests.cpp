@@ -71,7 +71,7 @@ TEST(RoutingEngineSettings, FirstInstallAutoButUpgradePreservesEveryExistingSele
   EXPECT_EQ(existing.engine, wr::RoutingEngine::Main);
 }
 
-TEST(RoutingEngineSettings, BundledFirstInstallExamplesSelectAuto) {
+TEST(RoutingEngineSettings, FirstInstallStartsWithoutHistoricPassages) {
   TiXmlDocument document(WEATHER_ROUTING_SOURCE_DIR "/data/WeatherRoutingConfiguration.xml");
   ASSERT_TRUE(document.LoadFile());
   auto* root = document.RootElement();
@@ -82,7 +82,7 @@ TEST(RoutingEngineSettings, BundledFirstInstallExamplesSelectAuto) {
     EXPECT_EQ(wr::ReadRoutingEngineSettings(*element).engine, wr::RoutingEngine::Auto);
     ++configurations;
   }
-  EXPECT_GT(configurations, 0);
+  EXPECT_EQ(configurations, 0);
 }
 TEST(RoutingEngineSettings, AllThreeBlocksSurviveSwitchSaveReinstallAndIndependentReset) {
   wr::RoutingEngineSettings settings;

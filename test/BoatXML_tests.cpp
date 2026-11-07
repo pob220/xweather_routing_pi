@@ -110,6 +110,32 @@ TEST_F(BoatXML, MultiplePolarSelectionRespectsSailWindLimits) {
   EXPECT_EQ(boat.FindBestPolarForCondition(1, 35, 60, 0, false), -1);
 }
 
+TEST_F(BoatXML, ImportCopiesAllPolarsAndLeavesOriginalUntouched) {
+  Boat boat;ASSERT_NO_FATAL_FAILURE(LoadPolars(boat));
+  boat.Polars[0].lowWindPolicy=LowWindPolicy::Strict;
+  boat.Polars[1].highWindPolicy=HighWindPolicy::Hold;
+  const wxString original=boatTestPath+"original.xml";
+  ASSERT_TRUE(boat.SaveXML(original).empty());
+  auto read=[](const wxString& p){std::ifstream in(p.ToStdString(),std::ios::binary);return std::string(std::istreambuf_iterator<char>(in),{});};
+  const auto before=read(original);
+  const wxString destination=boatTestPath+"version2";
+  wxString imported;ASSERT_TRUE(Boat::ImportXML(original,destination,imported).empty());
+  EXPECT_EQ(read(original),before);
+  ASSERT_NE(original,imported);
+  TiXmlDocument doc(imported.utf8_str());ASSERT_TRUE(doc.LoadFile());
+  int index=0;
+  for(auto* e=doc.RootElement()->FirstChildElement("Polar");e;e=e->NextSiblingElement("Polar")) {
+    ASSERT_LT(index,2);
+    const wxString path=wxString::FromUTF8(e->Attribute("FileName"));
+    EXPECT_TRUE(path.StartsWith(destination));
+    EXPECT_EQ(read(path),read(boat.Polars[index].FileName));
+    EXPECT_EQ(e->Attribute("CrossOverContours"),nullptr);
+    EXPECT_STREQ(e->Attribute(index?"HighWindPolicy":"LowWindPolicy"),index?"hold":"strict");
+    ++index;
+  }
+  EXPECT_EQ(index,2);
+}
+
 TEST_F(BoatXML, SuccessfulLoadRetainsPolarWarningsAndReloadClearsRepairedWarnings) {
   const wxString polarFile = boatTestPath + "warning.pol";
   auto writePolar = [&](bool badRow) {

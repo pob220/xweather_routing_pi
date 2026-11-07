@@ -61,6 +61,9 @@ class wxScrolledWindow;
 
 class weather_routing_pi;
 class WeatherRouting;
+class PassagePanel;
+class wxNotebook;
+namespace weather_routing { class PassageWeather; }
 
 /**
  * Class representing a weather routing configuration and its associated route.
@@ -224,6 +227,10 @@ class WeatherRouting : public WeatherRoutingBase {
 private:
   friend class RoutingTablePanel;
   friend class RouteComparisonDialog;
+  friend class PassagePanel;
+  std::shared_ptr<weather_routing::PassageWeather> m_PassageWeather;
+  PassagePanel* m_PassagePanel{nullptr};
+  wxNotebook* m_PassageNotebook{nullptr};
 
   bool m_disable_colpane;
   wxCollapsiblePane* m_colpane;
@@ -276,6 +283,10 @@ public:
 
   WeatherRouting(wxWindow* parent, weather_routing_pi& plugin);
   ~WeatherRouting();
+  weather_routing::PassageWeather& PassageForecast();
+  bool OpenPassageForecast(const wxString& path, wxString& error);
+  void ApplyPassageConfiguration(const RouteMapConfiguration& configuration);
+  void RefreshPassageSelection() { OnWeatherRouteSelected(); }
 
 #ifdef __OCPN__ANDROID__
   void OnEvtPanGesture(wxQT_PanGestureEvent& event);

@@ -55,6 +55,9 @@ public:
   ~ConfigurationDialog();
 
   void EditBoat();
+  void ShowSettingsSection(size_t section) {
+    if (section < m_notebook7->GetPageCount()) m_notebook7->SetSelection(section);
+  }
 #ifdef __OCPN__ANDROID__
   void ShowAndroidSection(size_t section);
   void SetAndroidEndpoint(bool start, const wxString& name);

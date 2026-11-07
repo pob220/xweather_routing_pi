@@ -46,7 +46,7 @@ struct Config {
   wxString previous;
   Config() {
     previous = c->GetPath();
-    c->SetPath("/PlugIns/WeatherRouting/Shoreline");
+    c->SetPath("/PlugIns/xWeatherRouting2/Shoreline");
   }
   ~Config() { c->SetPath(previous); }
   wxString Read(const wxString& key, const wxString& fallback = "") {

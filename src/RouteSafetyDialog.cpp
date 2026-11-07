@@ -277,7 +277,7 @@ void RouteSafetyDialog::Start() {
   SetTitle(plugin_.GetCommonName() + _(" — Check this route: ") + route_name_);
   if (auto* config = GetOCPNConfigObject()) {
     const auto old_path = config->GetPath();
-    config->SetPath("/PlugIns/WeatherRouting/RouteCheck");
+    config->SetPath("/PlugIns/xWeatherRouting2/RouteCheck");
     config->Write("MinimumDepthM", depth); config->Write("LandMarginNM", margin);
     config->SetPath(old_path);
   }

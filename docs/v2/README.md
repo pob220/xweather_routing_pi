@@ -1,0 +1,58 @@
+# xWeatherRouting 2.0.0
+
+Version 2 is developed on `feature/xweather-2.0.0`, starting from the 1.36
+baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
+The version is 2.0.0; no alpha suffix or catalogue replacement is involved.
+
+The initial desktop workspace groups passage, boat and weather preparation.
+Routes & analysis retains the existing lists, engines, reports, exports and
+specialist tools. Right-click route analysis, generated legs and chart-position
+actions remain available. A passage's generated legs use the existing sequential
+calculation path. Departure and target-arrival planning use the same engines.
+
+The example 40 ft monohull is illustrative. The searchable bundled library and
+existing polar editor support personal boats and multiple sail configurations.
+Boat imports copy their polars into version 2 storage and preserve the originals.
+Version 2 uses `/PlugIns/xWeatherRouting2` preferences and a separate
+`plugins/xweather_routing_v2` data directory. Existing version 1 data are not
+automatically changed or migrated.
+
+The internal GRIB reader owns its forecast and supplies immutable frames to
+the existing routing cache. It records per-variable time extents and a SHA256
+identity. A failed replacement keeps the previous forecast; changing weather
+during calculation is rejected. Forecast data remain selected when dialogs hide.
+The xGRIB generator and its desktop dialog are integrated, including the existing
+weather, wave, current, extension and merge capabilities. A passage prefills
+the request area, UTC time, preliminary duration and required wave/current flags.
+The request envelope is an estimate; actual masks and later coverage are checked
+by routing and final validation.
+
+The complete Climatology 2026.2 pack is bundled with its original provenance
+and checksums. The routing reader loads neighbouring months on demand, preserves
+missing masks, and exposes wind distributions, currents and historical cyclone
+crossings without constructing a separate plugin's UI. A compatible installed
+provider advertising a newer dataset takes precedence. Providers are stopped
+and rebound safely on replacement or unload. Forecast-to-Climatology fallback
+is an explicit planning choice; reports retain actual source use. Unknown waves
+remain unknown. Fresh example operating limits are 30 kn true wind, 40 kn apparent
+wind and 3 m significant waves, with currents and motoring off and land detection
+on. These are visible starting settings to review for the vessel and passage.
+
+## Local development and validation
+
+Build out of tree and install into a private staging prefix. The minimum CMake
+version is 3.20. The generator uses the dependencies documented in its retained
+README; Jasper is a checksum-pinned static dependency. All Climatology outputs
+are checked against the dataset manifest during configuration.
+
+`tools/launch-isolated.py --host PATH --prefix PATH --profile NEW_DIRECTORY`
+starts a private portable test instance. It refuses unmanaged existing profiles,
+sets private XDG directories, and installs only the staged version 2 plugin.
+It neither changes a working launcher nor installs into system/user plugin paths.
+
+Initial qualification targets the Linux x86-64 laptop build. Windows/macOS
+runtime bundling, Windows split-ABI generator builds, Android's in-process
+generator adapter and the new touch workspace require their own follow-up
+qualification. The inherited cross-platform 1.x CI matrix is not evidence that
+these new version 2 paths have been qualified. Do not publish this branch's
+packages to the stable catalogue from local validation.

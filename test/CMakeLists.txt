@@ -89,6 +89,14 @@ set(TEST_SRC
     RoutingFootprint_tests.cpp
     ClimatologyThreadGuard_tests.cpp
     ClimatologyCompatibility_tests.cpp
+    PassageWeather_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageWeather.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/BundledClimatology.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyMath.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/GribReader.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/GribV1Record.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/GribV2Record.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/GribRecord.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/ClimatologyCompatibility.cpp
     ConstraintTime_tests.cpp
     SunCalculator_tests.cpp
@@ -141,6 +149,10 @@ set(TEST_SRC
    )
 
    add_executable(weather_routing_pi_tests ${TEST_SRC})
+   if(TARGET libjasper)
+     target_link_libraries(weather_routing_pi_tests PRIVATE libjasper)
+     target_compile_definitions(weather_routing_pi_tests PRIVATE JASPER)
+   endif()
    target_compile_definitions(weather_routing_pi_tests PRIVATE
        WR_TEST_SHORELINE_DATA="${WEATHER_ROUTING_SOURCE_DIR}/data/shoreline")
 

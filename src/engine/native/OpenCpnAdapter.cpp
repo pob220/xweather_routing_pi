@@ -28,6 +28,8 @@
 #include "SunCalculator.h"
 #include "SystemMemory.h"
 #include "WeatherDataProvider.h"
+#include "PassageWeather.h"
+#include "BundledClimatology.h"
 #include "engine/native/ComfortAlternatives.h"
 #include "engine/native/ConstraintTime.h"
 #include "engine/native/CoordinateNormalization.h"
@@ -174,6 +176,17 @@ public:
   wr::ParameterCoverage forecastWindCoverage() const {
     if (windCoverage_) return *windCoverage_;
     wr::ParameterCoverage coverage;
+    if (auto local=WeatherDataProvider::InternalForecast(); configuration_.UseGrib && local && local->Loaded()) {
+      auto records=local->Frame(local->FirstWindTime());
+      const auto* u=records->m_GribRecordPtrArray[Idx_WIND_VX];
+      const auto* v=records->m_GribRecordPtrArray[Idx_WIND_VY];
+      if(u&&v)coverage=weather_routing::native::WindGridCoverage(
+          u->getLonMin(),u->getLatMin(),u->getLonMax(),u->getLatMax(),u->getDi(),
+          v->getLonMin(),v->getLatMin(),v->getLonMax(),v->getLatMax(),v->getDi());
+      coverage.begins=wr::TimePoint(std::chrono::seconds(local->FirstWindTime()));
+      coverage.ends=wr::TimePoint(std::chrono::seconds(local->LastWindTime()));
+      coverage.datasetIdentity=local->Identity();windCoverage_=coverage;return coverage;
+    }
     Shared_GribRecordSet frame;
     if (configuration_.UseGrib && overlay_.AcquireGribTimelineFrame(
             configuration_.StartTime, frame)) {
@@ -211,6 +224,14 @@ public:
         coverage = weather_routing::native::WindGridCoverage(
             h->getLonMin(), h->getLatMin(), h->getLonMax(), h->getLatMax(), h->getDi(),
             h->getLonMin(), h->getLatMin(), h->getLonMax(), h->getLatMax(), h->getDi());
+    }
+    if(auto local=WeatherDataProvider::InternalForecast(); local && local->Loaded()) {
+      const auto e=local->Extent(Idx_HTSIGW);
+      if(e.first>=0) {
+        coverage.begins=wr::TimePoint(std::chrono::seconds(e.first));
+        coverage.ends=wr::TimePoint(std::chrono::seconds(e.second));
+        coverage.datasetIdentity=local->Identity();
+      }
     }
     // This describes the departure frame only. Missing cells and later wave
     // coverage are checked by the same sampler during search and validation.
@@ -272,7 +293,9 @@ public:
   }
 
   std::string identity() const override {
-    return "OpenCPN GRIB/climatology timeline";
+    if(auto local=WeatherDataProvider::InternalForecast(); local && local->Loaded())
+      return local->Identity()+"; "+weather_routing::BundledClimatology::Source().ToStdString();
+    return "OpenCPN GRIB/climatology timeline; "+weather_routing::BundledClimatology::Source().ToStdString();
   }
 
   struct CacheDiagnostics {

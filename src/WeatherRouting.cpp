@@ -85,6 +85,10 @@
 #include "headless/HeadlessRouteRunner.h"
 #include "headless/HeadlessRouteMonitor.h"
 #include "georef.h"
+#include "PassagePanel.h"
+#include "PassageWeather.h"
+#include "BundledClimatology.h"
+#include <wx/notebook.h>
 #include "icons.h"
 #include "navobj_util.h"
 #include "ocpn_plugin.h"
@@ -477,7 +481,7 @@ static void ReadExperimentalChartSafetySettings(bool& use_chart_safety,
   enforce_chart_safety =
       weather_routing::chart_safety_defaults::kRequireChartDepthChecks;
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
   pConf->Read(
       _T("UseExperimentalChartSafety"), &use_chart_safety,
       weather_routing::chart_safety_defaults::kCheckLoadedCharts);
@@ -581,7 +585,7 @@ static const char* RouteEndTypeName(RouteMapConfiguration::EndDataType type) {
 static int ReadExperimentalChartSafetyMissingTileMaxRetries() {
   long retries = kDefaultMaxChartSafetyMissingTileRetries;
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+  pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
   pConf->Read(_T("ExperimentalChartSafetyMissingTileMaxRetries"), &retries,
               static_cast<long>(kDefaultMaxChartSafetyMissingTileRetries));
   return static_cast<int>(wxMax(1L, wxMin(64L, retries)));
@@ -1247,6 +1251,7 @@ struct WeatherRouting::HeadlessRouteTestState {
 
 WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
     : WeatherRoutingBase(parent, wxID_ANY, _("WeatherRouting")),
+      m_PassageWeather(new weather_routing::PassageWeather),
       m_panel(NULL),
       m_ConfigurationDialog(*this),
       m_ConfigurationBatchDialog(this),
@@ -1300,8 +1305,9 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       m_RoutingTablePanel(nullptr) {
   weather_routing::chart_safety_host::SetInteractivePrewarmCancellationFlag(
       &m_ChartSafetyPreparationCancelled);
+  WeatherDataProvider::SetInternalForecast(m_PassageWeather);
   wxFileConfig* pConf = GetOCPNConfigObject();
-  pConf->SetPath(_T( "/Plugins/WeatherRouting" ));
+  pConf->SetPath(_T( "/Plugins/xWeatherRouting2" ));
 
 #ifdef __OCPN__ANDROID__
   // The generated value column starts empty and wxQt does not grow it when
@@ -1394,7 +1400,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
     pConf->Write(_T("ConfigVersion"), confVersion);
   }
 
-#ifndef __OCPN__ANDROID__
+#if !defined(__OCPN__ANDROID__) && PLUGIN_VERSION_MAJOR < 2
   if (confVersion < PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR) {
     wxString title = _("New or updated data available");
     wxString message =
@@ -1440,7 +1446,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
             wxCopyFile(cfg, m_default_configuration_path);
         }
       }
-      pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));  // path can change after
+      pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));  // path can change after
                                                         // modal dialog
       pConf->Write(_T ( "ConfigVersion" ),
                    PLUGIN_VERSION_MAJOR * 100 + PLUGIN_VERSION_MINOR);
@@ -1451,7 +1457,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   m_ConfigurationDialog.RefreshTimeZoneControls();
 
   pConf->SetPath(
-      _T( "/PlugIns/WeatherRouting" ));  // path can change after modal dialog
+      _T( "/PlugIns/xWeatherRouting2" ));  // path can change after modal dialog
   pConf->Read(_T("KeepStabilityCorridorAfterResults"),
               &m_StabilityCorridorKeepPreference, false);
   pConf->Read(_T ( "DisableColPane" ), &m_disable_colpane, false);
@@ -1650,6 +1656,48 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRouting::OnExportRouteAsGPX), NULL, this);
 
+#ifndef __OCPN__ANDROID__
+  wxString previousForecast;
+  pConf->SetPath("/PlugIns/xWeatherRouting2");
+  pConf->Read("PassageGribFile",&previousForecast);
+  if(previousForecast.empty()) {
+    // Adopt a previously selected shared forecast without opening another
+    // plugin's dialog. Its actual wind fields and time range are validated by
+    // our reader; never infer suitability from the presence of a filename.
+    for(const auto& path:{"/Settings/xGRIB/FileNames","/Settings/GRIB/FileNames"}) {
+      pConf->SetPath(path);
+      wxString entry,value;long cookie=0;
+      for(bool more=pConf->GetFirstEntry(entry,cookie);more;more=pConf->GetNextEntry(entry,cookie)) {
+        pConf->Read(entry,&value);
+        if(!wxFileExists(value))continue;
+        wxString error;
+        if(m_PassageWeather->Open(value,error)){previousForecast=value;break;}
+      }
+      if(!previousForecast.empty())break;
+    }
+    pConf->SetPath("/PlugIns/xWeatherRouting2");
+  }
+  if (!m_PassageWeather->Loaded() && !previousForecast.empty() && wxFileExists(previousForecast)) {
+    wxString error;
+    m_PassageWeather->Open(previousForecast,error);
+  }
+  auto* notebook = new wxNotebook(this, wxID_ANY);
+  m_PassageNotebook=notebook;
+  wxWindow* previous = m_colpane ? static_cast<wxWindow*>(m_colpane) : static_cast<wxWindow*>(m_panel);
+  bSizer->Detach(previous);
+  previous->Reparent(notebook);
+  previous->SetMinSize(wxSize(0,0));
+  notebook->AddPage(previous, _("Routes & analysis"));
+  m_PassagePanel = new PassagePanel(notebook, *this);
+  notebook->InsertPage(0, m_PassagePanel, _("Plan passage"), true);
+  bSizer->Add(notebook, 1, wxEXPAND);
+  SetTitle(_("xWeatherRouting 2.0.0"));
+  SetMinSize(wxSize(620,540));
+  const wxSize screen = wxGetDisplaySize();
+  SetSize(std::min(860,screen.x-80), std::min(890,screen.y-80));
+  CentreOnScreen();
+  Layout();
+#endif
 #ifdef __OCPN__ANDROID__
   // The Android workspace stays fixed; page gestures scroll their content.
   GetHandle()->setStyleSheet(qtStyleSheet);
@@ -1668,6 +1716,8 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 }
 
 WeatherRouting::~WeatherRouting() {
+  // Stop the planning timer and child generator before route ownership ends.
+  if (m_PassagePanel) m_PassagePanel->PrepareForShutdown();
 #ifdef __OCPN__ANDROID__
   delete m_androidChartPickHint;
   m_androidLayoutTimer.Stop();
@@ -1781,7 +1831,7 @@ WeatherRouting::~WeatherRouting() {
 
   if (!headless_route_test) {
     wxFileConfig* pConf = GetOCPNConfigObject();
-    pConf->SetPath(_T( "/PlugIns/WeatherRouting" ));
+    pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
 
     wxPoint p = GetPosition();
     pConf->Write(_T ( "DialogX" ), p.x);
@@ -1814,13 +1864,68 @@ WeatherRouting::~WeatherRouting() {
     m_WeatherRoutes.pop_front();
     delete route;
   }
-  delete m_panel;
-  delete m_colpane;
+  if(m_PassageNotebook) {
+    delete m_PassageNotebook;
+    m_PassageNotebook=nullptr;m_PassagePanel=nullptr;m_panel=nullptr;m_colpane=nullptr;
+  } else {
+    delete m_panel;
+    delete m_colpane;
+  }
+  WeatherDataProvider::SetInternalForecast({});
+}
+
+weather_routing::PassageWeather& WeatherRouting::PassageForecast() {
+  return *m_PassageWeather;
+}
+bool WeatherRouting::OpenPassageForecast(const wxString& path, wxString& error) {
+  if (!m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() || m_RoutePreparationDepth || m_DeferredRoutingStartPending) {
+    error = _("Cancel the active calculation before changing its forecast.");
+    return false;
+  }
+  if (!m_PassageWeather->Open(path,error)) return false;
+  if (m_GribTimelineFrameCache) m_GribTimelineFrameCache->Clear();
+  m_GribTimelineCacheBatchActive=false;
+  m_ConfigurationDialog.m_GribTimelineTime = wxDateTime(m_PassageWeather->FirstWindTime());
+  if (auto* route=FirstCurrentRouteMap()) {
+    auto c=route->GetConfiguration(); c.UseGrib=true;
+    ApplyPassageConfiguration(c);
+  }
+  auto* config=GetOCPNConfigObject();
+  config->SetPath("/PlugIns/xWeatherRouting2");config->Write("PassageGribFile",path);
+  return true;
+}
+void WeatherRouting::ApplyPassageConfiguration(const RouteMapConfiguration& configuration) {
+  auto* selected=FirstCurrentRouteMap();if(!selected || RouteComputationActive(selected))return;
+  const auto previous=selected->GetConfiguration();
+  if(previous.IsMultiLegGenerated) {
+    for(auto* item:m_WeatherRoutes) {
+      auto* leg=item->routemapoverlay;
+      const auto original=leg->GetConfiguration();
+      if(leg==selected || original.MultiLegGroupId!=previous.MultiLegGroupId)continue;
+      auto updated=original;
+      if(previous.boatFileName!=configuration.boatFileName)updated.boatFileName=configuration.boatFileName;
+      if(previous.UseGrib!=configuration.UseGrib)updated.UseGrib=configuration.UseGrib;
+      if(previous.ClimatologyType!=configuration.ClimatologyType)updated.ClimatologyType=configuration.ClimatologyType;
+      leg->SetConfiguration(updated);leg->Reset();SetConfigurationRoute(item);
+    }
+  }
+  selected->SetConfiguration(configuration); selected->Reset();
+  m_bSkipUpdateCurrentItems=true;
+  m_ConfigurationDialog.SetConfigurations({configuration});
+  m_bSkipUpdateCurrentItems=false;
+  UpdateCurrentConfigurations();ScheduleAutoSave();
 }
 
 void WeatherRouting::RequestGribTimelineFrame(
     RouteMapOverlay* routeMapOverlay, const wxDateTime& time) {
   if (!routeMapOverlay || !time.IsValid()) return;
+  if (m_PassageWeather->Loaded()) {
+    auto frame = m_PassageWeather->Frame(time.GetTicks());
+    routeMapOverlay->Lock();
+    routeMapOverlay->SetNewGrib(frame.get(), static_cast<std::int64_t>(time.GetTicks()));
+    routeMapOverlay->Unlock();
+    return;
+  }
 
   const wxString requestToken = wxString::Format(
       "wr-%llu", static_cast<unsigned long long>(m_NextGribRequestToken++));
@@ -4693,7 +4798,9 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
   };
 
   wxString gribInitializationError;
-  if (!InitializeHeadlessGribFromEnv(&gribInitializationError)) {
+  wxString internalGrib;
+  wxGetEnv("WR_HEADLESS_GRIB_FILE", &internalGrib);
+  if (!internalGrib.empty() && !OpenPassageForecast(internalGrib, gribInitializationError)) {
     wxLogMessage("WR_HEADLESS_GRIB failed reason=\"%s\"",
                  gribInitializationError);
     write_scenario_result("failed", gribInitializationError, {});
@@ -6895,7 +7002,7 @@ void WeatherRouting::CloseStabilityCorridorResults(bool keepVisible,
 void WeatherRouting::SetStabilityCorridorKeepPreference(bool keep) {
   m_StabilityCorridorKeepPreference = keep;
   wxFileConfig* config = GetOCPNConfigObject();
-  config->SetPath(_T("/PlugIns/WeatherRouting"));
+  config->SetPath(_T("/PlugIns/xWeatherRouting2"));
   config->Write(_T("KeepStabilityCorridorAfterResults"), keep);
   config->Flush();
 }
@@ -8783,7 +8890,7 @@ int WeatherRouting::EffectiveChartSafetyRamCacheMiB() const {
 void WeatherRouting::ApplyChartSafetySettings(bool use, bool enforce) {
   if (!HasEnhancedChartSafety()) return;
   wxFileConfig* config = GetOCPNConfigObject();
-  config->SetPath("/PlugIns/WeatherRouting");
+  config->SetPath("/PlugIns/xWeatherRouting2");
   const bool old_use = config->ReadBool("UseExperimentalChartSafety",
       weather_routing::chart_safety_defaults::kCheckLoadedCharts);
   const bool old_enforce = config->ReadBool("EnforceExperimentalChartSafety",
@@ -8793,7 +8900,7 @@ void WeatherRouting::ApplyChartSafetySettings(bool use, bool enforce) {
   // This is a global policy. Stop jobs using the old policy and invalidate
   // all results, including filtered/unselected and generated routes.
   StopAll();
-  config->SetPath("/PlugIns/WeatherRouting");
+  config->SetPath("/PlugIns/xWeatherRouting2");
   config->Write("UseExperimentalChartSafety", use);
   config->Write("EnforceExperimentalChartSafety", enforce);
   config->Flush();
@@ -9524,7 +9631,7 @@ bool WeatherRouting::OpenXML(wxString filename, bool reportfailure) {
             configuration.EngineSettings.engine == weather_routing::RoutingEngine::All &&
                 (!GetOCPNConfigObject() ||
                  GetOCPNConfigObject()->ReadBool(
-                     "/PlugIns/WeatherRouting/ComfortExplorationEnabled", true)));
+                     "/PlugIns/xWeatherRouting2/ComfortExplorationEnabled", true)));
         configuration.ComfortAdditionalPercent =
             std::clamp(AttributeInt(e, "ComfortAdditionalPercent", 200), 0, 400);
         configuration.ComfortMaximumSeconds =
@@ -12662,6 +12769,23 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
       configuration.WindStrength * 100.0, configuration.MaxTrueWindKnots,
       configuration.MaxApparentWindKnots, configuration.MaxSwellMeters);
   setupDiagnostics.context += "\n" + wxString(wxVERSION_STRING);
+  if (m_PassageWeather->Loaded())
+    setupDiagnostics.context += "\n"+m_PassageWeather->Summary()+"\n"+m_PassageWeather->Details()+
+        "\n"+wxString::FromUTF8(m_PassageWeather->Identity());
+  setupDiagnostics.context += "\n" + weather_routing::BundledClimatology::Source();
+  bool illustrativeBoat=configuration.boatFileName.Contains("Example-40ft-monohull");
+  TiXmlDocument boatMetadata;
+  if(!illustrativeBoat && boatMetadata.LoadFile(configuration.boatFileName.utf8_str()) && boatMetadata.RootElement()) {
+    for(auto* polar=boatMetadata.RootElement()->FirstChildElement("Polar");polar;polar=polar->NextSiblingElement("Polar")) {
+      const char* filename=polar->Attribute("FileName");
+      if(filename && wxString::FromUTF8(filename).Contains("40ft-monohull-example.pol"))illustrativeBoat=true;
+    }
+  }
+  if(illustrativeBoat)
+    setupDiagnostics.Add({"setup.example_boat",weather_routing::DiagnosticSeverity::Warning,
+        _("Illustrative example boat selected"),
+        _("This route uses the example 40 ft monohull, not verified performance for your vessel."),
+        _("Select or edit your own boat and polars before relying on the passage estimate."),{},true});
   if (routeByArrival)
     setupDiagnostics.context += "\n" + _("Planned arrival: ") +
         configuration.PlannedArrivalTime.Format("%Y-%m-%d %H:%M:%S", wxDateTime::UTC) + " UTC";
@@ -12893,7 +13017,7 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
 
   if (auto* preferences = GetOCPNConfigObject()) {
     configuration.ComfortExplorationWindOnly = preferences->ReadBool(
-        "/PlugIns/WeatherRouting/ComfortComparisonWindOnly", true);
+        "/PlugIns/xWeatherRouting2/ComfortComparisonWindOnly", true);
   }
   configuration.chart_safety_missing_tile_rejections = 0;
   configuration.chart_safety_missing_tile_first_lat_tile = 0;
@@ -13438,7 +13562,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
   wxFileConfig* pConf = GetOCPNConfigObject();
   if (!pConf) return;
 
-  pConf->SetPath(_T("/PlugIns/WeatherRouting/LastUsedConfiguration"));
+  pConf->SetPath(_T("/PlugIns/xWeatherRouting2/LastUsedConfiguration"));
   pConf->Write(_T("Boat"), configuration.boatFileName);
   pConf->Write(_T("DeltaTime"), configuration.DeltaTime);
   pConf->Write(_T("Integrator"), static_cast<long>(configuration.Integrator));
@@ -13515,7 +13639,7 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
   wxFileConfig* pConf = GetOCPNConfigObject();
   if (!pConf) return;
 
-  pConf->SetPath(_T("/PlugIns/WeatherRouting/LastUsedConfiguration"));
+  pConf->SetPath(_T("/PlugIns/xWeatherRouting2/LastUsedConfiguration"));
   wxString boat;
   if (pConf->Read(_T("Boat"), &boat) && !boat.IsEmpty())
     configuration.boatFileName = boat;
@@ -13684,17 +13808,17 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
 
   configuration.boatFileName = weather_routing_pi::StandardPath() +
                                _T("boats") + wxFileName::GetPathSeparator() +
-                               _T("Boat.xml");
+                               _T("Example-40ft-monohull.xml");
 
   configuration.Integrator = RouteMapConfiguration::NEWTON;
 
   configuration.MaxDivertedCourse = weather_routing::kDefaultMaxDivertedCourse;
   configuration.MaxCourseAngle = 180;
   configuration.MaxSearchAngle = 120;
-  configuration.MaxTrueWindKnots = 50;      // Safety margin for wind speed
-  configuration.MaxApparentWindKnots = 50;  // Safety margin for wind speed
+  configuration.MaxTrueWindKnots = 30;  // Initial operating limits, shown for review.
+  configuration.MaxApparentWindKnots = 40;
 
-  configuration.MaxSwellMeters = 20.;
+  configuration.MaxSwellMeters = 3.;
   configuration.RequireWaveCoverage = false;
   configuration.MaxLatitude = 90;
   configuration.TackingTime = 0;
@@ -13707,7 +13831,9 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.CycloneDays = 0;
 
   configuration.UseGrib = true;
-  configuration.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
+  // Climatology is available offline, but changing from forecast to typical
+  // conditions is an explicit planning choice in version 2.
+  configuration.ClimatologyType = RouteMapConfiguration::DISABLED;
   configuration.AllowDataDeficient = false;
   configuration.WindStrength = 1;
   configuration.DetectLand = true;

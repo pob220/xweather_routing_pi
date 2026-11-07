@@ -32,7 +32,7 @@ set(CMLOC "CMakeLists: ")
 
 # Option to enable/disable testing
 option(OCPN_BUILD_TEST "Build plugin tests" OFF)
-set(_xweather_identity_default OFF)
+set(_xweather_identity_default ON)
 if("$ENV{CIRCLE_PROJECT_REPONAME}" STREQUAL "xweather_routing_pi")
   set(_xweather_identity_default ON)
 endif()
@@ -44,7 +44,7 @@ set(WEATHER_ROUTING_EXPECTED_WX_VERSION "" CACHE STRING
     "Require this exact wxWidgets version when building a pinned host package")
 
 # define minimum cmake version
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 if(COMMAND cmake_policy)
   if (POLICY CMP0043)
     cmake_policy(SET CMP0043 NEW)
@@ -87,12 +87,12 @@ else()
 endif()
 set(PACKAGE_CONTACT "Sean d'Epagnier; Weather Routing Plugin Team")
 set(SHORT_DESCRIPTION
-    "Weather routing with six engines, diagnostics and coverage warnings.")
+    "Integrated passage planning: route, boat, polars and weather.")
 set(LONG_DESCRIPTION
-    "Route details retain setup errors, coverage warnings, actual fallback use and every engine attempt. Copy a diagnostic report for support without finding logs. Successful routes identify climatology, assumed zero current, missing or estimated waves, endpoint clearance and anchoring assumptions. The boat editor keeps the polar list and its add, edit, remove and reorder controls visible. A separate Wind range page applies low- and high-wind handling to the selected polar, preserving multiple-polars boats, crossover selection and saved XML settings. Desktop tabs and the Android touch page selector provide the same settings. Failed All searches can retain bounded independently replayed prefixes for inspection. Partial results show their actual endpoint and remaining straight-line distance; they do not imply destination arrival or enable completed-passage exports. Live chart progress shows bounded search fronts and a provisional explored path while visible routes are calculating. Previews are labelled as unvalidated and do not change route acceptance. Motoring follows the configured STW threshold: when the best usable sailing performance is below it, motor-only routing can use headings outside sailing-angle limits, including directly into wind. Sailing, motor-sailing and stronger-wind motoring retain those limits; other safety checks still apply. Consistent route visibility: the eye hides all route overlays even when selected, and hidden computations stay hidden at completion. Clear computed results releases courses, contours and result data while preserving route settings for recomputation. Departure optimisation can show only the selected departure, all departures or a manually chosen subset, with matching chart and eye state and no recomputation. Improved optional chart-awareness performance with a compatible enhanced host; stock OpenCPN retains ordinary weather routing and GSHHG land avoidance. Check existing OpenCPN routes for charted land, drying areas, hazards, clearance and optional minimum depth without altering their waypoints. A per-leg report and chart markers distinguish hazards from unavailable coverage or depth; cancellation produces a partial report and route or chart changes invalidate results. Chart checks require a compatible host. Basic routing offers Auto and All (slow), with individual engines and independent Auto/All membership in Advanced. The Atlas engine adds continuous physical connection solving, adaptive spatial decisions and time-dependent weather guidance with independent route validation. The available order is Quick, Quick2, Atlas, Standard, Alternative and Professional, skipping unchecked engines. Existing Auto/All memberships are preserved; Atlas is opt-in. Alternative is unchecked in Auto by default. Auto stops on Quick success; Quick2 success is retained while later selected engines start independently with fresh normal allowances. Later successful engines are compared against the retained Quick2 candidate. All compares every selected engine. Quick2 is an independent bounded CPU frontier search using the shared motion kernel, original safety providers and authoritative replay; no GPU is required. A bounded extra-search allowance is shared across retained candidates. Optional fastest/comfort alternatives also work with individual engines and Auto, with saved percentage and seconds limits. A retained-route comparison table and slider balance passage time against discomfort exposure while preserving the worst known leg. Wind-only ranking is enabled by default and remembered. Extra comfort limits never reduce the ordinary engines' budgets; All initially selects the earliest validated arrival. Quick uses hardened contour routing with independent chronological validation. Standard provides bounded adaptive search; Professional preserves validated incumbents, uses unrestricted and focused native recovery as appropriate, and enforces the requested arrival horizon. All support plugin-managed GSHHG shorelines; optional chart-backed safety requires a compatible host.")
+    "xWeatherRouting 2.0.0 brings route setup, a searchable polar library, boat and polar editing, GRIB loading and xGRIB weather generation into one passage-planning workflow. Includes an illustrative 40 ft monohull and the complete Climatology 2026.2 dataset. A compatible installed Climatology provider with newer data takes precedence. The existing routing engines, reports, OpenCPN route analysis, multi-leg passages and optional chart-aware safety remain available. Ordinary routing and GSHHG land avoidance work on stock OpenCPN; chart-backed checks require a compatible enhanced host. Uses separate version 2 preferences and user data. Version 1 remains the stable catalogue line while this separate development branch is qualified.")
 
-set(VERSION_MAJOR "1")
-set(VERSION_MINOR "36")
+set(VERSION_MAJOR "2")
+set(VERSION_MINOR "0")
 set(VERSION_PATCH "0")
 set(VERSION_TWEAK "0")
 # Keep all five approved source archives for verification and regression tests.
@@ -115,7 +115,7 @@ foreach(_archive IN LISTS _shoreline_archives)
   endif()
 endforeach()
 unset(_shoreline_archives)
-set(VERSION_DATE  "02/11/2026") # DD/MM/YYYY format
+set(VERSION_DATE  "07/11/2026") # DD/MM/YYYY format
 set(OCPN_MIN_VERSION "ov511")
 
 set(OCPN_API_VERSION_MAJOR "1")
@@ -256,6 +256,19 @@ SET(SRCS
             src/AppendOnlyCache.cpp
             src/ChartSafetyCache.cpp
             src/ClimatologyCompatibility.cpp
+            src/BundledClimatology.cpp
+            src/ClimatologyMath.cpp
+            src/PassageWeather.cpp
+            src/PassagePanel.cpp
+            src/EnvironmentalGribDialog.cpp
+            src/AreaPreset.cpp
+            src/AreaPresetManagerDialog.cpp
+            src/GeneratorJobJson.cpp
+            src/ProcessCommand.cpp
+            src/XgribPaths.cpp
+            src/GribReader.cpp
+            src/GribV1Record.cpp
+            src/GribV2Record.cpp
             src/PluginWaypointLists.cpp
             src/ChartSafetyAtlas.cpp
             src/ChartHazardEvaluator.cpp
@@ -584,6 +597,7 @@ endif (QT_ANDROID)
 ##===============================================================
 
 include("PluginInstall")
+include("IntegratedWeather")
 include("PluginLocalization")
 include("PluginPackage")
 

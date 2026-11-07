@@ -303,6 +303,7 @@ private:
 
   WeatherRouting* m_pWeather_Routing;
   wxDateTime m_GribTime;
+  wxString m_climatology_dataset;
 
   int m_display_width, m_display_height;
   int m_leftclick_tool_id;
