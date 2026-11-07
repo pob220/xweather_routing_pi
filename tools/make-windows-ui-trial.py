@@ -164,7 +164,7 @@ def make(plugin, output, installer=None):
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             for path in sorted(trial.rglob('*')):
                 if path.is_file():
-                    archive.write(path, path.relative_to(work).as_posix())
+                    archive.write(path, path.relative_to(trial).as_posix())
     output.with_name(output.name + '.sha256').write_text(sha(output) + '  ' + output.name + '\n')
     print('Windows UI trial:', output, flush=True)
 

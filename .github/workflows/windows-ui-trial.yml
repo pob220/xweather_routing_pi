@@ -13,6 +13,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: windows-ui-trial-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   trial:
     runs-on: windows-2022

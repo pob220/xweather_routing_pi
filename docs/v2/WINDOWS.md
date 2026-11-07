@@ -1,5 +1,10 @@
 # Windows x64 source builds for 2.0.0
 
+**Want to try the new interface? [Start here — no compiling required](TRY-WINDOWS.md).**
+That page has the ready-to-run Windows ZIP, three opening steps and the feedback
+Paul is asking for. The instructions below are for people who choose to build
+the source themselves.
+
 Use [feature/xweather-2.0.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.0.0)
 in `pob220/xweather_routing_pi`. This is the
 development line; version 1 remains the catalogue release. Native Windows

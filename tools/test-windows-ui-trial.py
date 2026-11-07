@@ -29,7 +29,7 @@ def test(archive, plugin, output):
             if parts.is_absolute() or '..' in parts.parts or ':' in name or '\\' in name:
                 raise ValueError('Unsafe trial ZIP entry: ' + name)
         bundle.extractall(destination)
-    trial = destination / 'xWeatherRouting-2.0.0-Windows-UI-Trial'
+    trial = destination
     host = trial / 'OpenCPN'
     manifest = json.loads((trial / 'trial-manifest.json').read_text(encoding='utf-8'))
     for name, expected in manifest['files_sha256'].items():
