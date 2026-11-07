@@ -25,6 +25,22 @@ def run(*args, **kwargs):
     subprocess.run(list(map(str, args)), check=True, **kwargs)
 
 
+def collect_dependency_logs():
+    # Do not recursively glob extracted sources: ecbuild contains a Windows
+    # directory link which the artifact uploader cannot stat. Port-level logs
+    # contain the configure/build diagnostics without following source links.
+    buildtrees = WORK / 'vcpkg/buildtrees'
+    if not buildtrees.is_dir():
+        return
+    for port in buildtrees.iterdir():
+        if not port.is_dir() or port.is_symlink():
+            continue
+        for log in port.glob('*.log'):
+            destination = WORK / 'logs/vcpkg' / port.name / log.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(log, destination)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dependencies-only', action='store_true',
@@ -107,4 +123,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        collect_dependency_logs()

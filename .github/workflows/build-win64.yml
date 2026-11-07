@@ -76,7 +76,6 @@ jobs:
           include-hidden-files: true
           path: |
             .windows-deps/logs
-            .windows-deps/vcpkg/buildtrees/**/*.log
             .windows-deps/build/CMakeCache.txt
 
   build-win64:
