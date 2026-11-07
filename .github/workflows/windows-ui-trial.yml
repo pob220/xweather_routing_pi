@@ -2,6 +2,12 @@ name: Windows UI trial
 
 on:
   workflow_dispatch:
+  push:
+    branches: ['feature/xweather-2.0.0']
+    paths:
+      - '.github/workflows/windows-ui-trial.yml'
+      - 'tools/make-windows-ui-trial.py'
+      - 'tools/test-windows-ui-trial.py'
 
 permissions:
   contents: read

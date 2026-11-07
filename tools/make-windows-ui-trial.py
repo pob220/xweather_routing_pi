@@ -18,20 +18,20 @@ SOURCE = '743c443a5029edbb4c40272ed0861b2f58e4a789'
 RUN = 42409887075
 NAME = 'xWeatherRouting-2.0.0-Windows-UI-Trial'
 
-LAUNCHER = '''@echo off
+LAUNCHER = r'''@echo off
 setlocal
-cd /d "%~dp0OpenCPN"
-if not exist "opencpn.exe" (
+if not exist "%~dp0OpenCPN\opencpn.exe" (
   echo Please extract the whole ZIP before starting the trial.
   pause
   exit /b 1
 )
+cd /d "%~dp0OpenCPN" || exit /b 1
 for /f "tokens=1 delims==" %%V in ('set WR_HEADLESS_ 2^>nul') do set "%%V="
 set "OPENCPN_PLUGIN_DIRS="
 set "WR_SHORELINE_DATA_HOME="
 set "ENVIRONMENTAL_GRIB_GENERATOR="
 set "WR_OPEN_PASSAGE_PLANNER=1"
-"opencpn.exe" -p --no_opengl
+"%~dp0OpenCPN\opencpn.exe" -p --no_opengl
 if errorlevel 1 (
   echo The test copy could not start. Please send Paul OpenCPN\opencpn.log.
   pause
