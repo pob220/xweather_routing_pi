@@ -86,9 +86,10 @@
 #include "headless/HeadlessRouteMonitor.h"
 #include "georef.h"
 #include "PassagePanel.h"
+#include "PassageReadiness.h"
 #include "PassageWeather.h"
 #include "BundledClimatology.h"
-#include <wx/notebook.h>
+#include <wx/aui/auibook.h>
 #include "icons.h"
 #include "navobj_util.h"
 #include "ocpn_plugin.h"
@@ -1681,18 +1682,19 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
     wxString error;
     m_PassageWeather->Open(previousForecast,error);
   }
-  auto* notebook = new wxNotebook(this, wxID_ANY);
+  auto* notebook = new wxAuiNotebook(this, wxID_ANY, wxDefaultPosition,
+      wxDefaultSize, wxAUI_NB_TOP | wxAUI_NB_SCROLL_BUTTONS);
   m_PassageNotebook=notebook;
   wxWindow* previous = m_colpane ? static_cast<wxWindow*>(m_colpane) : static_cast<wxWindow*>(m_panel);
   bSizer->Detach(previous);
   previous->Reparent(notebook);
   previous->SetMinSize(wxSize(0,0));
-  notebook->AddPage(previous, _("Routes & analysis"));
+  notebook->AddPage(previous, _("Routes and analysis"));
   m_PassagePanel = new PassagePanel(notebook, *this);
   notebook->InsertPage(0, m_PassagePanel, _("Plan passage"), true);
   bSizer->Add(notebook, 1, wxEXPAND);
   SetTitle(_("xWeatherRouting 2.0.0"));
-  SetMinSize(wxSize(620,540));
+  SetMinSize(wxSize(720,540));
   const wxSize screen = wxGetDisplaySize();
   SetSize(std::min(860,screen.x-80), std::min(890,screen.y-80));
   CentreOnScreen();
@@ -1887,8 +1889,8 @@ bool WeatherRouting::OpenPassageForecast(const wxString& path, wxString& error) 
   m_GribTimelineCacheBatchActive=false;
   m_ConfigurationDialog.m_GribTimelineTime = wxDateTime(m_PassageWeather->FirstWindTime());
   if (auto* route=FirstCurrentRouteMap()) {
-    auto c=route->GetConfiguration(); c.UseGrib=true;
-    ApplyPassageConfiguration(c);
+    auto c=route->GetConfiguration();
+    if(c.UseGrib) ApplyPassageConfiguration(c);
   }
   auto* config=GetOCPNConfigObject();
   config->SetPath("/PlugIns/xWeatherRouting2");config->Write("PassageGribFile",path);
@@ -1906,6 +1908,20 @@ void WeatherRouting::ApplyPassageConfiguration(const RouteMapConfiguration& conf
       if(previous.boatFileName!=configuration.boatFileName)updated.boatFileName=configuration.boatFileName;
       if(previous.UseGrib!=configuration.UseGrib)updated.UseGrib=configuration.UseGrib;
       if(previous.ClimatologyType!=configuration.ClimatologyType)updated.ClimatologyType=configuration.ClimatologyType;
+      // A scoped preference restore applies to the passage, preserving each
+      // leg's own identity, departure and arrival scheduling information.
+#define COPY_PASSAGE_CHANGE(field) if(previous.field!=configuration.field)updated.field=configuration.field
+      COPY_PASSAGE_CHANGE(MaxTrueWindKnots);
+      COPY_PASSAGE_CHANGE(MaxApparentWindKnots);
+      COPY_PASSAGE_CHANGE(MaxSwellMeters);
+      COPY_PASSAGE_CHANGE(DetectLand);
+      COPY_PASSAGE_CHANGE(Currents);
+      COPY_PASSAGE_CHANGE(UseMotor);
+      COPY_PASSAGE_CHANGE(WindStrength);
+      COPY_PASSAGE_CHANGE(UpwindEfficiency);
+      COPY_PASSAGE_CHANGE(DownwindEfficiency);
+      COPY_PASSAGE_CHANGE(NightCumulativeEfficiency);
+#undef COPY_PASSAGE_CHANGE
       leg->SetConfiguration(updated);leg->Reset();SetConfigurationRoute(item);
     }
   }
@@ -1913,7 +1929,9 @@ void WeatherRouting::ApplyPassageConfiguration(const RouteMapConfiguration& conf
   m_bSkipUpdateCurrentItems=true;
   m_ConfigurationDialog.SetConfigurations({configuration});
   m_bSkipUpdateCurrentItems=false;
-  UpdateCurrentConfigurations();ScheduleAutoSave();
+  UpdateCurrentConfigurations();
+  SaveLastUsedConfigurationDefaults(configuration);
+  ScheduleAutoSave();
 }
 
 void WeatherRouting::RequestGribTimelineFrame(
@@ -2373,7 +2391,7 @@ void WeatherRouting::AddRoute(wxString& GUID) {
 }
 
 bool WeatherRouting::CreateMultiLegConfigurationsFromRoute(
-    const wxString& routeGuid) {
+    const wxString& routeGuid, bool editSettings) {
   std::vector<RouteWaypointInfo> waypoints;
   wxString error;
   if (!ExtractOpenCPNRouteWaypoints(routeGuid, waypoints, error)) {
@@ -2465,7 +2483,7 @@ bool WeatherRouting::CreateMultiLegConfigurationsFromRoute(
   }
 
   if (!IsShown()) Show(true);
-  BeginMultiLegGroupSettingsEdit(groupId);
+  if (editSettings) BeginMultiLegGroupSettingsEdit(groupId);
   m_tAutoSaveXML.Start(5000, true);
   return true;
 }
@@ -8070,6 +8088,11 @@ void WeatherRouting::OnSaveAs(wxCommandEvent& event) {
 void WeatherRouting::OnClose(wxCommandEvent& event) { Hide(); }
 
 void WeatherRouting::OnCollPaneChanged(wxCollapsiblePaneEvent& event) {
+  if (m_PassageNotebook) {
+    Layout();
+    event.Skip();
+    return;
+  }
   if (m_colpane && m_colpane->IsExpanded())
     SetSize(m_size);
   else if (m_colpane)
@@ -8079,6 +8102,14 @@ void WeatherRouting::OnCollPaneChanged(wxCollapsiblePaneEvent& event) {
 }
 
 void WeatherRouting::OnSize(wxSizeEvent& event) {
+  if (m_PassageNotebook) {
+    // The notebook owns the v2 viewport. Fitting the hidden legacy collapsible
+    // pane here can size the page beyond the frame and clip the fixed footer.
+    Layout();
+    m_size = GetSize();
+    event.Skip();
+    return;
+  }
   if (m_colpane && m_colpane->IsExpanded()) {
     Update();
     Layout();
@@ -13815,10 +13846,10 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.MaxDivertedCourse = weather_routing::kDefaultMaxDivertedCourse;
   configuration.MaxCourseAngle = 180;
   configuration.MaxSearchAngle = 120;
-  configuration.MaxTrueWindKnots = 30;  // Initial operating limits, shown for review.
-  configuration.MaxApparentWindKnots = 40;
+  configuration.MaxTrueWindKnots = weather_routing::PassageDefaults::windKnots;
+  configuration.MaxApparentWindKnots = weather_routing::PassageDefaults::apparentWindKnots;
 
-  configuration.MaxSwellMeters = 3.;
+  configuration.MaxSwellMeters = weather_routing::PassageDefaults::waveMeters;
   configuration.RequireWaveCoverage = false;
   configuration.MaxLatitude = 90;
   configuration.TackingTime = 0;

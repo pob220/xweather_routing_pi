@@ -38,6 +38,37 @@ Boat::Boat() {}
 
 Boat::~Boat() {}
 
+wxString Boat::ExportXML(const wxString& source, const wxString& destination) {
+  if (wxFileName(source).SameAs(wxFileName(destination)))
+    return _("Choose a different filename for the exported boat.");
+  Boat boat;
+  const wxString error = boat.OpenXML(source, false, false);
+  if (!error.empty()) return error;
+  if (boat.Polars.empty()) return _("This boat contains no polars.");
+  TiXmlDocument doc;
+  if (!doc.LoadFile(source.utf8_str())) return _("Cannot read the boat XML.");
+  const wxFileName output(destination);
+  wxString directory = output.GetName() + "-polars";
+  while (wxDirExists(output.GetPathWithSep() + directory)) directory += "-1";
+  const wxString full = output.GetPathWithSep() + directory;
+  if (!wxFileName::Mkdir(full, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
+    return _("Cannot create the exported polar directory.");
+  size_t index = 0;
+  for (auto* e = doc.RootElement()->FirstChildElement("Polar"); e;
+       e = e->NextSiblingElement("Polar")) {
+    if (index >= boat.Polars.size()) return _("The boat changed during export.");
+    const auto& polar = boat.Polars[index++];
+    const wxString name = wxString::Format("%zu-", index) +
+                          wxFileName(polar.FileName).GetFullName();
+    if (!wxCopyFile(polar.FileName, full + "/" + name, false))
+      return _("Cannot copy an exported polar.");
+    e->SetAttribute("FileName", (directory + "/" + name).utf8_str());
+    e->RemoveAttribute("CrossOverContours");
+  }
+  if (!doc.SaveFile(destination.utf8_str())) return _("Cannot save the exported boat.");
+  return {};
+}
+
 wxString Boat::ImportXML(const wxString& source, const wxString& dataDirectory,
                          wxString& importedPath) {
   importedPath.clear();
@@ -105,7 +136,7 @@ wxString Boat::ImportXML(const wxString& source, const wxString& dataDirectory,
   return {};
 }
 
-wxString Boat::OpenXML(wxString filename, bool shortcut) {
+wxString Boat::OpenXML(wxString filename, bool shortcut, bool generate) {
   wxDateTime last_filetime = wxFileName(filename).GetModificationTime();
   /* shortcut if already loaded, and boat wasn't modified */
   if (shortcut && m_last_filename == filename && m_last_filetime.IsValid() &&
@@ -113,6 +144,8 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
     return _T("");
 
   loadWarnings.clear();
+  Name.clear();
+  Description.clear();
   bool cleared = false;
   Polars.clear();
 
@@ -125,8 +158,11 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
              "editing the boat.");
 
   TiXmlHandle root(doc.RootElement());
-  if (strcmp(doc.RootElement()->Value(), "OpenCPNWeatherRoutingBoat"))
+  if (!doc.RootElement() || strcmp(doc.RootElement()->Value(), "OpenCPNWeatherRoutingBoat"))
     return _("Invalid xml file (no OpenCPNWeatherRoutingBoat node): ") + filename;
+
+  Name = wxString::FromUTF8(doc.RootElement()->Attribute("name"));
+  Description = wxString::FromUTF8(doc.RootElement()->Attribute("description"));
 
   bool generateContours = false;
 
@@ -142,6 +178,9 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
 
       polar.FileName = wxString::FromUTF8(e->Attribute("FileName"));
       polar.FileName.Replace(_T("/"), wxFileName::GetPathSeparator());
+      if (wxFileName(polar.FileName).IsRelative() &&
+          wxFileExists(wxFileName(filename).GetPathWithSep() + polar.FileName))
+        polar.FileName = wxFileName(filename).GetPathWithSep() + polar.FileName;
       if (!wxFileName::FileExists(polar.FileName))
         polar.FileName = weather_routing_pi::StandardPath() + _T("polars") +
                          wxFileName::GetPathSeparator() + polar.FileName;
@@ -165,6 +204,12 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
       if (!polar.Open(polar.FileName, message)) return message;
       if (!message.empty()) loadWarnings += message;
 
+      polar.Name = wxString::FromUTF8(e->Attribute("Name"));
+      polar.Source = wxString::FromUTF8(e->Attribute("Source"));
+      polar.SailConfiguration = wxString::FromUTF8(e->Attribute("Sails"));
+      polar.Notes = wxString::FromUTF8(e->Attribute("Notes"));
+      polar.Modified = wxString::FromUTF8(e->Attribute("Modified"));
+
       polar.m_crossoverpercentage =
           AttributeDouble(e, "CrossOverPercentage", 0.2) / 100.0;
 
@@ -182,7 +227,7 @@ wxString Boat::OpenXML(wxString filename, bool shortcut) {
     }
   }
 
-  if (generateContours) {
+  if (generateContours && generate) {
     GenerateCrossOverChart();
     const wxString saveError = SaveXML(filename);
     if (!saveError.empty())
@@ -205,10 +250,17 @@ wxString Boat::SaveXML(wxString filename) {
   sprintf(version, "%d.%d", PLUGIN_VERSION_MAJOR, PLUGIN_VERSION_MINOR);
   root->SetAttribute("version", version);
   root->SetAttribute("creator", "Opencpn Weather Routing plugin");
+  if (!Name.empty()) root->SetAttribute("name", Name.utf8_str());
+  if (!Description.empty()) root->SetAttribute("description", Description.utf8_str());
 
   for (unsigned int i = 0; i < Polars.size(); i++) {
     TiXmlElement* e = new TiXmlElement("Polar");
     Polar& polar = Polars[i];
+    if (!polar.Name.empty()) e->SetAttribute("Name", polar.Name.utf8_str());
+    if (!polar.Source.empty()) e->SetAttribute("Source", polar.Source.utf8_str());
+    if (!polar.SailConfiguration.empty()) e->SetAttribute("Sails", polar.SailConfiguration.utf8_str());
+    if (!polar.Notes.empty()) e->SetAttribute("Notes", polar.Notes.utf8_str());
+    if (!polar.Modified.empty()) e->SetAttribute("Modified", polar.Modified.utf8_str());
     //        e->SetAttribute("Name", polar.Name.mb_str());
 
     e->SetAttribute("FileName", polar.FileName.mb_str());

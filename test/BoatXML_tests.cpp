@@ -172,3 +172,49 @@ TEST_F(BoatXML, SuccessfulLoadRetainsPolarWarningsAndReloadClearsRepairedWarning
   ASSERT_TRUE(boat.OpenXML(boatFile, false).empty());
   EXPECT_TRUE(boat.loadWarnings.empty());
 }
+
+TEST_F(BoatXML, OptionalMetadataSurvivesSaveImportAndReordering) {
+  Boat boat; ASSERT_NO_FATAL_FAILURE(LoadPolars(boat));
+  boat.Name = "My boat"; boat.Description = "Cruising performance";
+  boat.Polars[0].Name = "Working sails";
+  boat.Polars[0].Source = "Manufacturer estimate";
+  boat.Polars[0].SailConfiguration = "Reefed main and jib";
+  boat.Polars[0].Notes = "Review against trials";
+  boat.Polars[0].Modified = "2026-11-07T15:00:00Z";
+  const wxString source = boatTestPath + "metadata.xml";
+  ASSERT_TRUE(boat.SaveXML(source).empty());
+  wxString imported;
+  ASSERT_TRUE(Boat::ImportXML(source, boatTestPath + "personal", imported).empty());
+  Boat copy; ASSERT_TRUE(copy.OpenXML(imported, false, false).empty());
+  ASSERT_EQ(copy.Polars.size(), 2U);
+  EXPECT_EQ(copy.Name, boat.Name); EXPECT_EQ(copy.Description, boat.Description);
+  EXPECT_EQ(copy.Polars[0].Name, boat.Polars[0].Name);
+  EXPECT_EQ(copy.Polars[0].Source, boat.Polars[0].Source);
+  EXPECT_EQ(copy.Polars[0].SailConfiguration, boat.Polars[0].SailConfiguration);
+  EXPECT_EQ(copy.Polars[0].Modified, boat.Polars[0].Modified);
+  EXPECT_TRUE(copy.Polars[1].Source.empty());
+  std::swap(copy.Polars[0], copy.Polars[1]);
+  ASSERT_TRUE(copy.SaveXML(imported).empty());
+  Boat reordered; ASSERT_TRUE(reordered.OpenXML(imported, false, false).empty());
+  EXPECT_EQ(reordered.Polars[1].Source, boat.Polars[0].Source);
+  EXPECT_TRUE(reordered.Polars[0].Source.empty());
+}
+TEST_F(BoatXML, ExportIsPortableAndDoesNotRewriteTheOriginal) {
+  Boat boat; ASSERT_NO_FATAL_FAILURE(LoadPolars(boat));
+  const wxString source = boatTestPath + "original.xml";
+  ASSERT_TRUE(boat.SaveXML(source).empty());
+  wxFile input(source); wxString before; ASSERT_TRUE(input.ReadAll(&before)); input.Close();
+  const wxString target = boatTestPath + "shared.xml";
+  ASSERT_TRUE(Boat::ExportXML(source, target).empty());
+  wxFile unchanged(source); wxString after; ASSERT_TRUE(unchanged.ReadAll(&after));
+  EXPECT_EQ(before, after);
+  TiXmlDocument doc; ASSERT_TRUE(doc.LoadFile(target.utf8_str()));
+  auto* polar = doc.RootElement()->FirstChildElement("Polar"); ASSERT_NE(polar, nullptr);
+  EXPECT_TRUE(wxFileName(wxString::FromUTF8(polar->Attribute("FileName"))).IsRelative());
+  Boat exported; ASSERT_TRUE(exported.OpenXML(target, false, false).empty());
+  ASSERT_EQ(exported.Polars.size(), 2U);
+  for (const auto& p : exported.Polars) {
+    EXPECT_TRUE(wxFileExists(p.FileName));
+    EXPECT_TRUE(p.FileName.StartsWith(boatTestPath));
+  }
+}

@@ -13,6 +13,10 @@
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/notebook.h>
+#include <wx/scrolwin.h>
+#include <wx/menu.h>
+#include <wx/textdlg.h>
+#include "RouteWaypointExtractor.h"
 #include <wx/srchctrl.h>
 #include <wx/listbox.h>
 #include <wx/statbox.h>
@@ -44,125 +48,171 @@ wxString DisplayName(wxString s) {
 }  // namespace
 
 PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
-    : wxScrolledWindow(parent, wxID_ANY), routing_(routing), refresh_(this) {
-  SetScrollRate(0, 14);
+    : wxPanel(parent, wxID_ANY), routing_(routing), refresh_(this) {
+  auto* outer = new wxBoxSizer(wxVERTICAL);
+  content_ = new wxScrolledWindow(this, wxID_ANY);
+  content_->SetMinSize(wxSize(0, 0));
+  // Native controls can need more width with large fonts or long translations.
+  // Keep them reachable by scrolling and keyboard focus in compact windows.
+  content_->SetScrollRate(12, 14);
   auto* page = new wxBoxSizer(wxVERTICAL);
-  auto* title = new wxBoxSizer(wxHORIZONTAL);
-  Text(this, title, _("Weather Routing"), true);
-  Text(this, title, "2.0.0");
-  page->Add(title, 0, wxEXPAND | wxALL, 7);
   auto* plans = new wxBoxSizer(wxHORIZONTAL);
-  passages_ = new wxChoice(this, wxID_ANY);
+  passages_ = new wxChoice(content_, wxID_ANY);
+  passages_->SetMinSize(wxSize(160, -1));
+  passages_->SetName(_("Selected passage"));
   plans->Add(passages_, 1, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-  auto* add = new wxButton(this, wxID_ANY, _("New passage"));
+  auto* add = new wxButton(content_, wxID_ANY, _("New passage"));
   plans->Add(add, 0, wxALL, 5);
-  add->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-    auto c = routing_.DefaultConfiguration();
-    c.Start.clear();
-    c.End.clear();
-    c.StartLat = c.StartLon = c.EndLat = c.EndLon = NAN;
-    routing_.AddConfiguration(c);
-    SelectPassage(int(routing_.m_WeatherRoutes.size()) - 1);
-    EditRoute();
+  add->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { NewPassage(); });
+  auto* more = new wxButton(content_, wxID_ANY, _("Passage actions"));
+  plans->Add(more, 0, wxALL, 5);
+  more->Bind(wxEVT_BUTTON, [this, more](wxCommandEvent&) {
+    wxMenu menu;
+    const int example = wxWindow::NewControlId(),
+              reset = wxWindow::NewControlId();
+    menu.Append(example, _("Try an example passage"));
+    menu.Append(reset, _("Restore passage preferences…"));
+    menu.Bind(
+        wxEVT_MENU, [this](wxCommandEvent&) { NewPassage(true); }, example);
+    menu.Bind(
+        wxEVT_MENU, [this](wxCommandEvent&) { RestoreDefaults(); }, reset);
+    more->PopupMenu(&menu);
   });
+  mutableControls_ = {add, more, passages_};
   passages_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
     SelectPassage(passages_->GetSelection());
   });
-  page->Add(plans, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
-
+  page->Add(plans, 0, wxEXPAND | wxALL, 5);
   auto card = [&](const wxString& label) {
-    auto* box = new wxStaticBoxSizer(wxVERTICAL, this, label);
+    auto* box = new wxStaticBoxSizer(wxVERTICAL, content_, label);
     box->GetStaticBox()->SetFont(box->GetStaticBox()->GetFont().Bold());
-    page->Add(box, 0, wxEXPAND | wxALL, 10);
+    page->Add(box, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
     return box;
   };
+  resultsBox_ = card(_("Passage result"));
+  results_ = Text(content_, resultsBox_, "");
+  resultsBox_->Show(false);
   auto* route = card(_("1. Route"));
-  route_ =
-      Text(this, route, _("Choose your start, destination and passage time."));
+  route_ = Text(content_, route, "");
+  route_->SetName(_("Route status"));
   auto* routeActions = new wxBoxSizer(wxHORIZONTAL);
-  edit_ = Button(this, routeActions, _("Edit route"), [this] { EditRoute(); });
-  Button(this, routeActions, _("Show on chart"), [this] {
-    wxCommandEvent e;
-    routing_.OnGoTo(e);
-    routing_.Hide();
-  });
+  mutableControls_.push_back(
+      Button(content_, routeActions, _("Edit route"), [this] { EditRoute(); }));
+  mutableControls_.push_back(Button(content_, routeActions,
+                                    _("Use OpenCPN route"),
+                                    [this] { ChooseRoute(); }));
+  Button(content_, routeActions, _("Waypoints and chart"),
+         [this] { ShowWaypoints(); });
   route->Add(routeActions, 0, wxEXPAND);
   auto* boat = card(_("2. Boat and polars"));
-  boat_ = Text(this, boat, "");
+  boat_ = Text(content_, boat, "");
+  boat_->SetName(_("Boat status"));
   auto* boatActions = new wxBoxSizer(wxHORIZONTAL);
-  library_ = Button(this, boatActions, _("Choose from polar library"),
-                    [this] { ShowLibrary(); });
-  Button(this, boatActions, _("Import boat / polar"), [this] { ChooseBoat(); });
-  Button(this, boatActions, _("Edit boat and polars"), [this] {
-    EnsurePassage();
-    routing_.m_ConfigurationDialog.EditBoat();
-  });
+  mutableControls_.push_back(Button(content_, boatActions,
+                                    _("Boat and polar library"),
+                                    [this] { ShowLibrary(); }));
+  mutableControls_.push_back(Button(content_, boatActions,
+                                    _("Import boat / polar"),
+                                    [this] { ChooseBoat(); }));
+  mutableControls_.push_back(
+      Button(content_, boatActions, _("Edit polars"), [this] {
+        EnsurePassage();
+        routing_.m_ConfigurationDialog.EditBoat();
+      }));
+  mutableControls_.push_back(Button(content_, boatActions, _("Boat details"),
+                                    [this] { EditBoatDetails(); }));
   boat->Add(boatActions, 0, wxEXPAND);
   auto* weather = card(_("3. Weather"));
-  weather_ = Text(this, weather, "");
+  auto* sourceRow = new wxBoxSizer(wxHORIZONTAL);
+  auto* label = new wxStaticText(content_, wxID_ANY, _("Wind source"));
+  sourceRow->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxALL, 7);
+  windPolicy_ = new wxChoice(content_, wxID_ANY);
+  windPolicy_->Append(_("Forecast only"));
+  windPolicy_->Append(_("Climatology only"));
+  windPolicy_->Append(_("Forecast with Climatology fallback"));
+  windPolicy_->SetName(_("Wind source policy"));
+  windPolicy_->SetToolTip(
+      _("Climatology describes typical seasonal conditions. Fallback permits "
+        "its use where forecast wind is unavailable."));
+  sourceRow->Add(windPolicy_, 1, wxEXPAND | wxALL, 5);
+  mutableControls_.push_back(windPolicy_);
+  windPolicy_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
+    auto* r = routing_.FirstCurrentRouteMap();
+    if (!r) return;
+    auto c = r->GetConfiguration();
+    const int policy = windPolicy_->GetSelection();
+    c.UseGrib = policy != 1;
+    if (policy == 0) {
+      if (c.ClimatologyType > RouteMapConfiguration::CURRENTS_ONLY)
+        c.ClimatologyType = c.Currents ? RouteMapConfiguration::CURRENTS_ONLY
+                                       : RouteMapConfiguration::DISABLED;
+    } else if (c.ClimatologyType <= RouteMapConfiguration::CURRENTS_ONLY)
+      c.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
+    routing_.ApplyPassageConfiguration(c);
+    RefreshPassage();
+  });
+  weather->Add(sourceRow, 0, wxEXPAND);
+  weather_ = Text(content_, weather, "");
+  weather_->SetName(_("Weather status"));
   auto* weatherActions = new wxBoxSizer(wxHORIZONTAL);
-  load_ =
-      Button(this, weatherActions, _("Load GRIB"), [this] { LoadWeather(); });
-  Button(this, weatherActions, _("Download / generate GRIB"),
-         [this] { GenerateWeather(); });
+  mutableControls_.push_back(Button(content_, weatherActions, _("Load GRIB"),
+                                    [this] { LoadWeather(); }));
+  mutableControls_.push_back(Button(content_, weatherActions,
+                                    _("Download / generate GRIB"),
+                                    [this] { GenerateWeather(); }));
   weather->Add(weatherActions, 0, wxEXPAND);
-  auto* sourceActions = new wxBoxSizer(wxHORIZONTAL);
-  Button(this, sourceActions, _("Use Climatology"), [this] {
-    EnsurePassage();
-    auto* r = routing_.FirstCurrentRouteMap();
-    if (!r) return;
-    auto c = r->GetConfiguration();
-    c.UseGrib = false;
-    c.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
-    routing_.ApplyPassageConfiguration(c);
-    RefreshPassage();
-  });
-  Button(this, sourceActions, _("Forecast + Climatology"), [this] {
-    EnsurePassage();
-    auto* r = routing_.FirstCurrentRouteMap();
-    if (!r) return;
-    auto c = r->GetConfiguration();
-    c.UseGrib = true;
-    c.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
-    routing_.ApplyPassageConfiguration(c);
-    RefreshPassage();
-  });
-  weather->Add(sourceActions, 0, wxEXPAND);
   auto* settings = new wxBoxSizer(wxHORIZONTAL);
-  Button(this, settings, _("Basic settings"), [this] {
-    EnsurePassage();
-    routing_.m_ConfigurationDialog.ShowSettingsSection(0);
-    routing_.OnEditConfiguration();
-  });
-  Button(this, settings, _("Advanced settings"), [this] {
-    EnsurePassage();
-    routing_.m_ConfigurationDialog.ShowSettingsSection(1);
-    routing_.OnEditConfiguration();
-  });
+  mutableControls_.push_back(Button(content_, settings, _("Passage settings"),
+                                    [this] { OpenSettings(0); }));
+  mutableControls_.push_back(Button(content_, settings, _("Routing controls"),
+                                    [this] { OpenSettings(1); }));
+  Button(content_, settings, _("Planning help"), [this] { ShowHelp(); });
   page->Add(settings, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
-  limits_ = Text(this, page, "");
-  status_ = Text(this, page, "");
+  limits_ = Text(content_, page, "");
+  content_->SetSizer(page);
+  outer->Add(content_, 1, wxEXPAND);
+  auto* statusRow = new wxBoxSizer(wxHORIZONTAL);
+  status_ = Text(this, statusRow, "");
+  statusRow->GetItem(status_)->SetProportion(1);
+  status_->SetName(_("Calculation readiness"));
+  checksButton_ = new wxButton(this, wxID_ANY, _("Review checks"));
+  checksButton_->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ShowChecks(); });
+  statusRow->Add(checksButton_, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+  outer->Add(statusRow, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   auto* compute = new wxBoxSizer(wxHORIZONTAL);
-  calculate_ = Button(this, compute, _("Calculate Route"), [this] {
+  calculate_ = Button(this, compute, _("Calculate route"), [this] {
     auto* r = routing_.FirstCurrentRouteMap();
     if (!r) return;
     wxCommandEvent e;
-    if (routing_.RouteComputationActive(r))
+    if (!mutableControls_.front()->IsEnabled())
       routing_.OnStop(e);
-    else if (r->GetConfiguration().IsMultiLegGenerated)
-      routing_.OnComputeMultiLegSequence(e);
-    else
-      routing_.OnCompute(e);
+    else {
+      RefreshPassage();
+      if (!readiness_.CanCalculate()) {
+        ShowChecks();
+        return;
+      }
+      if (r->GetConfiguration().IsMultiLegGenerated) {
+        for (auto* leg : routing_.GetMultiLegGroupRoutes(
+                 r->GetConfiguration().MultiLegGroupId))
+          leg->Reset();
+        routing_.OnComputeMultiLegSequence(e);
+      } else {
+        r->Reset();
+        routing_.OnCompute(e);
+      }
+    }
     RefreshPassage();
   });
   calculate_->SetFont(calculate_->GetFont().Bold());
   calculate_->SetMinSize(wxSize(-1, 42));
-  Button(this, compute, _("Results and report"), [this] {
+  Button(this, compute, _("Detailed report"), [this] {
     wxCommandEvent e;
     routing_.OnReport(e);
   });
-  page->Add(compute, 0, wxEXPAND | wxALL, 10);
-  SetSizer(page);
+  outer->Add(compute, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+  SetSizer(outer);
+  Bind(wxEVT_HELP, [this](wxHelpEvent&) { ShowHelp(); });
   Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
     if (IsShownOnScreen()) RefreshPassage();
   });
@@ -200,129 +250,676 @@ void PassagePanel::SelectPassage(int index) {
   routing_.OnWeatherRouteSelected();
   RefreshPassage();
 }
+RouteMapConfiguration PassagePanel::PlanningConfiguration(
+    const RouteMapConfiguration& selected) const {
+  auto c = selected;
+  if (c.IsMultiLegGenerated) {
+    const auto legs = routing_.GetMultiLegGroupRoutes(c.MultiLegGroupId);
+    if (!legs.empty()) {
+      const auto first = legs.front()->GetConfiguration(),
+                 last = legs.back()->GetConfiguration();
+      c.Start = first.Start;
+      c.StartGUID = first.StartGUID;
+      c.StartLat = first.StartLat;
+      c.StartLon = first.StartLon;
+      c.StartTime = first.StartTime;
+      c.UseCurrentTime = first.UseCurrentTime;
+      c.TimeMode = first.TimeMode;
+      c.PlannedArrivalTime = first.PlannedArrivalTime;
+      c.ArrivalSearchHorizonMinutes = first.ArrivalSearchHorizonMinutes;
+      c.End = last.End;
+      c.EndGUID = last.EndGUID;
+      c.EndLat = last.EndLat;
+      c.EndLon = last.EndLon;
+    }
+  }
+  for (bool start : {true, false}) {
+    const auto& guid = start ? c.StartGUID : c.EndGUID;
+    PlugIn_Waypoint mark;
+    if (!guid.empty() && GetSingleWaypoint(guid, &mark)) {
+      if (start) {
+        c.StartLat = mark.m_lat;
+        c.StartLon = mark.m_lon;
+      } else {
+        c.EndLat = mark.m_lat;
+        c.EndLon = mark.m_lon;
+      }
+    }
+  }
+  return c;
+}
 void PassagePanel::RefreshPassage() {
   wxArrayString names;
   int selected = -1, index = 0;
   auto* current = routing_.FirstCurrentRouteMap();
   for (auto* item : routing_.m_WeatherRoutes) {
     const auto c = item->routemapoverlay->GetConfiguration();
-    names.Add(c.Start.empty() ? _("New passage") : c.Start + " to " + c.End);
+    names.Add(c.IsMultiLegGenerated
+                  ? c.MultiLegParentRouteName +
+                        wxString::Format(_(" • leg %d/%d"), c.MultiLegLegIndex,
+                                         c.MultiLegLegCount)
+              : c.Start.empty() ? _("New passage")
+                                : c.Start + " to " + c.End);
     if (item->routemapoverlay == current) selected = index;
     ++index;
   }
   if (passages_->GetStrings() != names) passages_->Set(names);
   if (selected >= 0) passages_->SetSelection(selected);
   if (!current) return;
-  const auto c = current->GetConfiguration();
-  const bool running = routing_.RouteComputationActive(current);
-  const bool positions = !c.Start.empty() && !c.End.empty() &&
+  const auto c = PlanningConfiguration(current->GetConfiguration());
+  const bool running = !routing_.m_RunningRouteMaps.empty() ||
+                       !routing_.m_WaitingRouteMaps.empty() ||
+                       routing_.m_RoutePreparationDepth ||
+                       routing_.m_DeferredRoutingStartPending;
+  weather_routing::PassageInputs input;
+  input.positionsValid = !c.Start.empty() && !c.End.empty() &&
                          std::isfinite(c.StartLat) &&
                          std::isfinite(c.StartLon) && std::isfinite(c.EndLat) &&
-                         std::isfinite(c.EndLon);
+                         std::isfinite(c.EndLon) &&
+                         std::abs(c.StartLat) <= 90 && std::abs(c.EndLat) <= 90;
+  const double lonDifference = std::remainder(c.StartLon - c.EndLon, 360.0);
+  input.distinctPositions =
+      std::abs(c.StartLat - c.EndLat) > 1e-8 || std::abs(lonDifference) > 1e-8;
+  const bool arrival =
+      c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
+  input.timeValid = arrival ? c.PlannedArrivalTime.IsValid() &&
+                                  c.ArrivalSearchHorizonMinutes > 0
+                            : c.UseCurrentTime || c.StartTime.IsValid();
+  input.coverageChecked = input.positionsValid && input.timeValid;
+  wxDateTime departure = c.UseCurrentTime ? wxDateTime::Now() : c.StartTime;
+  if (arrival && c.PlannedArrivalTime.IsValid())
+    departure = c.PlannedArrivalTime -
+                wxTimeSpan::Minutes(c.ArrivalSearchHorizonMinutes);
   wxString when =
-      c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
-          ? _("Target arrival: ") +
-                c.PlannedArrivalTime.Format("%d %b %Y, %H:%M", wxDateTime::UTC)
-          : _("Departure: ") +
-                c.StartTime.Format("%d %b %Y, %H:%M", wxDateTime::UTC);
-  wxString route = positions ? c.Start + "  →  " + c.End + "\n" + when + " UTC"
-                             : _("Choose your start, destination and departure "
-                                 "or target arrival time.");
-  if (c.IsMultiLegGenerated)
-    route += wxString::Format(
-        _("\nPassage leg %d of %d. Calculate runs the legs in sequence."),
-        c.MultiLegLegIndex, c.MultiLegLegCount);
-  route_->SetLabel(route);
-  const wxString boatError = boatModel_.OpenXML(c.boatFileName, true);
-  const bool boatReady = boatError.empty() && !boatModel_.Polars.empty();
-  bool example =
+      arrival ? _("Target arrival: ") +
+                    (c.PlannedArrivalTime.IsValid()
+                         ? c.PlannedArrivalTime.Format("%d %b %Y, %H:%M",
+                                                       wxDateTime::UTC)
+                         : _("not set"))
+              : _("Departure: ") +
+                    (input.timeValid
+                         ? departure.Format("%d %b %Y, %H:%M", wxDateTime::UTC)
+                         : _("not set"));
+  wxString route = input.positionsValid
+                       ? c.Start + "  →  " + c.End + "\n" + when + " UTC"
+                       : _("Choose the start, destination and departure or "
+                           "target arrival time.");
+  if (c.IsMultiLegGenerated) {
+    route += wxString::Format(_("\nLeg %d of %d • "), c.MultiLegLegIndex,
+                              c.MultiLegLegCount) +
+             c.MultiLegParentRouteName;
+    route += _("\nCalculate runs this passage's legs in sequence.");
+  }
+  if (c.IsMultiLegGenerated) {
+    std::vector<RouteWaypointInfo> waypoints;
+    wxString error;
+    const auto legs = routing_.GetMultiLegGroupRoutes(c.MultiLegGroupId);
+    input.routeSequenceValid =
+        ExtractOpenCPNRouteWaypoints(c.MultiLegParentRouteGUID, waypoints,
+                                     error) &&
+        waypoints.size() == legs.size() + 1;
+    if (input.routeSequenceValid)
+      for (size_t i = 0; i < legs.size(); ++i) {
+        const auto leg = legs[i]->GetConfiguration();
+        if (leg.StartGUID != waypoints[i].guid ||
+            leg.EndGUID != waypoints[i + 1].guid)
+          input.routeSequenceValid = false;
+      }
+  }
+  input.boatError = boatModel_.OpenXML(c.boatFileName, true, false);
+  input.boatValid = input.boatError.empty() && !boatModel_.Polars.empty();
+  input.boatWarnings = boatModel_.loadWarnings;
+  input.exampleBoat =
       wxFileName(c.boatFileName).GetName() == "Example-40ft-monohull";
   for (const auto& polar : boatModel_.Polars)
-    example = example || polar.FileName.Contains("40ft-monohull-example.pol");
-  boat_->SetLabel(
-      boatReady
-          ? (example ? _("Example 40 ft monohull — illustrative performance, "
-                         "not your vessel")
-                     : DisplayName(wxFileName(c.boatFileName).GetName())) +
-                wxString::Format(_("\n%d polar configuration(s)."),
-                                 int(boatModel_.Polars.size()))
-          : _("Choose or import a usable boat and polar.") + "\n" + boatError);
+    input.exampleBoat = input.exampleBoat ||
+                        polar.FileName.Contains("40ft-monohull-example.pol");
   auto& provider = routing_.PassageForecast();
   const bool climate = c.ClimatologyType > RouteMapConfiguration::CURRENTS_ONLY;
-  wxString weather =
-      c.UseGrib
-          ? provider.Summary() + "\n" + provider.Details()
-          : _("Climatology planning — typical conditions, not a forecast");
-  if (climate)
-    weather += "\n" + weather_routing::BundledClimatology::Source() +
-               (c.UseGrib ? _(" — available beyond forecast coverage") : "");
-  bool wind = c.UseGrib && provider.Loaded();
-  if (wind && positions &&
-      c.TimeMode == RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME) {
-    wind = provider.HasWind(c.StartTime.GetTicks(), c.StartLat, c.StartLon);
-    if (!wind)
-      weather +=
-          _("\nForecast wind does not cover the departure position and time.");
-    else
-      weather +=
-          _("\nDeparture wind is available. Coverage is checked throughout "
-            "calculation.");
-  }
-  if (!c.UseGrib && !climate)
-    weather =
-        _("No weather source selected. Load a GRIB or choose Climatology.");
-  bool climateReady = climate;
-  if (climate && positions && !wind && !running &&
-      c.TimeMode == RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME) {
-    std::lock_guard<std::recursive_mutex> lock(
-        ClimatologyThreadGuard::InvocationMutex());
-    double direction = 0, speed = 0;
-    const bool vector = RouteMap::ClimatologyData &&
-                        RouteMap::ClimatologyData(0, c.StartTime, c.StartLat,
-                                                  c.StartLon, direction, speed);
-    climateReady = vector;
-    if (c.ClimatologyType > RouteMapConfiguration::AVERAGE) {
-      int count = 8;
-      double frequencies[8]{}, speeds[8]{}, gale = 0, calm = 0;
-      climateReady = RouteMap::ClimatologyWindAtlasData &&
-                     RouteMap::ClimatologyWindAtlasData(
-                         c.StartTime, c.StartLat, c.StartLon, count,
-                         frequencies, speeds, gale, calm);
+  const int policy = !c.UseGrib ? (climate ? 1 : wxNOT_FOUND) : climate ? 2 : 0;
+  windPolicy_->SetSelection(policy);
+  input.policy =
+      policy == wxNOT_FOUND ? weather_routing::PassageWindPolicy::None
+      : policy == 1         ? weather_routing::PassageWindPolicy::Climatology
+      : policy == 2
+          ? weather_routing::PassageWindPolicy::ForecastWithClimatology
+          : weather_routing::PassageWindPolicy::Forecast;
+  input.forecastLoaded = provider.Loaded();
+  wxDateTime sample = departure;
+  if (arrival && input.forecastLoaded && sample.IsValid() &&
+      c.PlannedArrivalTime.IsValid() &&
+      provider.FirstWindTime() <= c.PlannedArrivalTime.GetTicks() &&
+      provider.FirstWindTime() > sample.GetTicks())
+    sample = wxDateTime(provider.FirstWindTime());
+  if (input.positionsValid && input.timeValid && sample.IsValid()) {
+    const auto time = sample.GetTicks();
+    input.departureWind = provider.HasWind(time, c.StartLat, c.StartLon);
+    input.destinationWind = provider.HasWind(time, c.EndLat, c.EndLon);
+    input.wavesAvailable =
+        c.UseGrib && provider.HasData(Idx_HTSIGW, time, c.StartLat, c.StartLon);
+    input.currentsAvailable =
+        c.UseGrib &&
+        provider.HasData(Idx_SEACURRENT_VX, time, c.StartLat, c.StartLon) &&
+        provider.HasData(Idx_SEACURRENT_VY, time, c.StartLat, c.StartLon);
+    if (!running && c.ClimatologyType != RouteMapConfiguration::DISABLED) {
+      std::lock_guard<std::recursive_mutex> lock(
+          ClimatologyThreadGuard::InvocationMutex());
+      double direction = 0, speed = 0;
+      if (c.ClimatologyType == RouteMapConfiguration::AVERAGE)
+        climateWindReady_ =
+            RouteMap::ClimatologyData &&
+            RouteMap::ClimatologyData(0, sample, c.StartLat, c.StartLon,
+                                      direction, speed);
+      else {
+        int count = 8;
+        double frequencies[8]{}, speeds[8]{}, gale = 0, calm = 0;
+        climateWindReady_ = RouteMap::ClimatologyWindAtlasData &&
+                            RouteMap::ClimatologyWindAtlasData(
+                                sample, c.StartLat, c.StartLon, count,
+                                frequencies, speeds, gale, calm);
+      }
+      if (c.Currents && RouteMap::ClimatologyData)
+        input.currentsAvailable =
+            input.currentsAvailable ||
+            RouteMap::ClimatologyData(1, sample, c.StartLat, c.StartLon,
+                                      direction, speed);
     }
-    if (!climateReady)
-      weather +=
-          _("\nClimatology has no usable wind at the departure position. Load "
-            "a forecast or review the position.");
+    input.climatologyWind = climate && climateWindReady_;
+    const double distance =
+        DistGreatCircle_Plugin(c.StartLat, c.StartLon, c.EndLat, c.EndLon);
+    input.estimatedFinish =
+        arrival ? c.PlannedArrivalTime
+                : departure + wxTimeSpan::Hours(
+                                  std::max(1, int(std::ceil(distance / 4.0))));
   }
-  weather_->SetLabel(weather);
+  if (provider.Loaded())
+    input.forecastEnd = wxDateTime(provider.LastWindTime());
+  input.useCurrents = c.Currents;
+  input.requireWaves = c.RequireWaveCoverage;
+  input.windLimit = c.MaxTrueWindKnots;
+  input.apparentWindLimit = c.MaxApparentWindKnots;
+  input.waveLimit = c.MaxSwellMeters;
+  input.avoidLand = c.DetectLand;
+  readiness_ = weather_routing::EvaluatePassage(input);
+  const auto sectionStatus = [&](int section) {
+    return weather_routing::PassageSectionStatus(readiness_.sections[section]);
+  };
+  route_->SetLabel(sectionStatus(0) + " • " + route);
+  wxString boat = !boatModel_.Name.empty()
+                      ? boatModel_.Name
+                      : DisplayName(wxFileName(c.boatFileName).GetName());
+  if (!input.boatValid)
+    boat = input.boatError;
+  else {
+    boat += wxString::Format(_("\n%d polar configuration(s)"),
+                             int(boatModel_.Polars.size()));
+
+    for (const auto& polar : boatModel_.Polars) {
+      boat += "\n" + (polar.Name.empty()
+                          ? DisplayName(wxFileName(polar.FileName).GetName())
+                          : polar.Name);
+      if (!polar.SailConfiguration.empty())
+        boat += " • " + polar.SailConfiguration;
+      boat += " • " + (polar.Source.empty()
+                           ? (input.exampleBoat ? _("illustrative estimate")
+                                                : _("source unknown"))
+                           : polar.Source);
+      if (boat.length() > 550) {
+        boat += _("\nMore polars in Boat details.");
+        break;
+      }
+    }
+  }
+  boat_->SetLabel(sectionStatus(1) + " • " + boat);
+  wxString weather =
+      c.UseGrib ? provider.Summary() + "\n" + provider.Details()
+      : climate ? _("Typical seasonal conditions, not a weather forecast")
+                : _("No wind source selected");
+  if (climate) weather += "\n" + weather_routing::BundledClimatology::Source();
+  if (!readiness_.sections[2].items.empty() &&
+      !weather.Contains(readiness_.sections[2].items.front().title))
+    weather += "\n" + readiness_.sections[2].items.front().title;
+  weather_->SetLabel(sectionStatus(2) + " • " + weather);
   limits_->SetLabel(wxString::Format(
-      _("Review passage limits: wind %.0f kn · waves %.1f m · %s · %s"),
+      _("Passage limits: wind %.0f kn • waves %.1f m • %s • %s"),
       c.MaxTrueWindKnots, c.MaxSwellMeters,
-      c.Currents ? _("currents enabled") : _("currents off"),
+      c.Currents ? _("currents on") : _("currents off"),
       c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
-  const bool ready = positions && boatReady && (wind || climateReady);
-  const bool stale = current->Finished() && c.UseGrib && provider.Loaded() &&
-                     !current->GetDiagnostics().context.Contains(
-                         wxString::FromUTF8(provider.Identity()));
+  const auto report = readiness_.Report();
+  wxString state = readiness_.CanCalculate() ? _("Ready to calculate")
+                                             : _("Setup needs attention");
+  for (const auto& issue : report.items)
+    if (issue.severity == weather_routing::DiagnosticSeverity::Error) {
+      state = issue.title;
+      break;
+    }
+  if (readiness_.Warnings())
+    state += wxString::Format(_(" • %u to review"), readiness_.Warnings());
+  if (current->Finished() && readiness_.CanCalculate())
+    state = current->GetDiagnostics().Summary();
   status_->SetLabel(
-      running ? _("Calculating passage… You can cancel and keep your setup.")
-      : !positions             ? _("Define the passage to begin.")
-      : !boatReady             ? _("Choose a valid boat to continue.")
-      : !wind && !climateReady ? _("Select usable weather to continue.")
-      : stale ? _("Weather has changed since this result. Recalculate to use "
-                  "the selected forecast.")
-      : current->Finished() ? current->GetDiagnostics().Summary()
-                            : _("Ready to calculate. Review the example boat "
-                                "and operating limits for your passage."));
+      running ? _("Calculating passage… Setup is preserved if you cancel.")
+              : state);
+  checksButton_->SetLabel(readiness_.CanCalculate() ? _("Review checks")
+                                                    : _("Resolve setup"));
   calculate_->SetLabel(running ? _("Cancel calculation")
-                               : _("Calculate Route"));
-  calculate_->Enable(running || ready);
-  for (auto* b : {edit_, library_, load_}) b->Enable(!running);
-  // Wrap against the actual viewport; no fixed desktop-sized minimum.
-  for (auto* t : {route_, boat_, weather_, limits_, status_})
-    t->Wrap(std::max(220, GetClientSize().x - 64));
+                               : _("Calculate route"));
+  calculate_->Enable(running || readiness_.CanCalculate());
+  for (auto* control : mutableControls_) control->Enable(!running);
+  RefreshResults(current, running);
+  if (!running && current->Finished() && readiness_.CanCalculate())
+    status_->SetLabel(resultStatus_);
+  for (auto* t : {route_, boat_, weather_, limits_, results_}) {
+    t->Wrap(std::max(220, content_->GetClientSize().x - 64));
+    // A wrapped label's previous best width must not become the scroller's
+    // minimum virtual width after the user narrows the window.
+    t->SetMinSize(wxSize(1, -1));
+  }
+  status_->Wrap(std::max(180, GetClientSize().x - 230));
+  content_->Layout();
+  content_->FitInside();
   Layout();
-  FitInside();
+  wxString layoutTrace;
+  static bool traced = false;
+  if (!traced && IsShownOnScreen() && wxGetEnv("WR_UI_LAYOUT_DIAGNOSTICS", &layoutTrace)) {
+    traced = true;
+    const auto frame = GetParent()->GetParent()->GetClientSize();
+    const auto notebook = GetParent()->GetClientSize();
+    const auto size = GetClientSize();
+    wxLogMessage("V2_LAYOUT frame=%dx%d notebook=%dx%d page=%dx%d content=%dx%d calculate_y=%d height=%d", frame.x, frame.y, notebook.x, notebook.y, size.x, size.y, content_->GetSize().x, content_->GetSize().y, calculate_->GetPosition().y, calculate_->GetSize().y);
+  }
+}
+
+void PassagePanel::NewPassage(bool example) {
+  auto* selected = routing_.FirstCurrentRouteMap();
+  auto c =
+      selected ? selected->GetConfiguration() : routing_.DefaultConfiguration();
+  // Start a new passage, retaining the vessel and planning preferences, never
+  // the identity or computed scheduling state of a linked leg or candidate.
+  c.RouteGUID.clear();
+  c.Start.clear();
+  c.End.clear();
+  c.StartGUID.clear();
+  c.EndGUID.clear();
+  c.StartType = RouteMapConfiguration::START_FROM_POSITION;
+  c.EndType = RouteMapConfiguration::END_AT_POSITION;
+  c.StartLat = c.StartLon = c.EndLat = c.EndLon = NAN;
+  c.UseCurrentTime = false;
+  c.StartTime = wxDateTime::Now();
+  c.TimeMode = RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME;
+  c.PlannedArrivalTime = c.StartTime + wxTimeSpan::Hours(24);
+  c.ArrivalPlanningEvaluatedRoutes = c.ArrivalPlanningFeasibleRoutes = 0;
+  c.ArrivalPlanningScheduleMarginSeconds = 0;
+  c.DepartureTimeOptimizationEnabled = false;
+  c.PromoteDepartureTimeOptimizationCandidate();
+  c.IsMultiLegGenerated = false;
+  c.MultiLegGroupId.clear();
+  c.MultiLegParentRouteGUID.clear();
+  c.MultiLegParentRouteName.clear();
+  c.MultiLegLegIndex = c.MultiLegLegCount = 0;
+  if (example) {
+    c.Start = _("Example Atlantic west");
+    c.End = _("Example Atlantic east");
+    c.StartLat = 30;
+    c.StartLon = -40;
+    c.EndLat = 30.3;
+    c.EndLon = -39.5;
+    routing_.AddPosition(c.StartLat, c.StartLon, c.Start);
+    routing_.AddPosition(c.EndLat, c.EndLon, c.End);
+    c.boatFileName =
+        weather_routing_pi::StandardPath() + "boats/Example-40ft-monohull.xml";
+    c.UseGrib = false;
+    c.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
+    c.Currents = false;
+    c.UseMotor = false;
+    c.DetectLand = true;
+    c.RequireWaveCoverage = false;
+    c.MaxTrueWindKnots = weather_routing::PassageDefaults::windKnots;
+    c.MaxApparentWindKnots =
+        weather_routing::PassageDefaults::apparentWindKnots;
+    c.MaxSwellMeters = weather_routing::PassageDefaults::waveMeters;
+  }
+  if (!routing_.AddConfiguration(c)) return;
+  SelectPassage(int(routing_.m_WeatherRoutes.size()) - 1);
+  if (!example)
+    EditRoute();
+  else
+    ShowHelp();
+}
+void PassagePanel::RestoreDefaults() {
+  auto* route = routing_.FirstCurrentRouteMap();
+  if (!route) return;
+  wxDialog dialog(this, wxID_ANY, _("Restore passage preferences"));
+  auto* s = new wxBoxSizer(wxVERTICAL);
+  Text(&dialog, s,
+       _("Restore these starting preferences for the selected passage:\n\n"
+         "Maximum true wind: 30 kn\nMaximum apparent wind: 40 kn\nMaximum "
+         "waves: 3 m\n"
+         "Land avoidance: on\nCurrents and motoring: off\nWind and boat "
+         "performance adjustments: 100%\n\n"
+         "The route, passage time, boat, weather source, depth and shore "
+         "margins, "
+         "required wave coverage and routing controls are retained."));
+  s->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+  dialog.SetSizerAndFit(s);
+  dialog.CentreOnParent();
+  if (dialog.ShowModal() != wxID_OK) return;
+  auto c = route->GetConfiguration();
+  c.MaxTrueWindKnots = weather_routing::PassageDefaults::windKnots;
+  c.MaxApparentWindKnots = weather_routing::PassageDefaults::apparentWindKnots;
+  c.MaxSwellMeters = weather_routing::PassageDefaults::waveMeters;
+  c.DetectLand = true;
+  c.Currents = false;
+  c.UseMotor = false;
+  c.WindStrength = c.UpwindEfficiency = c.DownwindEfficiency =
+      c.NightCumulativeEfficiency = 1;
+  routing_.ApplyPassageConfiguration(c);
+  RefreshPassage();
+}
+void PassagePanel::ChooseRoute() {
+  std::vector<wxString> guids;
+  wxArrayString labels;
+  for (const auto& guid : GetRouteGUIDArray()) {
+    auto route = GetRoute_Plugin(guid);
+    if (!route || !route->pWaypointList || route->pWaypointList->GetCount() < 2)
+      continue;
+    guids.push_back(guid);
+    labels.Add((route->m_NameString.empty() ? _("Unnamed route")
+                                            : route->m_NameString) +
+               wxString::Format(_(" • %zu waypoints"),
+                                route->pWaypointList->GetCount()));
+  }
+  if (guids.empty()) {
+    wxMessageBox(
+        _("Create a route with at least two waypoints on the OpenCPN chart, "
+          "then choose it here. You can also right-click that route to start "
+          "weather routing."),
+        _("Use OpenCPN route"), wxOK | wxICON_INFORMATION, this);
+    return;
+  }
+  wxSingleChoiceDialog chooser(
+      this,
+      _("Choose a route. Its waypoints become a continuous "
+        "passage whose legs are calculated in sequence."),
+      _("Use OpenCPN route"), labels);
+  if (chooser.ShowModal() != wxID_OK) return;
+  const int first = int(routing_.m_WeatherRoutes.size());
+  if (routing_.CreateMultiLegConfigurationsFromRoute(
+          guids.at(chooser.GetSelection()), false))
+    SelectPassage(first);
+}
+void PassagePanel::ShowWaypoints() {
+  auto* r = routing_.FirstCurrentRouteMap();
+  if (!r) return;
+  const auto c = r->GetConfiguration();
+  const auto guid =
+      c.IsMultiLegGenerated ? c.MultiLegParentRouteGUID : c.RouteGUID;
+  std::vector<RouteWaypointInfo> points;
+  wxString error;
+  if (!guid.empty())
+    ExtractOpenCPNRouteWaypoints(guid, points, error);
+  else if (!c.Start.empty() && !c.End.empty()) {
+    points.push_back({c.StartGUID, c.Start, c.StartLat, c.StartLon, 0});
+    points.push_back({c.EndGUID, c.End, c.EndLat, c.EndLon, 1});
+  }
+  wxDialog dialog(this, wxID_ANY, _("Passage waypoints"), wxDefaultPosition,
+                  wxSize(640, 460), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  auto* s = new wxBoxSizer(wxVERTICAL);
+  Text(&dialog, s,
+       guid.empty()
+           ? _("Named positions for this passage.")
+           : _("Waypoints are owned by the OpenCPN route. To edit them, show "
+               "the route on "
+               "the chart and open its properties. If you add, remove or "
+               "reorder waypoints, "
+               "use OpenCPN route again to create a new passage sequence."));
+  if (!error.empty()) Text(&dialog, s, error);
+  auto* list = new wxListBox(&dialog, wxID_ANY);
+  list->SetName(_("Passage waypoints in order"));
+  for (size_t i = 0; i < points.size(); ++i)
+    list->Append(
+        wxString::Format("%zu. ", i + 1) + points[i].name +
+        wxString::Format("   %.5f, %.5f", points[i].lat, points[i].lon));
+  s->Add(list, 1, wxEXPAND | wxALL, 10);
+  auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+  Button(&dialog, buttons, _("Show on chart"), [&, this] {
+    wxCommandEvent e;
+    routing_.OnGoTo(e);
+    dialog.EndModal(wxID_OK);
+    routing_.Hide();
+  });
+  Button(&dialog, buttons, _("Close"), [&] { dialog.EndModal(wxID_CANCEL); });
+  s->Add(buttons, 0, wxEXPAND | wxALL, 10);
+  dialog.SetSizer(s);
+  dialog.CentreOnParent();
+  dialog.ShowModal();
+}
+void PassagePanel::OpenSettings(size_t section) {
+  EnsurePassage();
+  routing_.m_ConfigurationDialog.ShowSettingsSection(section);
+  auto* route = routing_.FirstCurrentRouteMap();
+  if (route && route->GetConfiguration().IsMultiLegGenerated) {
+    wxCommandEvent event;
+    routing_.OnEditMultiLegGroupSettings(event);
+  } else
+    routing_.OnEditConfiguration();
+}
+void PassagePanel::ShowChecks() {
+  RefreshPassage();
+  wxDialog dialog(this, wxID_ANY, _("Passage checks"), wxDefaultPosition,
+                  wxSize(680, 540), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  auto* s = new wxBoxSizer(wxVERTICAL);
+  auto* scroll = new wxScrolledWindow(&dialog);
+  scroll->SetScrollRate(0, 14);
+  auto* body = new wxBoxSizer(wxVERTICAL);
+  const wxString sections[] = {_("Route"), _("Boat and polars"), _("Weather"),
+                               _("Passage limits")};
+  for (size_t i = 0; i < readiness_.sections.size(); ++i) {
+    const auto& section = readiness_.sections[i];
+    Text(scroll, body,
+         sections[i] + ": " + weather_routing::PassageSectionStatus(section),
+         true);
+    for (const auto& issue : section.items) {
+      auto* text =
+          Text(scroll, body,
+               issue.title + (issue.detail.empty() ? "" : "\n" + issue.detail));
+      text->Wrap(600);
+      if (issue.action.empty()) continue;
+      auto* action = new wxButton(scroll, wxID_ANY, issue.action);
+      body->Add(action, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
+      action->Enable(mutableControls_.front()->IsEnabled());
+      action->Bind(wxEVT_BUTTON, [&, code = issue.code](wxCommandEvent&) {
+        dialog.EndModal(wxID_OK);
+        // Defer until the modal stack unwinds, and resolve current selection at
+        // execution rather than retaining pointers to route models.
+        CallAfter([this, code] {
+          if (code == "passage.weather.waves" ||
+              code == "passage.weather.destination")
+            GenerateWeather();
+          else if (code == "passage.route.sequence")
+            ChooseRoute();
+          else
+            switch (weather_routing::RecoveryAction(code)) {
+              case weather_routing::PassageAction::Route:
+                EditRoute();
+                break;
+              case weather_routing::PassageAction::Boat:
+                ShowLibrary();
+                break;
+              case weather_routing::PassageAction::Weather:
+                windPolicy_->SetFocus();
+                break;
+              case weather_routing::PassageAction::Limits:
+                OpenSettings(0);
+                break;
+            }
+        });
+      });
+    }
+  }
+  if (auto* route = routing_.FirstCurrentRouteMap();
+      route && route->Finished()) {
+    const auto report = route->GetDiagnostics();
+    Text(scroll, body, _("Last calculation: ") + report.Summary(), true)
+        ->Wrap(600);
+    for (const auto& item : report.items)
+      if (item.severity != weather_routing::DiagnosticSeverity::Notice)
+        Text(scroll, body,
+             item.title + (item.detail.empty() ? "" : "\n" + item.detail))
+            ->Wrap(600);
+    auto* details = new wxButton(scroll, wxID_ANY, _("Open detailed report"));
+    body->Add(details, 0, wxALL, 8);
+    details->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+      dialog.EndModal(wxID_OK);
+      CallAfter([this] {
+        wxCommandEvent e;
+        routing_.OnReport(e);
+      });
+    });
+  }
+  Text(scroll, body,
+       _("These checks establish whether calculation can start. "
+         "Weather coverage, detours and constraints are also checked during "
+         "routing and final validation."))
+      ->Wrap(600);
+  scroll->SetSizer(body);
+  s->Add(scroll, 1, wxEXPAND);
+  s->Add(dialog.CreateButtonSizer(wxCLOSE), 0, wxEXPAND | wxALL, 10);
+  dialog.SetSizer(s);
+  dialog.CentreOnParent();
+  dialog.ShowModal();
+}
+void PassagePanel::ShowHelp() {
+  wxDialog dialog(this, wxID_ANY, _("Planning a passage"));
+  auto* s = new wxBoxSizer(wxVERTICAL);
+  Text(
+      &dialog, s,
+      _("Route\nChoose your own positions or an existing OpenCPN route. "
+        "Departure and target arrival times are UTC. OpenCPN routes retain "
+        "their waypoint identities; "
+        "their legs run in sequence.\n\nBoat and polars\nThe example 40 ft "
+        "monohull is illustrative. "
+        "Choose your vessel's data, or duplicate a library polar and edit your "
+        "own copy. "
+        "Unknown source information is shown honestly and does not prevent "
+        "using a polar.\n\n"
+        "Weather\nForecast only uses the selected GRIB. Climatology uses "
+        "typical seasonal conditions. "
+        "Forecast with Climatology fallback allows typical conditions where "
+        "wind forecasts are missing. "
+        "A loaded GRIB is retained when you change source policy. Missing "
+        "waves or currents remain "
+        "unknown; Review checks explains their effect.\n\nCalculate\nReadiness "
+        "means the inputs "
+        "permit a calculation. Review operating limits for your vessel and "
+        "passage. "
+        "The result shows actual arrival and source use, with further checks "
+        "in the report.\n\n"
+        "New passage keeps the boat and preferences. Passage actions contains "
+        "a separate, optional "
+        "example and a scoped restore action. All settings remain available."));
+  s->Add(dialog.CreateButtonSizer(wxOK), 0, wxEXPAND | wxALL, 12);
+  dialog.SetSizerAndFit(s);
+  dialog.CentreOnParent();
+  dialog.ShowModal();
+}
+void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
+  if (busy || !current->Finished()) {
+    resultsBox_->Show(false);
+    resultRoute_ = nullptr;
+    resultKey_.clear();
+    resultStatus_.clear();
+    return;
+  }
+  const auto config = current->GetConfiguration();
+  auto routes = config.IsMultiLegGenerated
+                    ? routing_.GetMultiLegGroupRoutes(config.MultiLegGroupId)
+                    : std::vector<RouteMapOverlay*>{current};
+  wxString key;
+  for (auto* r : routes)
+    key +=
+        r->GetDiagnostics().Summary() + r->ModernNativeCoverageNotes() +
+        (r->EndTime().IsValid() ? r->EndTime().FormatISOCombined() : "pending");
+  if (current == resultRoute_ && key == resultKey_) {
+    resultsBox_->Show(true);
+    return;
+  }
+  resultRoute_ = current;
+  resultKey_ = key;
+  unsigned complete = 0, warnings = 0;
+  double distance = 0, wind = NAN, waves = NAN;
+  bool missingWaves = false, usedClimate = false, missingWind = false;
+  wxDateTime start, end;
+  for (auto* r : routes) {
+    const auto report = r->GetDiagnostics();
+    warnings += report.Count(weather_routing::DiagnosticSeverity::Warning);
+    if (!r->Finished() || !r->ReachedDestination()) continue;
+    ++complete;
+    missingWaves = missingWaves || r->HasUnknownWaveHeights() ||
+                   !r->GetConfiguration().UseGrib;
+    distance += r->RouteInfo(RouteMapOverlay::DISTANCE);
+    const double w = r->RouteInfo(RouteMapOverlay::MAXWIND),
+                 h = r->RouteInfo(RouteMapOverlay::MAXSWELL);
+    if (std::isfinite(w)) wind = std::isfinite(wind) ? std::max(wind, w) : w;
+    if (std::isfinite(h) && h >= 0)
+      waves = std::isfinite(waves) ? std::max(waves, h) : h;
+    if (!start.IsValid() || r->StartTime() < start) start = r->StartTime();
+    if (!end.IsValid() || r->EndTime() > end) end = r->EndTime();
+    for (const auto& item : report.items) {
+      usedClimate = usedClimate || item.code == "usage.climatology_wind";
+      missingWind = missingWind || item.code == "usage.missing_wind";
+      missingWaves = missingWaves || item.code == "usage.missing_waves";
+    }
+  }
+  wxString summary;
+  if (!complete)
+    summary = current->GetDiagnostics().Summary() +
+              _("\nNo completed passage. Review the detailed report before "
+                "recalculating.");
+  else {
+    if (routes.size() > 1)
+      summary += wxString::Format(_("%u of %zu legs complete\n"), complete,
+                                  routes.size());
+    summary += _("Arrival: ") + end.Format("%d %b %Y, %H:%M", wxDateTime::UTC) +
+               " UTC";
+    const auto duration = end - start;
+    summary += wxString::Format(
+        _(" • Duration: %ld h %ld min\nDistance: %.1f nm"),
+        static_cast<long>(duration.GetHours()),
+        static_cast<long>(duration.GetMinutes() % 60), distance);
+    const double hours = duration.GetSeconds().ToDouble() / 3600;
+    if (hours > 0)
+      summary += wxString::Format(_(" • Average over ground: %.1f kn"),
+                                  distance / hours);
+    summary +=
+        _("\nMaximum wind: ") + (std::isfinite(wind) && !missingWind
+                                     ? wxString::Format(_("%.1f kn"), wind)
+                                     : _("not fully available"));
+    summary +=
+        _(" • Maximum waves: ") + (std::isfinite(waves) && !missingWaves
+                                       ? wxString::Format(_("%.1f m"), waves)
+                                       : _("not fully available"));
+    summary +=
+        _("\nWind used: ") +
+        (usedClimate ? _("Climatology was used; intervals are in the report")
+         : current->UsesModernNativeResult() && config.UseGrib && !missingWind
+             ? _("forecast")
+         : !config.UseGrib ? _("Climatology")
+                           : _("see detailed report"));
+    summary += wxString::Format(_(" • %u warnings"), warnings);
+  }
+  resultStatus_ =
+      routes.size() > 1
+          ? complete == routes.size()
+                ? wxString::Format(
+                      _("Passage complete • %u warnings across %zu legs"),
+                      warnings, routes.size())
+                : wxString::Format(
+                      _("Passage incomplete • %u of %zu legs complete"),
+                      complete, routes.size())
+          : current->GetDiagnostics().Summary();
+  results_->SetLabel(summary);
+  resultsBox_->Show(true);
 }
 
 void PassagePanel::EditRoute() {
@@ -527,6 +1124,7 @@ void PassagePanel::ApplyBoat(const wxString& path) {
   if (!r) return;
   auto c = r->GetConfiguration();
   c.boatFileName = path;
+  boatModel_.OpenXML(path, false, false);
   routing_.ApplyPassageConfiguration(c);
   RefreshPassage();
 }
@@ -579,51 +1177,186 @@ void PassagePanel::ChooseBoat() {
   ApplyBoat(path);
 }
 void PassagePanel::ShowLibrary() {
-  wxArrayString files;
-  wxDir::GetAllFiles(weather_routing_pi::StandardPath() + "polars", &files,
-                     "*.pol", wxDIR_FILES | wxDIR_DIRS);
-  files.Sort();
-  wxDialog dialog(this, wxID_ANY, _("Polar library"), wxDefaultPosition,
-                  wxSize(600, 570), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  const wxString root = weather_routing_pi::StandardPath();
+  wxDialog dialog(this, wxID_ANY, _("Boat and polar library"),
+                  wxDefaultPosition, wxSize(700, 650),
+                  wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
   auto* s = new wxBoxSizer(wxVERTICAL);
   Text(&dialog, s,
-       _("Choose a library polar as a starting point for your boat. Check the "
-         "data against your vessel before passage planning."));
+       _("Select a saved boat or use a library polar as a starting point. "
+         "Library polars are copied before editing. Source information may be "
+         "unknown."));
+  auto* kind = new wxChoice(&dialog, wxID_ANY);
+  kind->Append(_("Saved boats"));
+  kind->Append(_("Polar library"));
+  kind->SetSelection(0);
+  kind->SetName(_("Library category"));
+  s->Add(kind, 0, wxEXPAND | wxALL, 8);
   auto* search = new wxSearchCtrl(&dialog, wxID_ANY);
-  s->Add(search, 0, wxEXPAND | wxALL, 12);
+  search->SetName(_("Search boat and polar names"));
+  s->Add(search, 0, wxEXPAND | wxALL, 8);
   auto* list = new wxListBox(&dialog, wxID_ANY);
-  s->Add(list, 1, wxEXPAND | wxLEFT | wxRIGHT, 12);
+  list->SetName(_("Available boats and polars"));
+  s->Add(list, 1, wxEXPAND | wxLEFT | wxRIGHT, 8);
+  auto* details = Text(&dialog, s, "");
+  auto* actions = new wxBoxSizer(wxHORIZONTAL);
+  auto* duplicate = new wxButton(&dialog, wxID_ANY, _("Duplicate boat"));
+  auto* exportBoat = new wxButton(&dialog, wxID_ANY, _("Export boat…"));
+  actions->Add(duplicate, 1, wxALL, 5);
+  actions->Add(exportBoat, 1, wxALL, 5);
+  s->Add(actions, 0, wxEXPAND | wxALL, 5);
+  s->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 10);
+  if (auto* ok = dialog.FindWindow(wxID_OK)) ok->SetLabel(_("Use selection"));
   std::vector<wxString> filtered;
-  auto filter = [&] {
+  const auto describe = [&] {
+    const int index = list->GetSelection();
+    const bool selected = index >= 0;
+    duplicate->Enable(selected && kind->GetSelection() == 0);
+    exportBoat->Enable(selected && kind->GetSelection() == 0);
+    dialog.FindWindow(wxID_OK)->Enable(selected);
+    wxString value;
+    if (selected) {
+      const auto path = filtered.at(index);
+      if (kind->GetSelection() == 0) {
+        TiXmlDocument doc;
+        if (doc.LoadFile(path.utf8_str()) && doc.RootElement()) {
+          value =
+              wxString::FromUTF8(doc.RootElement()->Attribute("description"));
+          for (auto* p = doc.RootElement()->FirstChildElement("Polar"); p;
+               p = p->NextSiblingElement("Polar")) {
+            const auto name = wxString::FromUTF8(p->Attribute("Name"));
+            const auto source = wxString::FromUTF8(p->Attribute("Source"));
+            const auto sails = wxString::FromUTF8(p->Attribute("Sails"));
+            if (!value.empty()) value += "\n";
+            value +=
+                name.empty()
+                    ? wxFileName(wxString::FromUTF8(p->Attribute("FileName")))
+                          .GetName()
+                    : name;
+            value += " • " + (source.empty() ? _("source unknown") : source);
+            if (!sails.empty()) value += " • " + sails;
+            if (value.length() > 350) {
+              value += _("\nMore details after selection.");
+              break;
+            }
+          }
+        }
+      } else
+        value =
+            _("A personal copy will be created. Source: unknown unless "
+              "documented. "
+              "Add provenance and sail information in Boat details.");
+    }
+    details->SetLabel(value);
+    details->Wrap(640);
+    dialog.Layout();
+  };
+  const auto filter = [&] {
+    wxArrayString paths;
+    wxDir::GetAllFiles(root + (kind->GetSelection() == 0 ? "boats" : "polars"),
+                       &paths, kind->GetSelection() == 0 ? "*.xml" : "*.pol",
+                       wxDIR_FILES | wxDIR_DIRS);
+    paths.Sort();
     filtered.clear();
     list->Clear();
-    for (const auto& f : files)
-      if (DisplayName(wxFileName(f).GetName())
-              .Lower()
-              .Contains(search->GetValue().Lower())) {
-        filtered.push_back(f);
-        list->Append(DisplayName(wxFileName(f).GetName()));
+    for (const auto& path : paths) {
+      wxString name = DisplayName(wxFileName(path).GetName());
+      if (kind->GetSelection() == 0) {
+        TiXmlDocument doc;
+        if (doc.LoadFile(path.utf8_str()) && doc.RootElement()) {
+          const auto title =
+              wxString::FromUTF8(doc.RootElement()->Attribute("name"));
+          if (!title.empty()) name = title;
+        }
       }
+      if (name.Lower().Contains(search->GetValue().Lower())) {
+        filtered.push_back(path);
+        list->Append(name);
+      }
+    }
     if (list->GetCount()) list->SetSelection(0);
+    describe();
   };
-  filter();
+  kind->Bind(wxEVT_CHOICE, [&](wxCommandEvent&) { filter(); });
   search->Bind(wxEVT_TEXT, [&](wxCommandEvent&) { filter(); });
-  s->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+  list->Bind(wxEVT_LISTBOX, [&](wxCommandEvent&) { describe(); });
+  duplicate->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    const int index = list->GetSelection();
+    if (index < 0) return;
+    wxString imported;
+    wxString error = Boat::ImportXML(filtered.at(index), root, imported);
+    if (error.empty()) {
+      Boat copy;
+      error = copy.OpenXML(imported, false, false);
+      if (error.empty()) {
+        copy.Name = list->GetStringSelection() + _(" copy");
+        error = copy.SaveXML(imported);
+      }
+    }
+    if (!error.empty()) {
+      wxMessageBox(error, _("Cannot duplicate boat"), wxOK, &dialog);
+      return;
+    }
+    filter();
+    for (size_t i = 0; i < filtered.size(); ++i)
+      if (filtered[i] == imported) list->SetSelection(i);
+    describe();
+  });
+  exportBoat->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+    const int index = list->GetSelection();
+    if (index < 0) return;
+    wxFileDialog save(&dialog, _("Export boat and polars"), "", "boat.xml",
+                      _("Boat XML|*.xml"), wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (save.ShowModal() != wxID_OK) return;
+    const wxString error = Boat::ExportXML(filtered.at(index), save.GetPath());
+    wxMessageBox(error.empty()
+                     ? _("Boat exported with its polars in a folder beside the "
+                         "XML file. Keep them together when sharing.")
+                     : error,
+                 error.empty() ? _("Boat exported") : _("Cannot export boat"),
+                 wxOK, &dialog);
+  });
   dialog.SetSizer(s);
+  filter();
   dialog.CentreOnParent();
+  search->SetFocus();
   if (dialog.ShowModal() != wxID_OK || list->GetSelection() < 0) return;
-  const wxString polar = filtered.at(list->GetSelection());
-  Boat boat;
-  Polar p;
+  const wxString selected = filtered.at(list->GetSelection());
+  if (kind->GetSelection() == 0) {
+    Boat candidate;
+    const wxString error = candidate.OpenXML(selected, false, false);
+    if (!error.empty() || candidate.Polars.empty()) {
+      wxMessageBox(error.empty() ? _("This boat contains no polars.") : error,
+                   _("Cannot use boat"), wxOK, this);
+      return;
+    }
+    ApplyBoat(selected);
+    return;
+  }
+  Polar polar;
   wxString error;
-  if (!p.Open(polar, error)) {
+  if (!polar.Open(selected, error)) {
     wxMessageBox(error);
     return;
   }
-  boat.Polars.push_back(p);
-  const wxString path =
-      weather_routing_pi::StandardPath() + "boats/" +
-      wxString::Format("boat-%lld.xml", wxGetUTCTimeMillis().GetValue());
+  wxString id = wxString::Format("boat-%lld", wxGetUTCTimeMillis().GetValue());
+  while (wxFileExists(root + "boats/" + id + ".xml")) id += "-1";
+  const wxString directory = root + "polars/personal/" + id;
+  if (!wxFileName::Mkdir(directory, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
+    wxMessageBox(_("Unable to create a personal polar directory."));
+    return;
+  }
+  const wxString copy = directory + "/" + wxFileName(selected).GetFullName();
+  if (!wxCopyFile(selected, copy, false)) {
+    wxMessageBox(_("Unable to copy this polar."));
+    return;
+  }
+  Boat boat;
+  boat.Name = DisplayName(wxFileName(selected).GetName());
+  polar.FileName = copy;
+  polar.Name = boat.Name;
+  boat.Polars.push_back(polar);
+  const wxString path = root + "boats/" + id + ".xml";
   error = boat.SaveXML(path);
   if (!error.empty()) {
     wxMessageBox(error);
@@ -632,6 +1365,107 @@ void PassagePanel::ShowLibrary() {
   ApplyBoat(path);
   routing_.m_ConfigurationDialog.EditBoat();
 }
+
+void PassagePanel::EditBoatDetails() {
+  if (routing_.m_BoatDialog.IsShown()) {
+    routing_.m_BoatDialog.Raise();
+    wxMessageBox(
+        _("Save or close the polar editor before editing the boat details."),
+        _("Boat details"), wxOK, this);
+    return;
+  }
+  auto* route = routing_.FirstCurrentRouteMap();
+  if (!route) return;
+  const auto path = route->GetConfiguration().boatFileName;
+  Boat boat;
+  const auto error = boat.OpenXML(path, false, false);
+  if (!error.empty() || boat.Polars.empty()) {
+    wxMessageBox(error.empty() ? _("Choose a boat with polars first.") : error);
+    return;
+  }
+  wxDialog dialog(this, wxID_ANY, _("Boat and polar details"),
+                  wxDefaultPosition, wxSize(660, 590),
+                  wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  auto* s = new wxBoxSizer(wxVERTICAL);
+  Text(&dialog, s,
+       _("Optional information describing these polars. Leave unknown "
+         "provenance blank. "
+         "These descriptions do not certify the data or change the performance "
+         "table."));
+  auto* grid = new wxFlexGridSizer(2, 8, 8);
+  grid->AddGrowableCol(1);
+  const auto field = [&](const wxString& label, const wxString& value) {
+    grid->Add(new wxStaticText(&dialog, wxID_ANY, label), 0,
+              wxALIGN_CENTER_VERTICAL);
+    auto* control = new wxTextCtrl(&dialog, wxID_ANY, value);
+    control->SetName(label);
+    grid->Add(control, 1, wxEXPAND);
+    return control;
+  };
+  auto* name = field(_("Boat name"), boat.Name);
+  auto* description = field(_("Boat description"), boat.Description);
+  grid->Add(new wxStaticText(&dialog, wxID_ANY, _("Polar")), 0,
+            wxALIGN_CENTER_VERTICAL);
+  auto* selected = new wxChoice(&dialog, wxID_ANY);
+  for (const auto& p : boat.Polars)
+    selected->Append(p.Name.empty() ? wxFileName(p.FileName).GetName()
+                                    : p.Name);
+  grid->Add(selected, 1, wxEXPAND);
+  selected->SetSelection(0);
+  auto* polarName = field(_("Polar name"), "");
+  auto* source = field(_("Source / provenance"), "");
+  source->SetToolTip(
+      _("For example: published manufacturer data, measured trials, an "
+        "estimate, or imported data of unknown origin."));
+  auto* sails = field(_("Sail configuration"), "");
+  auto* notes = field(_("Notes"), "");
+  auto* modified = new wxStaticText(&dialog, wxID_ANY, "");
+  s->Add(grid, 1, wxEXPAND | wxALL, 12);
+  s->Add(modified, 0, wxEXPAND | wxALL, 12);
+  int current = 0;
+  const auto store = [&] {
+    auto& p = boat.Polars.at(current);
+    if (p.Name != polarName->GetValue() || p.Source != source->GetValue() ||
+        p.SailConfiguration != sails->GetValue() ||
+        p.Notes != notes->GetValue())
+      p.Modified =
+          wxDateTime::Now().Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC);
+    p.Name = polarName->GetValue();
+    p.Source = source->GetValue();
+    p.SailConfiguration = sails->GetValue();
+    p.Notes = notes->GetValue();
+  };
+  const auto load = [&] {
+    const auto& p = boat.Polars.at(current);
+    polarName->SetValue(p.Name);
+    source->SetValue(p.Source);
+    sails->SetValue(p.SailConfiguration);
+    notes->SetValue(p.Notes);
+    modified->SetLabel(_("Metadata modified: ") +
+                       (p.Modified.empty() ? _("unknown") : p.Modified));
+  };
+  selected->Bind(wxEVT_CHOICE, [&](wxCommandEvent&) {
+    store();
+    current = selected->GetSelection();
+    load();
+  });
+  s->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
+  dialog.FindWindow(wxID_OK)->SetLabel(_("Save"));
+  dialog.SetSizer(s);
+  load();
+  dialog.CentreOnParent();
+  if (dialog.ShowModal() != wxID_OK) return;
+  store();
+  boat.Name = name->GetValue();
+  boat.Description = description->GetValue();
+  const auto saved = boat.SaveXML(path);
+  if (!saved.empty()) {
+    wxMessageBox(saved, _("Cannot save boat details"), wxOK, this);
+    return;
+  }
+  ApplyBoat(path);
+}
+
 void PassagePanel::LoadWeather() {
   wxFileDialog dialog(
       this, _("Load passage weather"), wxEmptyString, wxEmptyString,
@@ -656,17 +1490,39 @@ void PassagePanel::GenerateWeather() {
             wxMessageBox(error, _("Generated weather"), wxOK, this);
           RefreshPassage();
         });
-  const auto c = r->GetConfiguration();
+  const auto c = PlanningConfiguration(r->GetConfiguration());
   if (!generator_->IsShown() && std::isfinite(c.StartLat) &&
       std::isfinite(c.EndLat)) {
-    const double distance =
-        DistGreatCircle_Plugin(c.StartLat, c.StartLon, c.EndLat, c.EndLon);
+    std::vector<RouteWaypointInfo> points;
+    wxString error;
+    const auto guid =
+        c.IsMultiLegGenerated ? c.MultiLegParentRouteGUID : c.RouteGUID;
+    if (!guid.empty()) ExtractOpenCPNRouteWaypoints(guid, points, error);
+    if (points.size() < 2)
+      points = {{c.StartGUID, c.Start, c.StartLat, c.StartLon, 0},
+                {c.EndGUID, c.End, c.EndLat, c.EndLon, 1}};
+    double distance = 0, south = points.front().lat, north = south;
+    double west = points.front().lon, east = west, previous = west;
+    for (size_t i = 0; i < points.size(); ++i) {
+      const auto& p = points[i];
+      double lon = p.lon;
+      while (lon - previous > 180) lon -= 360;
+      while (lon - previous < -180) lon += 360;
+      west = std::min(west, lon);
+      east = std::max(east, lon);
+      previous = lon;
+      south = std::min(south, p.lat);
+      north = std::max(north, p.lat);
+      if (i)
+        distance += DistGreatCircle_Plugin(points[i - 1].lat, points[i - 1].lon,
+                                           p.lat, p.lon);
+    }
     // Preliminary duration at 4 kn plus 50% and 24 h; actual coverage is
     // rechecked.
     const int estimate =
         std::max(24, int(std::ceil((distance / 4 * 1.5 + 24) / 3)) * 3);
     const int hours = std::min(
-        384, c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
+        360, c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
                  ? std::max(estimate, c.ArrivalSearchHorizonMinutes / 60 + 24)
                  : estimate);
     const double margin = std::max(2.0, std::min(10.0, distance / 120));
@@ -675,20 +1531,16 @@ void PassagePanel::GenerateWeather() {
       while (lon < -180) lon += 360;
       return lon;
     };
-    double end = c.EndLon;
-    while (end - c.StartLon > 180) end -= 360;
-    while (end - c.StartLon < -180) end += 360;
+    const bool global = east - west + 2 * margin >= 359;
     const wxDateTime start =
         c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
             ? c.PlannedArrivalTime -
                   wxTimeSpan::Minutes(c.ArrivalSearchHorizonMinutes)
             : c.StartTime;
     generator_->SetPassage(
-        wrap(std::min(c.StartLon, end) - margin),
-        std::max(-89.0, std::min(c.StartLat, c.EndLat) - margin),
-        wrap(std::max(c.StartLon, end) + margin),
-        std::min(89.0, std::max(c.StartLat, c.EndLat) + margin), start, hours,
-        c.Currents, c.MaxSwellMeters > 0);
+        global ? -180 : wrap(west - margin), std::max(-89.0, south - margin),
+        global ? 180 : wrap(east + margin), std::min(89.0, north + margin),
+        start, hours, c.Currents, c.MaxSwellMeters > 0);
   }
   generator_->Show();
   generator_->Raise();

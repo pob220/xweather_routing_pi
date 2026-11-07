@@ -259,6 +259,7 @@ SET(SRCS
             src/BundledClimatology.cpp
             src/ClimatologyMath.cpp
             src/PassageWeather.cpp
+            src/PassageReadiness.cpp
             src/PassagePanel.cpp
             src/EnvironmentalGribDialog.cpp
             src/AreaPreset.cpp

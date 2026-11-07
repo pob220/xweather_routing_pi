@@ -113,8 +113,11 @@ std::unique_ptr<GribRecordSet> PassageWeather::Frame(time_t time) const {
 }
 
 bool PassageWeather::HasWind(time_t time, double lat, double lon) const {
-  for (int i : {Idx_WIND_VX, Idx_WIND_VY}) {
-    const auto& s = fields_[i];
+  return HasData(Idx_WIND_VX, time, lat, lon) &&
+         HasData(Idx_WIND_VY, time, lat, lon);
+}
+bool PassageWeather::HasData(int index, time_t time, double lat, double lon) const {
+    const auto& s = fields_.at(index);
     auto after = s.lower_bound(time);
     if (after == s.end()) return false;
     const double a = after->second->getInterpolatedValue(lon, lat);
@@ -124,7 +127,6 @@ bool PassageWeather::HasWind(time_t time, double lat, double lon) const {
       const double b = std::prev(after)->second->getInterpolatedValue(lon, lat);
       if (!std::isfinite(b) || b == GRIB_NOTDEF) return false;
     }
-  }
   return true;
 }
 

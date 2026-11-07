@@ -27,7 +27,7 @@ wxString PointText(wr::GeoPoint p) {
 wxString StatusAction(wr::RoutingStatus status) {
   switch (status) {
     case wr::RoutingStatus::WindForecastRequired:
-      return _("Open Configuration > Basic > Data Source. Check the selected wind source, provider and coverage for the route and UTC time.");
+      return _("Open Passage settings > Data Source. Check the selected wind source, provider and coverage for the route and UTC time.");
     case wr::RoutingStatus::CurrentDataRequired:
       return _("Supply current data covering the route and time, or deliberately review the Currents setting.");
     case wr::RoutingStatus::WaveDataRequired:
@@ -279,7 +279,7 @@ RouteDiagnosticReport CheckWindSourceSelection(bool useGrib,
         climatologySelected
             ? _("GRIB is not selected for this route and the selected climatology wind provider is unavailable. Wind displayed on the chart is not enabled for this calculation.")
             : _("Neither GRIB nor climatology wind is selected for this route. Wind displayed on the chart does not enable it for routing."),
-        _("Open Configuration > Basic > Data Source and select Grib, or configure an available climatology wind source."),
+        _("Open Passage settings > Data Source and select Grib, or configure an available climatology wind source."),
         {}, true});
   } else if (useGrib && climatologySelected && !climatologyProviderAvailable) {
     report.Add({"setup.climatology_unavailable", DiagnosticSeverity::Warning,

@@ -4,7 +4,27 @@ Version 2 is developed on `feature/xweather-2.0.0`, starting from the 1.36
 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
 The version is 2.0.0; no alpha suffix or catalogue replacement is involved.
 
-The initial desktop workspace groups passage, boat and weather preparation.
+The desktop workspace groups passage, boat and weather preparation, without
+experience levels. Its settings areas are labelled Passage settings and Routing
+controls. The redundant name/version heading below the workspace tabs is removed.
+
+Readiness is evaluated outside the widgets using structured route diagnostics.
+Each card has a textual state and a checks dialog provides recovery actions;
+unknown weather fields and preliminary coverage estimates remain explicit.
+The weather selector distinguishes forecast, Climatology and forecast with
+Climatology fallback. Loading a file preserves the selected policy. The Calculate
+button remains visible while the setup scrolls. Completed passages show arrival,
+duration, distance, speed, weather extrema and actual wind-source use, including
+combined results for linked legs. Calculate explicitly recalculates the passage.
+
+New passage retains the current boat and preferences while clearing linked-route
+and calculation identity. Passage actions offers a separate example passage and
+a previewed, scoped restore of operating preferences. Existing OpenCPN routes
+can be selected directly; their ordered waypoints stay owned by OpenCPN.
+Reordering, adding or removing waypoints requires a fresh linked sequence.
+Weather requests cover all route waypoints. Context help and keyboard navigation
+are available without choosing a learning mode.
+
 Routes & analysis retains the existing lists, engines, reports, exports and
 specialist tools. Right-click route analysis, generated legs and chart-position
 actions remain available. A passage's generated legs use the existing sequential
@@ -13,6 +33,11 @@ calculation path. Departure and target-arrival planning use the same engines.
 The example 40 ft monohull is illustrative. The searchable bundled library and
 existing polar editor support personal boats and multiple sail configurations.
 Boat imports copy their polars into version 2 storage and preserve the originals.
+The library also lists saved boats and provides duplication and portable export
+of XML with its polar files. Selecting a library polar creates a personal copy.
+Optional boat/polar names, descriptions, source, sail configuration and notes
+use backwards-compatible boat XML attributes. Missing provenance stays unknown;
+metadata is not certification, and no new polar-table format is required.
 Version 2 uses `/PlugIns/xWeatherRouting2` preferences and a separate
 `plugins/xweather_routing_v2` data directory. Existing version 1 data are not
 automatically changed or migrated.

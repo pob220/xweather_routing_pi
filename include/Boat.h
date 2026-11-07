@@ -31,12 +31,14 @@ public:
   Boat();
   static wxString ImportXML(const wxString& source, const wxString& dataDirectory,
                             wxString& importedPath);
+  static wxString ExportXML(const wxString& source, const wxString& destination);
   ~Boat();
 
-  wxString OpenXML(wxString filename, bool shortcut = true);
+  wxString OpenXML(wxString filename, bool shortcut = true, bool generateContours = true);
   wxString SaveXML(wxString filename);
 
   std::vector<Polar> Polars;
+  wxString Name, Description;
   wxString loadWarnings;
 
   /**

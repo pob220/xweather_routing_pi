@@ -62,7 +62,7 @@ class wxScrolledWindow;
 class weather_routing_pi;
 class WeatherRouting;
 class PassagePanel;
-class wxNotebook;
+class wxAuiNotebook;
 namespace weather_routing { class PassageWeather; }
 
 /**
@@ -230,7 +230,7 @@ private:
   friend class PassagePanel;
   std::shared_ptr<weather_routing::PassageWeather> m_PassageWeather;
   PassagePanel* m_PassagePanel{nullptr};
-  wxNotebook* m_PassageNotebook{nullptr};
+  wxAuiNotebook* m_PassageNotebook{nullptr};
 
   bool m_disable_colpane;
   wxCollapsiblePane* m_colpane;
@@ -452,7 +452,8 @@ public:
    */
   void AddPosition(double lat, double lon, wxString name, wxString GUID);
   void AddRoute(wxString& GUID);
-  bool CreateMultiLegConfigurationsFromRoute(const wxString& routeGuid);
+  bool CreateMultiLegConfigurationsFromRoute(const wxString& routeGuid,
+                                            bool editSettings = true);
   bool ComputeMultiLegSequence(RouteMapOverlay* selectedRoute);
   bool EditMultiLegGroupSettings(RouteMapOverlay* selectedRoute);
 

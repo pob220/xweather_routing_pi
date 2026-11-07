@@ -1563,7 +1563,7 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_cShorelineResolution->Enable(!running);
   m_cShorelineResolution->SetToolTip(chartAuthoritative
       ? _("Chart geometry and depth checks are authoritative. This separately saved shoreline choice controls preliminary scouting. It starts at Crude; increase it for finer coastal detail.")
-      : _("Shoreline detail for the selected engine. Quick, Standard and Professional remember independent choices. High and Full require installation from Shoreline data on Advanced. Lower resolutions omit smaller coastal features."));
+      : _("Shoreline detail for the selected engine. Quick, Standard and Professional remember independent choices. High and Full require installation from Shoreline data under Routing controls. Lower resolutions omit smaller coastal features."));
   m_pMainEngine->Enable(!running);
   m_sTimeStepHours->Enable(!running && !atlas);
   m_sTimeStepMinutes->Enable(!running && !atlas);
@@ -1577,19 +1577,19 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_pQuickEngine->Enable(!running);
   if (running) m_bResetAdvanced->Enable(false);
   m_tRoutingEngineDescription->SetLabel(engine == weather_routing::RoutingEngine::Auto
-      ? _("Auto: finds a validated route using the engines selected in Advanced. Enable alternatives to compare passage time and comfort.")
+      ? _("Auto: finds a validated route using the engines selected in Routing controls. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::All
-      ? _("All (slow): compares every engine selected in Advanced and keeps the earliest validated arrival. Enable alternatives to compare passage time and comfort.")
+      ? _("All (slow): compares every engine selected in Routing controls and keeps the earliest validated arrival. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::Quick2
-      ? _("Advanced selection: Quick2 CPU frontier. Bounded search may miss routes or return detours. Auto retains its candidate while Standard searches independently.")
+      ? _("Engine selection: Quick2 CPU frontier. Bounded search may miss routes or return detours. Auto retains its candidate while Standard searches independently.")
       : engine == weather_routing::RoutingEngine::Alternative
-      ? _("Advanced selection: Alternative search. Uses the shared route, vessel, weather and safety settings.")
+      ? _("Engine selection: Alternative search. Uses the shared route, vessel, weather and safety settings.")
       : engine == weather_routing::RoutingEngine::Atlas
       ? _("Atlas: adaptive spatial search with explicit arrival and waiting choices. Uses the shared vessel, weather and safety checks. Global optimality and completeness are not established.")
       : engine == weather_routing::RoutingEngine::Main
-      ? _("Advanced selection: Professional keeps a validated Quick candidate, then searches for a faster route with broader recovery. The Quick controls below tune its integrated candidate.")
-      : engine == weather_routing::RoutingEngine::Quick ? _("Advanced selection: Standard bounded adaptive search with recovery.")
-      : engine == weather_routing::RoutingEngine::Original ? _("Advanced selection: Quick fast contour search with independently validated arrival; may miss a feasible route.")
+      ? _("Engine selection: Professional keeps a validated Quick candidate, then searches for a faster route with broader recovery. The Quick controls below tune its integrated candidate.")
+      : engine == weather_routing::RoutingEngine::Quick ? _("Engine selection: Standard bounded adaptive search with recovery.")
+      : engine == weather_routing::RoutingEngine::Original ? _("Engine selection: Quick fast contour search with independently validated arrival; may miss a feasible route.")
       : _("Mixed or unsupported engines. Select Auto, Quick, Standard, Professional or All (slow)."));
   if (combined) {
     int count = -1;
@@ -1602,7 +1602,7 @@ void ConfigurationDialog::UpdateEngineControls() {
     }
     if (count >= 0) m_tRoutingEngineDescription->SetLabel(m_tRoutingEngineDescription->GetLabel() +
         wxString::Format(_(" Selected engines: %d."), count) +
-        (count == 0 ? _(" Select at least one engine in Advanced before computing.") : wxString()));
+        (count == 0 ? _(" Select at least one engine in Routing controls before computing.") : wxString()));
   }
   // These legacy controls do not tune either native engine. Preserve their
   // saved values for compatibility without suggesting that they affect search.

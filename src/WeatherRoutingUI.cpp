@@ -1559,7 +1559,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       weather_routing::kDefaultMaxDivertedCourse);
   m_sMaxDivertedCourse->SetToolTip(
       _("Hard limit on how far route geometry may divert from the great-circle "
-        "route. This is separate from Advanced > Max Search Angle: increasing "
+        "route. This is separate from Routing controls > Max Search Angle: increasing "
         "the search angle does not override this limit. Use 180 degrees when "
         "the route may need to begin away from the destination or pass around "
         "an island, peninsula or other land obstruction."));
@@ -1698,11 +1698,11 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cBasicRoutingMode->Append(_("Auto"));
   m_cBasicRoutingMode->Append(_("All (slow)"));
   m_cBasicRoutingMode->SetSelection(0);
-  m_cBasicRoutingMode->SetToolTip(_("Choose engines and individual-engine testing in Advanced. The Fastest / Comfort selector remains available for retained alternatives."));
+  m_cBasicRoutingMode->SetToolTip(_("Choose engines and individual-engine testing in Routing controls. The Fastest / Comfort selector remains available for retained alternatives."));
   engineBox->Add(m_cBasicRoutingMode, 0, wxALL | wxEXPAND, 5);
   m_cBasicRoutingMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) { OnUpdate(event); });
   m_tRoutingEngineDescription = new wxStaticText(engineBox->GetStaticBox(), wxID_ANY,
-      _("Auto finds a validated route using the engines selected in Advanced. Enable alternatives to compare passage time and comfort."));
+      _("Auto finds a validated route using the engines selected in Routing controls. Enable alternatives to compare passage time and comfort."));
   m_tRoutingEngineDescription->Wrap(430);
   engineBox->Add(m_tRoutingEngineDescription, 0, wxALL | wxEXPAND, 5);
   m_cbExploreComfortAlternatives = new wxCheckBox(engineBox->GetStaticBox(), wxID_ANY,
@@ -1885,7 +1885,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   fgSizer106->Fit(m_pBasic);
   reflowBasicHelp(m_pBasic->GetClientSize().x);
 #endif
-  m_notebook7->AddPage(m_pBasic, _("Basic"), true);
+  m_notebook7->AddPage(m_pBasic, _("Passage settings"), true);
   m_pAdvanced = new wxScrolledWindow(
       m_notebook7, wxID_ANY, wxDefaultPosition, wxDefaultSize,
       wxVSCROLL | wxTAB_TRAVERSAL);
@@ -2913,7 +2913,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   reflowAdvancedHelp(m_pAdvanced->GetClientSize().x);
   m_pAdvanced->FitInside();
 #endif
-  m_notebook7->AddPage(m_pAdvanced, _("Advanced"), false);
+  m_notebook7->AddPage(m_pAdvanced, _("Routing controls"), false);
 
 #ifdef __OCPN__ANDROID__
   // Reuse the complete shared configuration controls in focused tablet pages.
