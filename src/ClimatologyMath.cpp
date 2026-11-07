@@ -4,6 +4,9 @@
 #include <cstdlib>
 
 namespace climatology {
+namespace {
+constexpr double kPi = 3.14159265358979323846;
+}
 
 double Wrap360(double degrees) {
     if (!std::isfinite(degrees))
@@ -25,16 +28,16 @@ double InterpolateAngleRadians(double first, double second, double fraction) {
         return second;
     if (!std::isfinite(second))
         return first;
-    double delta = std::fmod(second - first, 2.0 * M_PI);
-    if (delta > M_PI)
-        delta -= 2.0 * M_PI;
-    else if (delta < -M_PI)
-        delta += 2.0 * M_PI;
+    double delta = std::fmod(second - first, 2.0 * kPi);
+    if (delta > kPi)
+        delta -= 2.0 * kPi;
+    else if (delta < -kPi)
+        delta += 2.0 * kPi;
     double value = first + fraction * delta;
-    if (value > M_PI)
-        value -= 2.0 * M_PI;
-    else if (value < -M_PI)
-        value += 2.0 * M_PI;
+    if (value > kPi)
+        value -= 2.0 * kPi;
+    else if (value < -kPi)
+        value += 2.0 * kPi;
     return value;
 }
 

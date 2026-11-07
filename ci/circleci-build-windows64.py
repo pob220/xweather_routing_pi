@@ -17,6 +17,7 @@ import sys
 import tarfile
 import urllib.request
 import xml.etree.ElementTree as ET
+from windows_build_tools import select_msvc
 
 ROOT = Path(__file__).resolve().parents[1]
 WX_VERSION = os.environ.get('WEATHER_ROUTING_WINDOWS_WX_VERSION', '3.3.4')
@@ -191,6 +192,7 @@ def main():
     args = parser.parse_args()
     if sys.platform != 'win32':
         raise SystemExit('Run this script in a native Windows x64 MSVC environment')
+    visual_studio = select_msvc()
     if not args.skip_generator:
         run(sys.executable, ROOT / 'ci/build-windows-generator.py')
     generator_stage = ROOT / '.windows-deps/stage'
@@ -202,7 +204,12 @@ def main():
     identity = os.environ.get('WEATHER_ROUTING_CI_XWEATHER', 'true').lower() == 'true'
     package = 'xweather_routing_pi' if identity else 'weather_routing_pi'
     headers = os.environ.get('WEATHER_ROUTING_API_HEADER_VERSION', '1.22')
+    # Metadata is produced during configure, so clear prior output before it.
+    for pattern in (package + '-*.tar.gz', package + '-*.xml'):
+        for old in work.glob(pattern):
+            old.unlink()
     run('cmake', '-S', ROOT, '-B', work, '-G', 'Visual Studio 17 2022', '-A', 'x64',
+        '-DCMAKE_GENERATOR_INSTANCE=' + visual_studio,
         '-DCMAKE_SYSTEM_VERSION=10.0', '-DCMAKE_BUILD_TYPE=Release', '-DOCPN_BUILD_TEST=ON',
         '-DWEATHER_ROUTING_STANDALONE_API=ON',
         '-DWEATHER_ROUTING_API_HEADER_VERSION=' + headers,
@@ -225,9 +232,6 @@ def main():
     run('ctest', '--test-dir', work, '-C', 'Release', '--output-on-failure',
         '--no-tests=error', '--timeout', '180', '--output-junit', tests / 'ctest.xml')
     run('cmake', '--install', work, '--config', 'Release', '--prefix', work / 'stage')
-    for pattern in (package + '-*.tar.gz', package + '-*.xml'):
-        for old in work.glob(pattern):
-            old.unlink()
     run('cpack', '-G', 'TGZ', '-C', 'Release', '--config', 'CPackConfig.cmake', cwd=work)
     archives = list(work.glob(package + '-*.tar.gz'))
     metadata = list(work.glob(package + '-*.xml'))

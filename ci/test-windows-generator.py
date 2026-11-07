@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,12 @@ def test(stage, output):
     for image in sorted(binary.iterdir()):
         if image.suffix.lower() not in ('.exe', '.dll'):
             continue
+        data = image.read_bytes()
+        if data[:2] != b'MZ':
+            raise RuntimeError('Invalid PE image: ' + image.name)
+        offset = struct.unpack_from('<I', data, 0x3c)[0]
+        if data[offset:offset + 4] != b'PE\0\0' or struct.unpack_from('<H', data, offset + 4)[0] != 0x8664:
+            raise RuntimeError('Helper runtime must be entirely AMD64: ' + image.name)
         text = subprocess.check_output(['dumpbin', '/dependents', str(image)], text=True)
         names = re.findall(r'^\s+([\w.+-]+\.dll)\s*$', text, re.M | re.I)
         for name in names:

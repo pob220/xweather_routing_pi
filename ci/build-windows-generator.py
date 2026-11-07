@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from windows_build_tools import select_msvc
 
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / '.windows-deps'
@@ -24,8 +25,7 @@ def run(*args, **kwargs):
 
 
 def main():
-    if sys.platform != 'win32' or not shutil.which('cl'):
-        raise SystemExit('Use an x64 Native Tools Command Prompt for VS 2022')
+    visual_studio = select_msvc()
     WORK.mkdir(parents=True, exist_ok=True)
     (WORK / 'binary-cache').mkdir(exist_ok=True)
     logs = WORK / 'logs'
@@ -58,6 +58,7 @@ def main():
     build = WORK / 'build'
     run('cmake', '-S', ROOT / 'third_party/environmental-grib-generator', '-B', build,
         '-G', 'Visual Studio 17 2022', '-A', 'x64',
+        '-DCMAKE_GENERATOR_INSTANCE=' + visual_studio,
         '-DCMAKE_TOOLCHAIN_FILE=' + str(vcpkg / 'scripts/buildsystems/vcpkg.cmake'),
         '-DVCPKG_TARGET_TRIPLET=' + TRIPLET,
         '-DVCPKG_INSTALLED_DIR=' + str(installed),

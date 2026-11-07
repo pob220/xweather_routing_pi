@@ -23,7 +23,8 @@ permissions:
 
 concurrency:
   group: windows-v2-${{ github.ref }}
-  cancel-in-progress: true
+  # Let a cold scientific dependency build finish and save its binary cache.
+  cancel-in-progress: false
 
 jobs:
   generator:
@@ -42,6 +43,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+          vsversion: '2022'
       - uses: actions/cache/restore@v4
         id: dependencies
         with:
@@ -61,6 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-generator-stage
+          include-hidden-files: true
           path: |
             .windows-deps/stage/bin
             .windows-deps/stage/runtime
@@ -68,6 +71,7 @@ jobs:
         if: always()
         with:
           name: windows-generator-checks
+          include-hidden-files: true
           path: |
             .windows-deps/logs
             .windows-deps/vcpkg/buildtrees/**/*.log
@@ -93,6 +97,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+          vsversion: '2022'
       - uses: actions/download-artifact@v4
         with:
           name: windows-generator-stage
@@ -115,6 +120,7 @@ jobs:
         if: always()
         with:
           name: xWeatherRouting-2.0.0-windows-x64-wx${{ matrix.wx }}
+          include-hidden-files: true
           path: |
             artifacts/windows-x64
             compatibility/windows-x64-wx329

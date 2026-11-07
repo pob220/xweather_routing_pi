@@ -226,6 +226,9 @@ def test(host, cli, archive_path, output, source, host_version='5.14.2'):
         require(installed.is_file() and digest(installed) == expected,
                 'Normal import lost or changed translation catalog: ' + relative)
     require((data / 'data/WeatherRoutingInformation.html').is_file(), 'Installed help is missing')
+    if sys.platform == 'win32':
+        subprocess.run([sys.executable, str(source / 'ci/test-windows-generator.py'),
+                        str(data), str(output / 'installed-helper-runtime')], check=True)
 
     private_data = config / 'plugins/xweather_routing_v2'
     private_data.mkdir(parents=True)

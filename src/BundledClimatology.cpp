@@ -23,6 +23,7 @@
 
 namespace weather_routing {
 namespace {
+constexpr double kPi = 3.14159265358979323846;
 double positive_degrees(double v) { return climatology::Wrap360(v); }
 double interp_value(double a, double b, double w) {
   return climatology::InterpolateMissing(a, b, w);
@@ -109,10 +110,10 @@ double WindData::WindPolar::Value(enum Coord coord, int dir_cnt) {
     double mul = 0;
     switch (coord) {
       case U:
-        mul = sin(i * 2 * M_PI / dir_cnt);
+        mul = sin(i * 2 * kPi / dir_cnt);
         break;
       case V:
-        mul = cos(i * 2 * M_PI / dir_cnt);
+        mul = cos(i * 2 * kPi / dir_cnt);
         break;
       case MAG:
         mul = 1;
@@ -173,7 +174,7 @@ double WindData::InterpWind(enum Coord coord, double x, double y) {
   if (coord == DIRECTION) {
     double a0 = interp_angle(v00, v01, yi - y0);
     double a1 = interp_angle(v10, v11, yi - y0);
-    return interp_angle(a0, a1, xi - x0) * 180 / M_PI;
+    return interp_angle(a0, a1, xi - x0) * 180 / kPi;
   }
 
   double v0 = interp_value(v00, v01, yi - y0);
@@ -190,7 +191,7 @@ double CurrentData::InterpCurrent(enum Coord coord, double x, double y) {
     const double v = InterpCurrent(V, x, y);
     if (std::isnan(u) || std::isnan(v)) return NAN;
     if (coord == MAG) return hypot(u, v);
-    return (!u && !v) ? NAN : atan2(u, v) * 180 / M_PI;
+    return (!u && !v) ? NAN : atan2(u, v) * 180 / kPi;
   }
   double xi = (latitudes - 1) * (.5 - x / 160.0);
   double yi = longitudes * y / 360.0;
@@ -412,8 +413,8 @@ bool BundledClimatology::Data(int setting, const wxDateTime& date, double lat,
                                     : NAN;
       return c == DIRECTION
                  ? climatology::InterpolateAngleRadians(
-                       x * M_PI / 180, y * M_PI / 180, 1 - t.current_weight) *
-                       180 / M_PI
+                       x * kPi / 180, y * kPi / 180, 1 - t.current_weight) *
+                       180 / kPi
                  : climatology::InterpolateMissing(x, y, 1 - t.current_weight);
     };
     if (setting != 0 && setting != 1) return false;

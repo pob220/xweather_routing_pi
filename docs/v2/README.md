@@ -75,9 +75,11 @@ starts a private portable test instance. It refuses unmanaged existing profiles,
 sets private XDG directories, and installs only the staged version 2 plugin.
 It neither changes a working launcher nor installs into system/user plugin paths.
 
-Initial qualification targets the Linux x86-64 laptop build. Windows/macOS
-runtime bundling, Windows split-ABI generator builds, Android's in-process
-generator adapter and the new touch workspace require their own follow-up
-qualification. The inherited cross-platform 1.x CI matrix is not evidence that
-these new version 2 paths have been qualified. Do not publish this branch's
-packages to the stable catalogue from local validation.
+For Windows x64, see [source build and isolated test instructions](WINDOWS.md).
+The helper builds separately from the matched OpenCPN/wx SDK and carries its
+own scientific dependencies. Native CI checks both pinned wx 3.3.4 and 3.2.9
+hosts; qualification evidence is recorded in [VALIDATION.md](VALIDATION.md).
+macOS, Android's in-process generator adapter and the touch workspace require
+their own follow-up qualification. The inherited 1.x matrix is not evidence
+that these new paths have passed. Development packages do not replace the
+stable catalogue release.

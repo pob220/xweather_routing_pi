@@ -14,3 +14,7 @@ The host test uses a short offshore route, the packaged example polar, the
 bundled GRIB plugin's public file-open interface, and Weather Routing's
 existing headless scenario interface. It checks actual packaged-plugin
 loading and route completion in the unmodified upstream Windows host.
+
+`irish-sea-three-hour-wind.grb` retains only the first four messages of that
+fixture (U/V at zero and three hours). The v2 host acceptance test uses it for
+a longer route and requires reported Climatology wind use after forecast expiry.
