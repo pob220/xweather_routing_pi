@@ -7,10 +7,41 @@ target_include_directories(${PACKAGE_NAME} PRIVATE
 if(NOT OCPN_FLATPAK_CONFIG)
   include(BundledJasper)
   target_link_libraries(${PACKAGE_NAME} PRIVATE ${XGRIB_JASPER_TARGET})
-  install(FILES "${XGRIB_JASPER_LICENSE}" DESTINATION "share/opencpn/plugins/${PACKAGE_NAME}/runtime/licenses/jasper")
+  if(WIN32)
+    set(_weather_runtime "plugins/${PACKAGE_NAME}/runtime")
+  else()
+    set(_weather_runtime "share/opencpn/plugins/${PACKAGE_NAME}/runtime")
+  endif()
+  install(FILES "${XGRIB_JASPER_LICENSE}" DESTINATION "${_weather_runtime}/licenses/jasper")
   target_compile_definitions(${PACKAGE_NAME} PRIVATE JASPER)
-  add_subdirectory(third_party/environmental-grib-generator generator)
-  if(ANDROID)
+  if(WIN32)
+    # Keep the helper's scientific dependencies outside the in-process wx SDK.
+    # ci/build-windows-generator.py builds and checks this app-local runtime.
+    set(WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE "" CACHE PATH
+      "Staged x64 environmental-grib runtime from ci/build-windows-generator.py")
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+      message(FATAL_ERROR "The integrated Windows v2 build currently supports x64 only")
+    endif()
+    foreach(_required bin/environmental-grib.exe bin/vcomp140.dll
+        runtime/share/eccodes/definitions/grib1/boot.def
+        runtime/share/eccodes/samples/regular_ll_sfc_grib1.tmpl
+        runtime/share/proj/proj.db runtime/stage.json)
+      if(NOT EXISTS "${WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE}/${_required}")
+        message(FATAL_ERROR "Missing Windows helper runtime: ${_required}. Run python ci/circleci-build-windows64.py; see docs/v2/WINDOWS.md")
+      endif()
+    endforeach()
+    install(DIRECTORY "${WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE}/bin/"
+      DESTINATION "plugins/${PACKAGE_NAME}/bin")
+    install(DIRECTORY "${WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE}/runtime/"
+      DESTINATION "${_weather_runtime}")
+    install(FILES third_party/environmental-grib-generator/LICENSE
+      third_party/INTEGRATED_WEATHER_SOURCES.md DESTINATION "${_weather_runtime}/licenses")
+  else()
+    add_subdirectory(third_party/environmental-grib-generator generator)
+  endif()
+  if(WIN32)
+    # Installed above from the independently built and tested helper stage.
+  elseif(ANDROID)
     target_link_libraries(${PACKAGE_NAME} PRIVATE environmental_grib_engine)
   elseif(UNIX AND NOT APPLE)
     set_target_properties(environmental-grib PROPERTIES OUTPUT_NAME environmental-grib.bin)
@@ -37,8 +68,6 @@ if(NOT OCPN_FLATPAK_CONFIG)
     install(FILES third_party/environmental-grib-generator/LICENSE
       third_party/INTEGRATED_WEATHER_SOURCES.md
       DESTINATION "share/opencpn/plugins/${PACKAGE_NAME}/runtime/licenses")
-  elseif(WIN32)
-    install(TARGETS environmental-grib RUNTIME DESTINATION "plugins/${PACKAGE_NAME}/bin")
   elseif(APPLE)
     install(TARGETS environmental-grib RUNTIME DESTINATION
       "OpenCPN.app/Contents/SharedSupport/plugins/${PACKAGE_NAME}/bin")

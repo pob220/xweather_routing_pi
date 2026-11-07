@@ -179,8 +179,8 @@ def test(host, cli, archive_path, output, source, host_version='5.14.2'):
     header = ('[Settings]\nConfigVersionString=Version ' + version + ' Build ' + build_date +
               '\nNavMessageShown=1\nOpenGL=0\nDisableOpenGL=1\nShowMenuBar=1\nDataConnections=\n'
               '[PlugIns/' + plugin_key + ']\nbEnabled=1\n[PlugIns/' + grib_key + ']\nbEnabled=1\n'
-              '[Plugins/WeatherRouting]\nConfigVersion=' + str(config_version) + '\n'
-              '[PlugIns/WeatherRouting]\nConfigVersion=' + str(config_version) + '\n')
+              '[Plugins/xWeatherRouting2]\nConfigVersion=' + str(config_version) + '\n'
+              '[PlugIns/xWeatherRouting2]\nConfigVersion=' + str(config_version) + '\n')
     config_file.write_text(header, encoding='utf-8')
 
     def command(name, arguments, command_environment=None):
@@ -227,7 +227,7 @@ def test(host, cli, archive_path, output, source, host_version='5.14.2'):
                 'Normal import lost or changed translation catalog: ' + relative)
     require((data / 'data/WeatherRoutingInformation.html').is_file(), 'Installed help is missing')
 
-    private_data = config / 'plugins/weather_routing'
+    private_data = config / 'plugins/xweather_routing_v2'
     private_data.mkdir(parents=True)
     # Empty route configurations keep demo voyages out of the scenario. Boats
     # and polars remain absent, so the normal first-launch copy must populate them.

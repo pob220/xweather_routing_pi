@@ -59,8 +59,8 @@ def test(host, archive_path, output, source, host_version='5.14.2'):
         # A CI profile has no customised boat/polar data to migrate. Record
         # the current data version so its interactive migration choice does
         # not block the scenario inside WeatherRouting's constructor.
-        '[Plugins/WeatherRouting]\nConfigVersion=' + str(config_version) + '\n'
-        '[PlugIns/WeatherRouting]\nConfigVersion=' + str(config_version) + '\n',
+        '[Plugins/xWeatherRouting2]\nConfigVersion=' + str(config_version) + '\n'
+        '[PlugIns/xWeatherRouting2]\nConfigVersion=' + str(config_version) + '\n',
         encoding='ascii')
     # Absolute paths make the fixture independent of user polar directories.
     polar = host / 'plugins' / package / 'data/polars/Example/Test-TWS-0-20+60.pol'
