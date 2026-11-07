@@ -88,6 +88,25 @@ downloaded forecasts and generated cache files. Instructions and artifact names
 are in [WINDOWS.md](WINDOWS.md). Developer scripts extract portable hosts; normal
 installation tests are restricted to disposable CI runners.
 
+## Ready-to-run Windows UI trial
+
+[Native trial acceptance](https://github.com/pob220/xweather_routing_pi/actions/runs/42423542646)
+verified the exact delivered ZIP and its `Start-Weather-Routing.cmd` launcher,
+after extraction into a moved folder containing spaces. The planner opened
+with the expected Route, Boat and Weather controls, inherited automation/data
+overrides were cleared, and a simulated normal OpenCPN profile was preserved.
+The relocated host completed forecast, Climatology and fallback routes.
+
+The trial redistributes the already-qualified `743c443` plugin binaries with
+matching OpenCPN 5.15.0, app-local VC runtimes, a fresh portable profile and
+short review instructions. No compilation or installation is required by the
+reviewer. Installer utilities and uninstallers are excluded.
+
+This **complete trial ZIP** is 81.63 MiB compressed / 218.12 MiB of file contents,
+including OpenCPN; it is a different measurement from the plugin-only archives
+above. Its SHA256 is `0a7874f71ea29cebf814b335c2576363b1c95fcf0f17b120b2b71cb219aed43a`.
+See [the trial guide](TRY-WINDOWS.md) for the public download and requested feedback.
+
 ## Remaining qualification
 
 macOS dependency packaging, Android's generator adapter and touch workspace,

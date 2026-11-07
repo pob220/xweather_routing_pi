@@ -1,9 +1,24 @@
-# Windows x64 source builds for 2.0.0
+# xWeatherRouting 2.0.0 on Windows
 
-**Want to try the new interface? [Start here — no compiling required](TRY-WINDOWS.md).**
-That page has the ready-to-run Windows ZIP, three opening steps and the feedback
-Paul is asking for. The instructions below are for people who choose to build
-the source themselves.
+## Try the new interface — no compiling required
+
+1. [Download the ready-to-run Windows ZIP](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.0.0/xWeatherRouting-2.0.0-Windows-UI-Trial.zip) (about 82 MiB).
+2. Choose **Extract All**, open the extracted folder and double-click
+   **Start-Weather-Routing.cmd**.
+3. Choose **Passage actions → Try an example passage**, close the help note,
+   then click **Calculate route**.
+
+Please tell Paul whether **Route → Boat → Weather** makes sense, what feels
+awkward or takes too many clicks, and what is difficult to read. Screenshots
+are welcome. This first look is about using the interface; a source build is
+optional.
+
+The ZIP includes its own matching OpenCPN test copy. Settings and test files
+stay in that extracted folder, leaving your normal OpenCPN alone.
+[More trial guidance and feedback suggestions](TRY-WINDOWS.md).
+
+<details>
+<summary>Optional: developer source-build instructions</summary>
 
 Use [feature/xweather-2.0.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.0.0)
 in `pob220/xweather_routing_pi`. This is the
@@ -113,3 +128,5 @@ wxWidgets manifest. A manual plugin configure must supply
 `WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE` pointing at the complete helper stage.
 Use the script above for the supported end-to-end build. Windows x86 is not
 qualified for this integrated v2 runtime.
+
+</details>

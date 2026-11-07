@@ -4,6 +4,9 @@ Version 2 is developed on `feature/xweather-2.0.0`, starting from the 1.36
 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
 The version is 2.0.0; no alpha suffix or catalogue replacement is involved.
 
+For a first Windows UI review, use the [ready-to-run trial](TRY-WINDOWS.md).
+It includes its own portable OpenCPN, so compiling and plugin setup are optional.
+
 The desktop workspace groups passage, boat and weather preparation, without
 experience levels. Its settings areas are labelled Passage settings and Routing
 controls. The redundant name/version heading below the workspace tabs is removed.
