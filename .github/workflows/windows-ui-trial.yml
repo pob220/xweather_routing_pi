@@ -1,0 +1,53 @@
+name: Windows UI trial
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  trial:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download already-qualified Windows binaries
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42409887075
+          name: xWeatherRouting-2.0.0-windows-x64-wx3.3.4
+          path: artifacts/qualified
+      - name: Package matching host, plugin and portable launcher
+        shell: pwsh
+        run: |
+          $plugins = @(Get-ChildItem artifacts/qualified -Recurse -Filter '*-wx334.tar.gz')
+          if ($plugins.Count -ne 1) { throw 'Expected one qualified wx334 archive' }
+          $plugin = $plugins[0]
+          python tools/make-windows-ui-trial.py --plugin $plugin.FullName --output artifacts/trial/xWeatherRouting-2.0.0-Windows-UI-Trial.zip
+          if ($LASTEXITCODE -ne 0) { throw 'UI trial packaging failed' }
+      - name: Test delivered launcher and relocated portable host
+        shell: pwsh
+        run: |
+          $plugins = @(Get-ChildItem artifacts/qualified -Recurse -Filter '*-wx334.tar.gz')
+          if ($plugins.Count -ne 1) { throw 'Expected one qualified wx334 archive' }
+          $plugin = $plugins[0]
+          python tools/test-windows-ui-trial.py artifacts/trial/xWeatherRouting-2.0.0-Windows-UI-Trial.zip $plugin.FullName artifacts/trial-checks
+          if ($LASTEXITCODE -ne 0) { throw 'UI trial acceptance failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xWeatherRouting-2.0.0-Windows-UI-Trial
+          path: artifacts/trial
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-UI-trial-checks
+          path: |
+            artifacts/trial-checks/acceptance.json
+            artifacts/trial-checks/launcher.log
+            artifacts/trial-checks/routes
