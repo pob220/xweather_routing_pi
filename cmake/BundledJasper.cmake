@@ -65,5 +65,12 @@ if(NOT xgrib_jasper_POPULATED)
   )
 endif()
 
+# Upstream keeps these PRIVATE and expects every embedding target to add them.
+# Publish the pinned build's headers to both the plugin and GRIB reader tests.
+target_include_directories(libjasper BEFORE INTERFACE
+  "${xgrib_jasper_BINARY_DIR}/src/libjasper/include"
+  "${xgrib_jasper_SOURCE_DIR}/src/libjasper/include")
+target_compile_definitions(libjasper INTERFACE LIBJASPER_STATIC_DEFINE)
+
 set(XGRIB_JASPER_TARGET libjasper)
 set(XGRIB_JASPER_LICENSE "${xgrib_jasper_SOURCE_DIR}/LICENSE.txt")

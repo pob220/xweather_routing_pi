@@ -722,7 +722,7 @@ void PassagePanel::ShowChecks() {
     for (const auto& issue : section.items) {
       auto* text =
           Text(scroll, body,
-               issue.title + (issue.detail.empty() ? "" : "\n" + issue.detail));
+               issue.title + (issue.detail.empty() ? wxString() : "\n" + issue.detail));
       text->Wrap(600);
       if (issue.action.empty()) continue;
       auto* action = new wxButton(scroll, wxID_ANY, issue.action);
@@ -765,7 +765,7 @@ void PassagePanel::ShowChecks() {
     for (const auto& item : report.items)
       if (item.severity != weather_routing::DiagnosticSeverity::Notice)
         Text(scroll, body,
-             item.title + (item.detail.empty() ? "" : "\n" + item.detail))
+             item.title + (item.detail.empty() ? wxString() : "\n" + item.detail))
             ->Wrap(600);
     auto* details = new wxButton(scroll, wxID_ANY, _("Open detailed report"));
     body->Add(details, 0, wxALL, 8);
@@ -839,7 +839,7 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
   for (auto* r : routes)
     key +=
         r->GetDiagnostics().Summary() + r->ModernNativeCoverageNotes() +
-        (r->EndTime().IsValid() ? r->EndTime().FormatISOCombined() : "pending");
+        (r->EndTime().IsValid() ? r->EndTime().FormatISOCombined() : wxString("pending"));
   if (current == resultRoute_ && key == resultKey_) {
     resultsBox_->Show(true);
     return;
@@ -969,7 +969,7 @@ void PassagePanel::EditRoute() {
         0, wxALIGN_CENTER_VERTICAL);
     name[i] = new wxComboBox(&dialog, wxID_ANY, i ? c.End : c.Start);
     for (const auto& p : choices)
-      name[i]->Append(p.Name + (p.GUID.empty() ? "" : _(" (waypoint)")));
+      name[i]->Append(p.Name + (p.GUID.empty() ? wxString() : _(" (waypoint)")));
     grid->Add(name[i], 1, wxEXPAND);
     grid->Add(
         new wxStaticText(&dialog, wxID_ANY, _("Latitude (north +, south −)")),

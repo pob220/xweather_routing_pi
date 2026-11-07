@@ -215,6 +215,8 @@ project(${PACKAGE})
 # same feature-test contract.
 if(MSVC)
   add_compile_options(/Zc:__cplusplus)
+  # Windows headers otherwise rewrite std::min/max and numeric_limits::max.
+  add_compile_definitions(NOMINMAX)
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
