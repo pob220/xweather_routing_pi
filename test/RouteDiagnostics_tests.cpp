@@ -35,6 +35,34 @@ wr::ParameterCoverage Forecast() {
 }
 }  // namespace
 
+TEST(RouteDiagnostics, ResultCardUsesKnownErrorRatherThanIncidentalWarning) {
+  RouteDiagnosticReport report;
+  report.hasResult = true;
+  report.status = wr::RoutingStatus::InvalidPolar;
+  report.Add({"warning", DiagnosticSeverity::Warning, "Missing waves"});
+  report.Add({"result.invalid_polar", DiagnosticSeverity::Error,
+              "Boat has no usable polar", "Referenced file is missing", "Choose a usable polar"});
+  ASSERT_TRUE(report.PrimaryFailure());
+  EXPECT_EQ("Boat has no usable polar", report.PrimaryFailure()->title);
+  EXPECT_EQ("Referenced file is missing", report.PrimaryFailure()->detail);
+  EXPECT_EQ(weather_routing::DiagnosticReview::Boat, report.FailureReview());
+  report.cancelled = true;
+  EXPECT_FALSE(report.PrimaryFailure());
+  EXPECT_EQ(weather_routing::DiagnosticReview::Report, report.FailureReview());
+}
+TEST(RouteDiagnostics, UnexplainedFailureDoesNotInventWeatherCause) {
+  RouteDiagnosticReport report;
+  report.hasResult = true;
+  report.status = wr::RoutingStatus::NoFeasibleRoute;
+  report.Add({"warning", DiagnosticSeverity::Warning, "Missing waves"});
+  EXPECT_FALSE(report.PrimaryFailure());
+  EXPECT_EQ(weather_routing::DiagnosticReview::Report, report.FailureReview());
+  report.Add({"result.no_route", DiagnosticSeverity::Error, "No feasible route"});
+  EXPECT_EQ(weather_routing::DiagnosticReview::Report, report.FailureReview());
+  report.complete = true;
+  EXPECT_FALSE(report.PrimaryFailure());
+}
+
 TEST(RouteDiagnostics, RickGetsSelectionAndProviderCauseRatherThanGenericWind) {
   const auto report = weather_routing::CheckWindSourceSelection(false, true, false);
   ASSERT_TRUE(report.HasErrors());

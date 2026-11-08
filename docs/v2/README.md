@@ -1,8 +1,12 @@
-# xWeatherRouting 2.0.0
+# xWeatherRouting 2.1.0
 
-Version 2 is developed on `feature/xweather-2.0.0`, starting from the 1.36
-baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
-The version is 2.0.0; no alpha suffix or catalogue replacement is involved.
+Version 2.1 is developed on `feature/xweather-2.1.0`, following the 2.0.0 UI trial
+and the 1.36 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
+The version is 2.1.0; no alpha suffix or catalogue replacement is involved.
+
+This UI refinement leaves routing engines, scenario parsing, calculation defaults
+and saved vessel preferences unchanged. See [the 2.1 changes and mapping to
+review feedback](CHANGES-2.1.md).
 
 For a first Windows UI review, use the [ready-to-run trial](TRY-WINDOWS.md).
 It includes its own portable OpenCPN, so compiling and plugin setup are optional.

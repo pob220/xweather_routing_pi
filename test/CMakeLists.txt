@@ -91,6 +91,8 @@ set(TEST_SRC
     ClimatologyCompatibility_tests.cpp
     PassageWeather_tests.cpp
     PassageReadiness_tests.cpp
+    PassageSettings_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageSettings.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageReadiness.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageWeather.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/BundledClimatology.cpp

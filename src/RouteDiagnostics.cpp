@@ -200,6 +200,14 @@ unsigned RouteDiagnosticReport::Count(DiagnosticSeverity severity) const {
   return static_cast<unsigned>(std::count_if(items.begin(), items.end(),
       [severity](const auto& item) { return item.severity == severity; }));
 }
+std::optional<RouteDiagnostic> RouteDiagnosticReport::PrimaryFailure() const {
+  if (cancelled || complete) return std::nullopt;
+  const auto first = std::find_if(items.begin(), items.end(), [](const auto& item) {
+    return item.severity == DiagnosticSeverity::Error;
+  });
+  if (first != items.end()) return *first;
+  return std::nullopt;
+}
 wxString RouteDiagnosticReport::Summary() const {
   if (cancelled) return _("Stopped by user");
   const auto first = std::find_if(items.begin(), items.end(), [](const auto& item) {
@@ -213,6 +221,24 @@ wxString RouteDiagnosticReport::Summary() const {
     summary += warnings == 1 ? _(" (1 warning)")
                              : wxString::Format(_(" (%u warnings)"), warnings);
   return summary;
+}
+DiagnosticReview RouteDiagnosticReport::FailureReview() const {
+  const auto failure = PrimaryFailure();
+  if (!failure) return DiagnosticReview::Report;
+  if (failure->code == "runtime.weather") return DiagnosticReview::Weather;
+  if (!hasResult) return DiagnosticReview::Report;
+  switch (status) {
+    case wr::RoutingStatus::WindForecastRequired:
+    case wr::RoutingStatus::CurrentDataRequired:
+    case wr::RoutingStatus::WaveDataRequired: return DiagnosticReview::Weather;
+    case wr::RoutingStatus::InvalidPolar:
+    case wr::RoutingStatus::InvalidVesselConfiguration: return DiagnosticReview::Boat;
+    case wr::RoutingStatus::InvalidStart:
+    case wr::RoutingStatus::InvalidDestination: return DiagnosticReview::Route;
+    case wr::RoutingStatus::ResourceLimitReached:
+    case wr::RoutingStatus::SearchIncomplete: return DiagnosticReview::RoutingControls;
+    default: return DiagnosticReview::Report;
+  }
 }
 wxString RouteDiagnosticReport::Text() const {
   wxString text = context;

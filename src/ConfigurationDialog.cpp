@@ -44,6 +44,7 @@
 #include "RoutingResourcePolicy.h"
 #include "ConfigurationDialog.h"
 #include "ChartSafetyDefaults.h"
+#include "PassageSettings.h"
 #include "BoatDialog.h"
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
@@ -337,6 +338,38 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       _("Reject route candidates which fail loaded-chart land, drying or "
         "configured minimum-depth checks. For a manual GSHHS comparison, "
         "uncheck this and set Minimum Depth to 0 m."));
+
+  // Shared UI descriptions also support passage-readiness messages.
+  m_sMaxTrueWindKnots->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::TrueWind));
+  m_sMaxApparentWindKnots->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::ApparentWind));
+  m_sMaxSwellMeters->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::WaveHeight));
+  m_sFromDegree->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::SailingFrom));
+  m_sToDegree->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::SailingTo));
+  m_sByDegrees->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::SailingIncrement));
+  m_sMotorSpeedThreshold->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::MotorThreshold));
+  m_sMotorSpeed->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::MotorSpeed));
+  m_sMinimumDepthMeters->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::MinimumDepth));
+  m_sDepartureTimeOptimizationConcurrentRoutes->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::DepartureWorkers));
+  m_sUpwindEfficiency->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::UpwindFactor));
+  m_sDownwindEfficiency->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::DownwindFactor));
+  m_sNightCumulativeEfficiency->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::NightFactor));
+  m_sTimeStepHours->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::TimeStep));
+  m_sTimeStepMinutes->SetToolTip(weather_routing::PassageSettingHelp(
+      weather_routing::PassageSetting::TimeStep));
 
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));

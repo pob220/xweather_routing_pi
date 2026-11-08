@@ -91,6 +91,9 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   };
   resultsBox_ = card(_("Passage result"));
   results_ = Text(content_, resultsBox_, "");
+  failureButton_ = Button(content_, resultsBox_, _("Review failure details"),
+                          [this] { ReviewFailure(); });
+  failureButton_->Show(false);
   resultsBox_->Show(false);
   auto* route = card(_("1. Route"));
   route_ = Text(content_, route, "");
@@ -447,6 +450,11 @@ void PassagePanel::RefreshPassage() {
   input.apparentWindLimit = c.MaxApparentWindKnots;
   input.waveLimit = c.MaxSwellMeters;
   input.avoidLand = c.DetectLand;
+  input.useMotor = c.UseMotor;
+  input.motorThreshold = c.MotorSpeedThreshold;
+  input.motorSpeed = c.MotorSpeed;
+  input.minimumDepth = c.MinimumDepthMeters;
+  input.chartDepthAvailable = routing_.HasEnhancedChartSafety();
   readiness_ = weather_routing::EvaluatePassage(input);
   const auto sectionStatus = [&](int section) {
     return weather_routing::PassageSectionStatus(readiness_.sections[section]);
@@ -487,11 +495,11 @@ void PassagePanel::RefreshPassage() {
       !weather.Contains(readiness_.sections[2].items.front().title))
     weather += "\n" + readiness_.sections[2].items.front().title;
   weather_->SetLabel(sectionStatus(2) + " • " + weather);
-  limits_->SetLabel(wxString::Format(
-      _("Passage limits: wind %.0f kn • waves %.1f m • %s • %s"),
-      c.MaxTrueWindKnots, c.MaxSwellMeters,
-      c.Currents ? _("currents on") : _("currents off"),
-      c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
+  limits_->SetLabel(_("Passage limits: wind ") +
+      weather_routing::PassageSettingValue(weather_routing::PassageSetting::TrueWind, c.MaxTrueWindKnots) +
+      _(" • waves ") + weather_routing::PassageSettingValue(weather_routing::PassageSetting::WaveHeight, c.MaxSwellMeters) +
+      " • " + (c.Currents ? _("currents on") : _("currents off")) +
+      " • " + (c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
   const auto report = readiness_.Report();
   wxString state = readiness_.CanCalculate() ? _("Ready to calculate")
                                              : _("Setup needs attention");
@@ -879,15 +887,12 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
     }
   }
   wxString summary;
-  if (!complete)
-    summary = current->GetDiagnostics().Summary() +
-              _("\nNo completed passage. Review the detailed report before "
-                "recalculating.");
+  if (!complete) summary = _("No completed passage.");
   else {
     if (routes.size() > 1)
       summary += wxString::Format(_("%u of %zu legs complete\n"), complete,
                                   routes.size());
-    summary += _("Arrival: ") + end.Format("%d %b %Y, %H:%M", wxDateTime::UTC) +
+    summary += (complete == routes.size() ? _("Arrival: ") : _("Last completed leg ends: ")) + end.Format("%d %b %Y, %H:%M", wxDateTime::UTC) +
                " UTC";
     const auto duration = end - start;
     summary += wxString::Format(
@@ -915,6 +920,41 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
                            : _("see detailed report"));
     summary += wxString::Format(_(" • %u warnings"), warnings);
   }
+  failureButton_->Show(false);
+  if (complete < routes.size()) {
+    // Report the first failed leg before later legs waiting for its result.
+    RouteMapOverlay* failed = nullptr;
+    for (auto* r : routes)
+      if (r->Finished() && !r->ReachedDestination()) { failed = r; break; }
+    if (failed) {
+      const auto report = failed->GetDiagnostics();
+      if (routes.size() > 1)
+        summary += wxString::Format(_("\nLeg %d: "), failed->GetConfiguration().MultiLegLegIndex);
+      else summary += "\n";
+      if (const auto reason = report.PrimaryFailure()) {
+        summary += reason->title;
+        if (!reason->detail.empty()) summary += "\n" + reason->detail;
+        if (!reason->action.empty()) summary += "\n" + reason->action;
+        using Review = weather_routing::DiagnosticReview;
+        wxString label = _("Review failure details");
+        switch (report.FailureReview()) {
+          case Review::Weather: label = _("Review weather"); break;
+          case Review::Boat: label = _("Review boat and polars"); break;
+          case Review::Route: label = _("Review route"); break;
+          case Review::RoutingControls: label = _("Review routing controls"); break;
+          default: break;
+        }
+        failureButton_->SetLabel(label);
+        failureButton_->Show(true);
+      } else if (report.cancelled)
+        summary += _("Stopped by user. Setup is preserved; calculate again when ready.");
+      else {
+        summary += report.Summary() + _("\nThe engine did not identify a specific cause. Review the detailed report.");
+        failureButton_->SetLabel(_("Review failure details"));
+        failureButton_->Show(true);
+      }
+    } else summary += _("\nRemaining legs have not completed.");
+  }
   resultStatus_ =
       routes.size() > 1
           ? complete == routes.size()
@@ -927,6 +967,34 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
           : current->GetDiagnostics().Summary();
   results_->SetLabel(summary);
   resultsBox_->Show(true);
+}
+
+
+void PassagePanel::ReviewFailure() {
+  auto* current = routing_.FirstCurrentRouteMap();
+  if (!current || current->Running()) return;
+  const auto config = current->GetConfiguration();
+  auto routes = config.IsMultiLegGenerated
+      ? routing_.GetMultiLegGroupRoutes(config.MultiLegGroupId)
+      : std::vector<RouteMapOverlay*>{current};
+  for (auto* route : routes) {
+    if (!route->Finished() || route->ReachedDestination()) continue;
+    const auto target = route->GetDiagnostics().FailureReview();
+    int index = 0;
+    for (auto* item : routing_.m_WeatherRoutes) {
+      if (item->routemapoverlay == route) { SelectPassage(index); break; }
+      ++index;
+    }
+    using Review = weather_routing::DiagnosticReview;
+    switch (target) {
+      case Review::Weather: windPolicy_->SetFocus(); ShowChecks(); break;
+      case Review::Boat: ShowLibrary(); break;
+      case Review::Route: EditRoute(); break;
+      case Review::RoutingControls: OpenSettings(1); break;
+      default: { wxCommandEvent event; routing_.OnReport(event); break; }
+    }
+    return;
+  }
 }
 
 void PassagePanel::EditRoute() {

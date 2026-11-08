@@ -2387,7 +2387,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   wxStaticText* departureConcurrencyLabel =
       new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
-                       _("Departure-time route workers"), wxDefaultPosition,
+                       _("Departure-time workers (0 = Auto)"), wxDefaultPosition,
                        wxDefaultSize, 0);
   departureConcurrencyLabel->Wrap(-1);
   fgSizerDepartureConcurrency->Add(
@@ -2437,7 +2437,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
       "Maximum RAM used by the plugin's authoritative chart-safety tile "
       "cache. This does not limit all OpenCPN memory. Use 0 for Auto "
       "(approximately 1/32 of physical RAM, bounded from 256 to 2048 MiB). "
-      "Certified tiles remain persistently cached on disk between launches."));
+      "Previously checked chart tiles remain cached on disk between launches."));
   fgSizerChartSafetyRam->Add(
       m_sChartSafetyRamCacheMiB, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 

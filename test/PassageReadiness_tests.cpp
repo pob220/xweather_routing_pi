@@ -124,3 +124,21 @@ TEST(PassageReadiness, DisabledLimitsPreserveExistingEngineSemantics) {
   input.windLimit = -1;
   EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
 }
+TEST(PassageReadiness, MotoringRequiresPositiveSpeedOnlyWhenEnabled) {
+  auto input = Ready();
+  input.motorSpeed = 0;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  input.useMotor = true;
+  EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
+  input.motorSpeed = 5;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+}
+TEST(PassageReadiness, AShorelineOnlyHostCannotEnforceChartedDepth) {
+  auto input = Ready();
+  input.minimumDepth = 5;
+  EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
+  input.chartDepthAvailable = true;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  input.minimumDepth = -1;
+  EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
+}

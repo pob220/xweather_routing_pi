@@ -141,15 +141,29 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
         _("Review the current source or download current data. Missing data "
           "are reported during calculation."),
         _("Review weather"));
-  if (!std::isfinite(in.windLimit) || in.windLimit < 0 ||
-      !std::isfinite(in.apparentWindLimit) || in.apparentWindLimit < 0 ||
-      !std::isfinite(in.waveLimit) || in.waveLimit < 0)
+  const auto windError = CheckPassageSetting(PassageSetting::TrueWind, in.windLimit);
+  const auto apparentError = CheckPassageSetting(PassageSetting::ApparentWind, in.apparentWindLimit);
+  const auto waveError = CheckPassageSetting(PassageSetting::WaveHeight, in.waveLimit);
+  if (!windError.empty() || !apparentError.empty() || !waveError.empty())
     add(PassageSection::Limits, "passage.limits.invalid", error,
         _("Review wind and wave limits"),
-        _("Limits must be non-negative. Zero disables the corresponding "
-          "limit."),
+        !windError.empty() ? windError : !apparentError.empty() ? apparentError : waveError,
         _("Passage settings"));
-  else if (in.windLimit == 0 || in.apparentWindLimit == 0 || in.waveLimit == 0)
+  if (auto errorText = CheckMotorSettings(in.useMotor, in.motorThreshold, in.motorSpeed);
+      !errorText.empty())
+    add(PassageSection::Limits, "passage.limits.motor", error,
+        _("Review motoring settings"), errorText, _("Passage settings"));
+  if (auto errorText = CheckPassageSetting(PassageSetting::MinimumDepth, in.minimumDepth);
+      !errorText.empty())
+    add(PassageSection::Limits, "passage.limits.depth", error,
+        _("Review the minimum charted depth"), errorText, _("Passage settings"));
+  else if (in.minimumDepth > 0 && !in.chartDepthAvailable)
+    add(PassageSection::Limits, "passage.limits.depth_host", error,
+        _("This OpenCPN cannot enforce a charted-depth limit"),
+        _("Use a compatible chart-aware OpenCPN build, or deliberately switch the depth limit off. A shoreline check cannot verify depth."),
+        _("Passage settings"));
+  if (windError.empty() && apparentError.empty() && waveError.empty() &&
+      (in.windLimit == 0 || in.apparentWindLimit == 0 || in.waveLimit == 0))
     add(PassageSection::Limits, "passage.limits.disabled", warning,
         _("A wind or wave limit is off"),
         _("Review the disabled limit for this vessel and passage."),

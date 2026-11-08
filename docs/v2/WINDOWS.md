@@ -1,8 +1,8 @@
-# xWeatherRouting 2.0.0 on Windows
+# xWeatherRouting 2.1.0 on Windows
 
 ## Try the new interface — no compiling required
 
-1. [Download the ready-to-run Windows ZIP](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.0.0/xWeatherRouting-2.0.0-Windows-UI-Trial.zip) (about 82 MiB).
+1. [Download the ready-to-run Windows ZIP](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.1.0/xWeatherRouting-2.1.0-Windows-UI-Trial.zip) (about 82 MiB).
 2. Choose **Extract All**, open the extracted folder and double-click
    **Start-Weather-Routing.cmd**.
 3. Choose **Passage actions → Try an example passage**, close the help note,
@@ -20,36 +20,32 @@ stay in that extracted folder, leaving your normal OpenCPN alone.
 <details>
 <summary>Optional: developer source-build instructions</summary>
 
-Use [feature/xweather-2.0.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.0.0)
+Use [feature/xweather-2.1.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.1.0)
 in `pob220/xweather_routing_pi`. This is the
 development line; version 1 remains the catalogue release. Native Windows
 qualification is recorded in [VALIDATION.md](VALIDATION.md).
 
-## Verified builds — 7 November 2026
+## Windows qualification
 
-[Native Windows CI passed](https://github.com/pob220/xweather_routing_pi/actions/runs/42409887075)
-for source commit `743c443`, using both pinned x64 hosts:
+Version 2.1 is built and tested against both checksum-pinned x64 hosts:
 
 | OpenCPN host | wxWidgets | Artifact name |
 | --- | --- | --- |
-| 5.15.0, e41f0de | 3.3.4 | xWeatherRouting-2.0.0-windows-x64-wx3.3.4 |
-| 5.14.2, de7e706 | 3.2.9 | xWeatherRouting-2.0.0-windows-x64-wx3.2.9 |
+| 5.15.0, e41f0de | 3.3.4 | xWeatherRouting-2.1.0-windows-x64-wx3.3.4 |
+| 5.14.2, de7e706 | 3.2.9 | xWeatherRouting-2.1.0-windows-x64-wx3.2.9 |
 
-Each plugin build passed **627 enabled tests**, normal package import,
-shoreline routing with the original/quick/main engines, preservation of personal
-boats/polars on reinstall, and portable forecast-only, Climatology-only and
-forecast-expiry fallback routes. One existing timing comparison remains disabled.
-The helper passed 12 native tests and generated/read GRIB data with build
-dependencies removed from PATH. Its 36 executable/DLL images were checked as AMD64.
+[Validation receipts](VALIDATION.md) distinguish the 2.1 checks from the
+[earlier 2.0 qualification](VALIDATION-2.0.md). The ready-to-run ZIP is produced
+only after both native plugin builds succeed, then checked on a disposable
+Windows runner, including its actual launcher and relocated portable profile.
 
-The Windows package is approximately **36–37 MiB compressed** and **113 MiB of
-installed file contents**. Test hosts, build/dependency directories, forecasts
-and generated shoreline caches are additional to that plugin measurement.
+The plugin is approximately **36–37 MiB compressed** and **113 MiB of installed
+file contents**. The trial ZIP additionally includes its matching OpenCPN host.
+Test profiles, forecasts and generated shoreline caches are additional.
 
-The run's artifacts contain the package and matching metadata under `package/`,
-plus checksums and test receipts. For a source build and a matching private test
-host, follow the commands below. Broader Windows UI/DPI, provider and custom-host
-testing remains useful; these are development packages for testing 2.0.0.
+The run's artifacts contain packages, metadata, checksums and test receipts.
+Broader Windows UI/DPI and custom chart-aware host review remains useful.
+Version 1 remains the stable catalogue release.
 
 ## Prerequisites
 
@@ -63,7 +59,7 @@ testing remains useful; these are development packages for testing 2.0.0.
 Open **x64 Native Tools Command Prompt for VS 2022**:
 
 ```bat
-git clone --branch feature/xweather-2.0.0 --recurse-submodules https://github.com/pob220/xweather_routing_pi.git C:\src\xwr
+git clone --branch feature/xweather-2.1.0 --recurse-submodules https://github.com/pob220/xweather_routing_pi.git C:\src\xwr
 cd /d C:\src\xwr
 python ci\circleci-build-windows64.py
 ```

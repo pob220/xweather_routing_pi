@@ -34,6 +34,7 @@ private:
   void OpenSettings(size_t section);
   void EditBoatDetails();
   void RefreshResults(RouteMapOverlay* current, bool busy);
+  void ReviewFailure();
   RouteMapConfiguration PlanningConfiguration(
       const RouteMapConfiguration& selected) const;
   void ChooseBoat();
@@ -48,7 +49,7 @@ private:
   wxSizer* resultsBox_;
   wxStaticText* results_;
   wxStaticText *route_, *boat_, *weather_, *limits_, *status_;
-  wxButton *calculate_, *checksButton_;
+  wxButton *calculate_, *checksButton_, *failureButton_;
   std::vector<wxWindow*> mutableControls_;
   weather_routing::PassageReadiness readiness_;
   RouteMapOverlay* resultRoute_{nullptr};

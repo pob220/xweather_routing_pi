@@ -2,6 +2,7 @@
 #pragma once
 
 #include "RouteDiagnostics.h"
+#include "PassageSettings.h"
 #include <array>
 #include <wx/datetime.h>
 
@@ -28,7 +29,12 @@ struct PassageInputs {
   bool climatologyWind{false};
   bool wavesAvailable{false}, currentsAvailable{false};
   bool requireWaves{false}, useCurrents{false}, avoidLand{true};
-  double windLimit{30}, apparentWindLimit{40}, waveLimit{3};
+  double windLimit{PassageDefaults::windKnots};
+  double apparentWindLimit{PassageDefaults::apparentWindKnots};
+  double waveLimit{PassageDefaults::waveMeters};
+  bool useMotor{false}, chartDepthAvailable{false};
+  double motorThreshold{PassageDefaults::motorThresholdKnots};
+  double motorSpeed{PassageDefaults::motorSpeedKnots}, minimumDepth{0};
   wxDateTime estimatedFinish, forecastEnd;
 };
 struct PassageReadiness {
@@ -42,10 +48,4 @@ PassageReadiness EvaluatePassage(const PassageInputs& input);
 wxString PassageSectionStatus(const RouteDiagnosticReport& report);
 PassageAction RecoveryAction(const std::string& diagnosticCode);
 
-// Visible initial operating limits and their units have one definition.
-struct PassageDefaults {
-  static constexpr double windKnots = 30;
-  static constexpr double apparentWindKnots = 40;
-  static constexpr double waveMeters = 3;
-};
 }  // namespace weather_routing

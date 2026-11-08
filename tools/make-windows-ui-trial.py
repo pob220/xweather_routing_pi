@@ -11,12 +11,11 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_SHA256 = '3d71d58221cd290c7ea4184656781a485a62bdd701dde9e6e29edff24826d1ff'
-SOURCE = '743c443a5029edbb4c40272ed0861b2f58e4a789'
-RUN = 42409887075
-NAME = 'xWeatherRouting-2.0.0-Windows-UI-Trial'
+VERSION = '2.1.0'
+NAME = 'xWeatherRouting-' + VERSION + '-Windows-UI-Trial'
 
 LAUNCHER = r'''@echo off
 setlocal
@@ -40,7 +39,7 @@ if errorlevel 1 (
 endlocal
 '''
 
-README = '''xWeatherRouting 2.0.0 - Windows UI trial
+README = '''xWeatherRouting 2.1.0 - Windows UI trial
 
 Please try the new passage-planning interface and tell Paul what feels clear,
 confusing or missing. You do not need to compile or install anything.
@@ -73,12 +72,12 @@ this extracted folder. Always use Start-Weather-Routing.cmd. Close the test
 windows when finished; delete this extracted folder to remove the trial.
 It does not install into or replace your normal OpenCPN or its plugins.
 
-Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.0.0.
+Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.1.0.
 This host is for the UI trial; custom chart-aware hosts are a separate test.
 Source and build instructions:
-https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.0.0/docs/v2/WINDOWS.md
+https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.1.0/docs/v2/WINDOWS.md
 Native binary qualification:
-https://github.com/pob220/xweather_routing_pi/actions/runs/42409887075
+https://github.com/pob220/xweather_routing_pi/actions/runs/QUALIFICATION_RUN
 OpenCPN and plugin licences are retained with their files. Provenance and
 checksums for all distributed files are in trial-manifest.json.
 '''
@@ -97,9 +96,20 @@ def check_amd64(path):
         raise ValueError('Expected an AMD64 binary: ' + str(path))
 
 
-def make(plugin, output, installer=None):
-    if sha(plugin) != PLUGIN_SHA256:
-        raise ValueError('Use the qualified wx334 archive from run ' + str(RUN))
+def make(plugin, output, source, run, installer=None):
+    if not re.fullmatch(r'[0-9a-f]{40}', source) or run <= 0:
+        raise ValueError('Provide the qualified source commit and native CI run')
+    sums = plugin.parent / 'SHA256SUMS'
+    expected = dict((line.split()[1], line.split()[0]) for line in sums.read_text().splitlines())
+    plugin_sha = sha(plugin)
+    if expected.get(plugin.name) != plugin_sha or not plugin.name.endswith('-wx334.tar.gz'):
+        raise ValueError('Plugin archive does not match the qualified wx334 checksums')
+    with tarfile.open(plugin) as archive:
+        metadata = ET.fromstring(archive.extractfile('metadata.xml').read())
+        if (metadata.findtext('version').strip() != VERSION or
+                metadata.findtext('target').strip() != 'msvc-64' or
+                metadata.findtext('target-arch').strip() != 'x86_64'):
+            raise ValueError('Expected the matching version of the Windows x64 plugin')
     pin = json.loads((ROOT / 'ci/windows64-sdk.json').read_text())
     with tempfile.TemporaryDirectory(prefix='xwr-ui-trial-') as temporary:
         work = Path(temporary)
@@ -146,18 +156,18 @@ def make(plugin, output, installer=None):
             'OpenGL=0\nDisableOpenGL=1\nShowMenuBar=1\nLocale=en_US\n'
             '[PlugIns/grib_pi.dll]\nbEnabled=0\n'
             '[PlugIns/xweather_routing_pi.dll]\nbEnabled=1\n'
-            '[Plugins/xWeatherRouting2]\nConfigVersion=200\n'
-            '[PlugIns/xWeatherRouting2]\nConfigVersion=200\n', encoding='ascii')
+            '[Plugins/xWeatherRouting2]\nConfigVersion=201\n'
+            '[PlugIns/xWeatherRouting2]\nConfigVersion=201\n', encoding='ascii')
         (trial / 'Start-Weather-Routing.cmd').write_bytes(LAUNCHER.replace('\n', '\r\n').encode('ascii'))
-        (trial / 'READ-ME-FIRST.txt').write_text(README, encoding='utf-8')
+        (trial / 'READ-ME-FIRST.txt').write_text(README.replace('QUALIFICATION_RUN', str(run)), encoding='utf-8')
         for image in host.rglob('*'):
             if image.suffix.lower() in ('.exe', '.dll'):
                 check_amd64(image)
         files = {p.relative_to(trial).as_posix(): sha(p)
                  for p in sorted(trial.rglob('*')) if p.is_file()}
         (trial / 'trial-manifest.json').write_text(json.dumps({
-            'plugin_version': '2.0.0', 'plugin_source_commit': SOURCE,
-            'qualification_run': RUN, 'plugin_archive_sha256': PLUGIN_SHA256,
+            'plugin_version': VERSION, 'plugin_source_commit': source,
+            'qualification_run': run, 'plugin_archive_sha256': plugin_sha,
             'host': pin, 'portable': True, 'files_sha256': files,
         }, indent=2) + '\n', encoding='utf-8')
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -174,5 +184,8 @@ if __name__ == '__main__':
     parser.add_argument('--plugin', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--host-installer', type=Path)
+    parser.add_argument('--source-commit', required=True)
+    parser.add_argument('--qualification-run', type=int, required=True)
     args = parser.parse_args()
-    make(args.plugin.resolve(), args.output.resolve(), args.host_installer.resolve() if args.host_installer else None)
+    make(args.plugin.resolve(), args.output.resolve(), args.source_commit, args.qualification_run,
+         args.host_installer.resolve() if args.host_installer else None)

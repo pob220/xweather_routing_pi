@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: windows-v2-${{ github.ref }}
@@ -120,10 +121,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: xWeatherRouting-2.0.0-windows-x64-wx${{ matrix.wx }}
+          name: xWeatherRouting-2.1.0-windows-x64-wx${{ matrix.wx }}
           include-hidden-files: true
           path: |
             artifacts/windows-x64
             compatibility/windows-x64-wx329
             .windows64/build/Testing/Temporary
             .windows64-wx329/build/Testing/Temporary
+
+  ui-trial:
+    needs: build-win64
+    uses: ./.github/workflows/windows-ui-trial.yml
+    with:
+      qualification-run: ${{ format('{0}', github.run_id) }}
+      source-commit: ${{ github.sha }}

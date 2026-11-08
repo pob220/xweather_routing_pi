@@ -1,11 +1,11 @@
-# Try xWeatherRouting 2.0.0 on Windows
+# Try xWeatherRouting 2.1.0 on Windows
 
 Please try the new passage-planning screen and tell Paul what feels clear,
 confusing or missing. **You do not need to compile anything for this first look.**
 
 ## Download and open
 
-1. [Download the Windows trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.0.0/xWeatherRouting-2.0.0-Windows-UI-Trial.zip).
+1. [Download the Windows trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.1.0/xWeatherRouting-2.1.0-Windows-UI-Trial.zip).
 2. Right-click the downloaded ZIP and choose **Extract All**. Use a new folder
    on your Desktop, then open that extracted folder.
 3. Double-click **Start-Weather-Routing.cmd**. Allow a few seconds for the
@@ -41,7 +41,7 @@ Screenshots and the steps that confused you are useful. Please mention your
 Windows display scaling if anything is clipped or too small. The aim of this
 first look is feedback on using the interface; a build-system review is optional.
 
-The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.0.0.
+The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.1.0.
 It is separate from the stable 1.x catalogue version. Custom chart-aware hosts
 can be tested separately. For source builds, see [Windows developer instructions](WINDOWS.md).
 
