@@ -172,6 +172,11 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
     add(PassageSection::Limits, "passage.limits.land", warning,
         _("Land avoidance is off"), _("Review this setting for the passage."),
         _("Passage settings"));
+  if (in.avoidBoundaries && !in.boundaryProviderAvailable)
+    add(PassageSection::Limits, "passage.limits.boundary_provider", error,
+        _("OpenCPN Draw exclusion areas are unavailable"),
+        _("This passage has OpenCPN Draw boundary avoidance enabled. Enable a compatible OpenCPN Draw provider, or switch off 'Use OpenCPN Draw exclusion areas' in Passage settings. Land avoidance is a separate setting."),
+        _("Passage settings"));
   return result;
 }
 }  // namespace weather_routing

@@ -340,6 +340,9 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
         "uncheck this and set Minimum Depth to 0 m."));
 
   // Shared UI descriptions also support passage-readiness messages.
+  m_cbDetectBoundary->SetLabel(_("Use OpenCPN Draw exclusion areas"));
+  m_cbDetectBoundary->SetToolTip(
+      _("Avoid custom exclusion areas supplied by OpenCPN Draw. Requires a compatible enabled OpenCPN Draw provider. This does not control land avoidance or chart/depth checks."));
   m_sMaxTrueWindKnots->SetToolTip(weather_routing::PassageSettingHelp(
       weather_routing::PassageSetting::TrueWind));
   m_sMaxApparentWindKnots->SetToolTip(weather_routing::PassageSettingHelp(
@@ -2150,6 +2153,11 @@ void ConfigurationDialog::Update() {
 
     m_WeatherRouting.PreserveMultiLegLegFieldsForDialog(*it, configuration);
     (*it)->SetConfiguration(configuration);
+    if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  static_cast<wxObject*>(m_cbUseGrib)) != m_edited_controls.end() ||
+        std::find(m_edited_controls.begin(), m_edited_controls.end(),
+                  static_cast<wxObject*>(m_cClimatologyType)) != m_edited_controls.end())
+      m_WeatherRouting.RememberWeatherSourceChoice(configuration);
     m_WeatherRouting.SaveLastUsedConfigurationDefaults(configuration);
 
     /* if the start position changed, we must reset the route */

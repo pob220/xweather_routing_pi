@@ -142,3 +142,19 @@ TEST(PassageReadiness, AShorelineOnlyHostCannotEnforceChartedDepth) {
   input.minimumDepth = -1;
   EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
 }
+
+TEST(PassageReadiness, MissingDrawProviderBlocksOnlyExplicitBoundaryAvoidance) {
+  auto input = Ready();
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  input.avoidBoundaries = true;
+  auto result = wr::EvaluatePassage(input);
+  EXPECT_FALSE(result.CanCalculate());
+  ASSERT_FALSE(result.sections[3].items.empty());
+  EXPECT_EQ(result.sections[3].items[0].code, "passage.limits.boundary_provider");
+  EXPECT_EQ(wr::RecoveryAction(result.sections[3].items[0].code),
+            wr::PassageAction::Limits);
+  EXPECT_TRUE(input.avoidLand);
+  EXPECT_TRUE(input.avoidBoundaries);
+  input.boundaryProviderAvailable = true;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+}

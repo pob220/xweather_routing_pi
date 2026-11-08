@@ -29,8 +29,9 @@ button remains visible while the setup scrolls. Completed passages show arrival,
 duration, distance, speed, weather extrema and actual wind-source use, including
 combined results for linked legs. Calculate explicitly recalculates the passage.
 
-New passage retains the current boat and preferences while clearing linked-route
-and calculation identity. Passage actions offers a separate example passage and
+New passage retains the current boat and operating preferences while clearing linked-route
+and calculation identity. Its weather source uses the last explicitly selected policy,
+or Forecast with Climatology fallback before any explicit choice. Passage actions offers a separate example passage and
 a previewed, scoped restore of operating preferences. Existing OpenCPN routes
 can be selected directly; their ordered waypoints stay owned by OpenCPN.
 Reordering, adding or removing waypoints requires a fresh linked sequence.

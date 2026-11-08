@@ -29,6 +29,7 @@ struct PassageInputs {
   bool climatologyWind{false};
   bool wavesAvailable{false}, currentsAvailable{false};
   bool requireWaves{false}, useCurrents{false}, avoidLand{true};
+  bool avoidBoundaries{false}, boundaryProviderAvailable{false};
   double windLimit{PassageDefaults::windKnots};
   double apparentWindLimit{PassageDefaults::apparentWindKnots};
   double waveLimit{PassageDefaults::waveMeters};

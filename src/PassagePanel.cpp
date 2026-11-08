@@ -151,6 +151,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                        : RouteMapConfiguration::DISABLED;
     } else if (c.ClimatologyType <= RouteMapConfiguration::CURRENTS_ONLY)
       c.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
+    routing_.RememberWeatherSourceChoice(c);
     routing_.ApplyPassageConfiguration(c);
     RefreshPassage();
   });
@@ -450,6 +451,9 @@ void PassagePanel::RefreshPassage() {
   input.apparentWindLimit = c.MaxApparentWindKnots;
   input.waveLimit = c.MaxSwellMeters;
   input.avoidLand = c.DetectLand;
+  input.avoidBoundaries = c.DetectBoundary;
+  input.boundaryProviderAvailable =
+      RouteMap::ODFindClosestBoundaryLineCrossing != nullptr;
   input.useMotor = c.UseMotor;
   input.motorThreshold = c.MotorSpeedThreshold;
   input.motorSpeed = c.MotorSpeed;
@@ -549,6 +553,9 @@ void PassagePanel::NewPassage(bool example) {
   auto* selected = routing_.FirstCurrentRouteMap();
   auto c =
       selected ? selected->GetConfiguration() : routing_.DefaultConfiguration();
+  // A copied route's incidental source settings are not a remembered choice.
+  // Use the last explicit weather selection, or the first-use fallback policy.
+  routing_.ApplyWeatherSourceChoice(c);
   // Start a new passage, retaining the vessel and planning preferences, never
   // the identity or computed scheduling state of a linked leg or candidate.
   c.RouteGUID.clear();

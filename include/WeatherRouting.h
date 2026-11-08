@@ -286,6 +286,8 @@ public:
   weather_routing::PassageWeather& PassageForecast();
   bool OpenPassageForecast(const wxString& path, wxString& error);
   void ApplyPassageConfiguration(const RouteMapConfiguration& configuration);
+  void RememberWeatherSourceChoice(const RouteMapConfiguration& configuration);
+  void ApplyWeatherSourceChoice(RouteMapConfiguration& configuration) const;
   void RefreshPassageSelection() { OnWeatherRouteSelected(); }
 
 #ifdef __OCPN__ANDROID__

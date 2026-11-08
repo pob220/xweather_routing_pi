@@ -2372,6 +2372,8 @@ void WeatherRouting::AddRoute(wxString& GUID) {
   else
     configuration = DefaultConfiguration();
 
+  ApplyWeatherSourceChoice(configuration);
+
   configuration.RouteGUID = GUID;
   configuration.StartTime = wxDateTime::Now();
   configuration.DeltaTime = 3600;
@@ -2408,6 +2410,8 @@ bool WeatherRouting::CreateMultiLegConfigurationsFromRoute(
     base = FirstCurrentRouteMap()->GetConfiguration();
   else
     base = DefaultConfiguration();
+
+  ApplyWeatherSourceChoice(base);
 
   base.RouteGUID.Clear();
   base.DepartureTimeOptimizationEnabled = false;
@@ -8127,6 +8131,8 @@ void WeatherRouting::OnNew(wxCommandEvent& event) {
   else
     configuration = DefaultConfiguration();
 
+  ApplyWeatherSourceChoice(configuration);
+
 #ifdef __OCPN__ANDROID__
   // Create a standalone plan using the selected route's settings. A passage
   // leg's identity must not make the new plan another member of that passage.
@@ -13588,6 +13594,33 @@ void WeatherRouting::DeleteRouteMaps(
   if (current) UpdateDialogs();
 }
 
+void WeatherRouting::RememberWeatherSourceChoice(
+    const RouteMapConfiguration& configuration) {
+  auto* config = GetOCPNConfigObject();
+  if (!config) return;
+  wxConfigPathChanger path(config, "/PlugIns/xWeatherRouting2/WeatherSourcePreference/Explicit");
+  config->Write("Explicit", true);
+  config->Write("UseGrib", configuration.UseGrib);
+  config->Write("ClimatologyType", static_cast<long>(configuration.ClimatologyType));
+  config->Flush();
+}
+
+void WeatherRouting::ApplyWeatherSourceChoice(
+    RouteMapConfiguration& configuration) const {
+  // LastUsedConfiguration is written for unrelated edits such as boat imports.
+  // Only an explicit source-control edit should replace the first-use policy.
+  configuration.UseGrib = true;
+  configuration.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
+  auto* config = GetOCPNConfigObject();
+  if (!config) return;
+  wxConfigPathChanger path(config, "/PlugIns/xWeatherRouting2/WeatherSourcePreference/Explicit");
+  if (!config->ReadBool("Explicit", false)) return;
+  configuration.UseGrib = config->ReadBool("UseGrib", true);
+  const long type = config->ReadLong("ClimatologyType", RouteMapConfiguration::MOST_LIKELY);
+  if (type >= RouteMapConfiguration::DISABLED && type <= RouteMapConfiguration::AVERAGE)
+    configuration.ClimatologyType = static_cast<RouteMapConfiguration::ClimatologyDataType>(type);
+}
+
 void WeatherRouting::SaveLastUsedConfigurationDefaults(
     const RouteMapConfiguration& configuration) {
   wxFileConfig* pConf = GetOCPNConfigObject();
@@ -13886,6 +13919,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.MotorSpeed = 5.0;
 
   ApplyLastUsedConfigurationDefaults(configuration);
+  ApplyWeatherSourceChoice(configuration);
 
   return configuration;
 }
