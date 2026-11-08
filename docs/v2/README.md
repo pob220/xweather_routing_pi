@@ -4,8 +4,9 @@ Version 2.1 is developed on `feature/xweather-2.1.0`, following the 2.0.0 UI tri
 and the 1.36 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
 The version is 2.1.0; no alpha suffix or catalogue replacement is involved.
 
-This UI refinement leaves routing engines, scenario parsing, calculation defaults
-and saved vessel preferences unchanged. See [the 2.1 changes and mapping to
+This UI refinement leaves routing engines, scenario parsing and saved vessel
+preferences unchanged. The weather follow-up now defaults fresh setups to forecast
+with Climatology fallback; see [weather feedback fixes](WEATHER-FOLLOWUP.md). See [the 2.1 changes and mapping to
 review feedback](CHANGES-2.1.md).
 
 For a first Windows UI review, use the [ready-to-run trial](TRY-WINDOWS.md).

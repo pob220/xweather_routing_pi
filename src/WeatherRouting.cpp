@@ -13862,9 +13862,9 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.CycloneDays = 0;
 
   configuration.UseGrib = true;
-  // Climatology is available offline, but changing from forecast to typical
-  // conditions is an explicit planning choice in version 2.
-  configuration.ClimatologyType = RouteMapConfiguration::DISABLED;
+  // Prefer forecasts, with bundled Climatology as the visible default fallback.
+  // ApplyLastUsedConfigurationDefaults below preserves explicit saved choices.
+  configuration.ClimatologyType = RouteMapConfiguration::MOST_LIKELY;
   configuration.AllowDataDeficient = false;
   configuration.WindStrength = 1;
   configuration.DetectLand = true;

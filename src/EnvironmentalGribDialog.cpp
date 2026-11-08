@@ -5,6 +5,8 @@
 #include "GeneratorJobJson.h"
 #include "ProcessCommand.h"
 #include "XgribPaths.h"
+#include "PassageWeatherRequest.h"
+#include "weather_routing_pi.h"
 #include "environmental_grib/area_validation.h"
 
 #include <wx/config.h>
@@ -38,8 +40,17 @@ void EnvironmentalGribDialog::SetPassage(double west,double south,double east,do
   m_east->SetValue(wxString::Format("%.3f",east));
   m_north->SetValue(wxString::Format("%.3f",north));
   SetDisplayTimeZone(false,"UTC");
-  m_startUtc->SetValue(start.Format("%Y-%m-%dT%H:%M:%SZ",wxDateTime::UTC));
-  m_durationHours->SetValue(hours);
+  const auto window = weather_routing::BuildPassageWeatherWindow(
+      start, hours, m_stepHours->GetValue(), waves);
+  if (!window) {
+    AppendLog(_("Cannot prefill weather: review the passage time and forecast interval."));
+    return;
+  }
+  m_startUtc->SetValue(window->start.Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC));
+  m_durationHours->SetRange(1, std::max(360, window->hours));
+  m_durationHours->SetValue(window->hours);
+  if (window->start != start || window->hours != hours)
+    AppendLog(_("The download window was expanded to whole forecast hours. The passage departure time is unchanged."));
   m_generateWeather->SetValue(true);
   m_generateCurrents->SetValue(currents);
   m_includeWaves->SetValue(waves);
@@ -83,7 +94,8 @@ bool ReadAreaCoordinates(wxTextCtrl* const controls[4], double values[4],
 }
 
 wxString DefaultOutputDirectory() {
-  wxFileName path(wxStandardPaths::Get().GetUserDataDir(), "");
+  wxFileName path;
+  path.AssignDir(weather_routing_pi::StandardPath());
   path.AppendDir("grib");
   path.AppendDir("generated");
   return path.GetPath();
@@ -406,6 +418,7 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   m_areaPresets = xgrib::LoadAreaPresets(GetOCPNConfigObject());
   PopulateAreaPresetChoice();
   m_startUtc = new wxTextCtrl(scrolled, wxID_ANY, DefaultStartUtc());
+  m_startUtc->SetToolTip(_("Start of the weather download window. Passage requests start at the preceding whole UTC hour and extend to cover the planned period; the passage departure itself is unchanged."));
   m_durationHours = new wxSpinCtrl(scrolled, wxID_ANY);
   m_durationHours->SetRange(1, 360);
   m_durationHours->SetValue(72);
@@ -563,7 +576,7 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   addRow("North latitude", m_north);
   addRow("Area preset", areaPresetPanel);
   m_startTimeLabel = addRow("Start UTC", m_startUtc);
-  addRow("Forecast duration hours (maximum 15 days)", m_durationHours);
+  addRow("Forecast duration (hours)", m_durationHours);
   addRow("Step hours", m_stepHours);
   grid->Add(new wxStaticText(scrolled, wxID_ANY, "Forecast extension"), 0,
             wxALIGN_CENTER_VERTICAL);
@@ -656,7 +669,8 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   top->Add(m_processStatus, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 12);
 
   auto* buttons = new wxBoxSizer(wxHORIZONTAL);
-  m_checkButton = new wxButton(this, wxID_ANY, "Check availability");
+  m_checkButton = new wxButton(this, wxID_ANY, _("Check generator"));
+  m_checkButton->SetToolTip(_("Check the installed generator and its supported providers. This does not check live forecast coverage."));
   m_generateButton = new wxButton(this, wxID_OK, "Generate Complete GRIB");
   m_cancelButton = new wxButton(this, wxID_ANY, "Cancel");
   m_closeButton = new wxButton(this, wxID_CANCEL, "Close");
@@ -2490,10 +2504,10 @@ void EnvironmentalGribDialog::FinishCommand(long exit_code, bool launched,
                  "\n" + timeCoverage["coverageSummary"].AsString();
     if (m_openAfter->GetValue()) {
       TryOpenGeneratedGrib();
-      message += "\n\nThe generated file was opened in xGRIB.";
+      message += "\n\nThe generated file was opened in Weather Routing.";
     } else {
       message +=
-          "\n\nUse Open GRIB in xGRIB to display this file. It is already a "
+          "\n\nUse Load GRIB in Weather Routing to select this file. It is already a "
           "merged environmental GRIB when both weather and currents were "
           "selected.";
     }
@@ -2523,7 +2537,10 @@ void EnvironmentalGribDialog::FinishCommand(long exit_code, bool launched,
       AppendLog("Environmental GRIB generation failed. See the command output above.");
     else
       wxLogMessage("xGRIB environmental generation failed: %s", Redact(nativeError));
-    m_processStatus->SetLabel(_("Generation failed. Details are in the log above."));
+    if (nativeError.Contains("Copernicus NWS dataset") && nativeError.Contains("time"))
+      m_processStatus->SetLabel(_("Current data do not cover the requested times.\nReview the UTC start and duration, or choose another current source."));
+    else
+      m_processStatus->SetLabel(_("Generation failed. Details are in the log above."));
     m_closeButton->SetFocus();
   }
 }
@@ -2567,7 +2584,7 @@ void EnvironmentalGribDialog::TryOpenGeneratedGrib() {
   }
   if (m_onGribReady) {
     m_onGribReady(path);
-    AppendLog("Opened generated GRIB in xGRIB: " + path);
+    AppendLog("Opened generated GRIB in Weather Routing: " + path);
     wxLogMessage("xGRIB: opened generated GRIB: %s", path);
     return;
   }
@@ -2664,6 +2681,11 @@ bool EnvironmentalGribDialog::BuildGenerateJobText(wxString* text,
     if (error)
       *error = "start time is invalid or does not exist in the selected time "
                "zone";
+    return false;
+  }
+  if (currentSource == "copernicus_nws" &&
+      !weather_routing::IsHourlyWeatherTime(DisplayedStartUtc())) {
+    if (error) *error = _("Copernicus NWS currents require whole UTC hours. Set the download start to a time such as 16:00:00 UTC; keep the passage departure unchanged.");
     return false;
   }
   request["start"] = startUtc;

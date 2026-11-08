@@ -1,5 +1,9 @@
 # xWeatherRouting 2.1.0 — UI review changes
 
+This records the initial Windows trial. Later local weather fixes are described
+in [Weather follow-up](WEATHER-FOLLOWUP.md); the trial ZIP is pinned to its
+qualified source commit and is not silently replaced.
+
 This is a UI/UX refinement of 2.0.0. Routing engines, scenario parsing,
 calculation defaults and stored vessel preferences are unchanged. Version 1
 remains the stable catalogue line. Existing chart context-menu and multi-leg
