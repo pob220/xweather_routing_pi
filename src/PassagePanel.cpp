@@ -855,10 +855,7 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
     key +=
         r->GetDiagnostics().Summary() + r->ModernNativeCoverageNotes() +
         (r->EndTime().IsValid() ? r->EndTime().FormatISOCombined() : wxString("pending"));
-  if (current == resultRoute_ && key == resultKey_) {
-    resultsBox_->Show(true);
-    return;
-  }
+  if (current == resultRoute_ && key == resultKey_) return;
   resultRoute_ = current;
   resultKey_ = key;
   unsigned complete = 0, warnings = 0;
@@ -920,7 +917,7 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
                            : _("see detailed report"));
     summary += wxString::Format(_(" • %u warnings"), warnings);
   }
-  failureButton_->Show(false);
+  bool showFailureReview = false;
   if (complete < routes.size()) {
     // Report the first failed leg before later legs waiting for its result.
     RouteMapOverlay* failed = nullptr;
@@ -945,13 +942,13 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
           default: break;
         }
         failureButton_->SetLabel(label);
-        failureButton_->Show(true);
+        showFailureReview = true;
       } else if (report.cancelled)
         summary += _("Stopped by user. Setup is preserved; calculate again when ready.");
       else {
         summary += report.Summary() + _("\nThe engine did not identify a specific cause. Review the detailed report.");
         failureButton_->SetLabel(_("Review failure details"));
-        failureButton_->Show(true);
+        showFailureReview = true;
       }
     } else summary += _("\nRemaining legs have not completed.");
   }
@@ -967,6 +964,8 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
           : current->GetDiagnostics().Summary();
   results_->SetLabel(summary);
   resultsBox_->Show(true);
+  // Showing a sizer reveals all its children; apply conditional visibility last.
+  failureButton_->Show(showFailureReview);
 }
 
 
