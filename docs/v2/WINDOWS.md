@@ -1,8 +1,8 @@
-# xWeatherRouting 2.1.0 on Windows
+# xWeatherRouting 2.1.1 on Windows
 
 ## Try the new interface — no compiling required
 
-1. [Download the ready-to-run Windows ZIP](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.1.0/xWeatherRouting-2.1.0-Windows-UI-Trial.zip) (about 82 MiB).
+1. [Download the ready-to-run Windows ZIP](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.1.1/xWeatherRouting-2.1.1-Windows-UI-Trial.zip) (about 82 MiB).
 2. Choose **Extract All**, open the extracted folder and double-click
    **Start-Weather-Routing.cmd**.
 3. Choose **Passage actions → Try an example passage**, close the help note,
@@ -20,7 +20,7 @@ stay in that extracted folder, leaving your normal OpenCPN alone.
 <details>
 <summary>Optional: developer source-build instructions</summary>
 
-Use [feature/xweather-2.1.0](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.1.0)
+Use [feature/xweather-2.1.1](https://github.com/pob220/xweather_routing_pi/tree/feature/xweather-2.1.1)
 in `pob220/xweather_routing_pi`. This is the
 development line; version 1 remains the catalogue release. Native Windows
 qualification is recorded in [VALIDATION.md](VALIDATION.md).
@@ -31,8 +31,8 @@ Version 2.1 is built and tested against both checksum-pinned x64 hosts:
 
 | OpenCPN host | wxWidgets | Artifact name |
 | --- | --- | --- |
-| 5.15.0, e41f0de | 3.3.4 | xWeatherRouting-2.1.0-windows-x64-wx3.3.4 |
-| 5.14.2, de7e706 | 3.2.9 | xWeatherRouting-2.1.0-windows-x64-wx3.2.9 |
+| 5.15.0, e41f0de | 3.3.4 | xWeatherRouting-2.1.1-windows-x64-wx3.3.4 |
+| 5.14.2, de7e706 | 3.2.9 | xWeatherRouting-2.1.1-windows-x64-wx3.2.9 |
 
 [Validation receipts](VALIDATION.md) distinguish the 2.1 checks from the
 [earlier 2.0 qualification](VALIDATION-2.0.md). The ready-to-run ZIP is produced
@@ -59,7 +59,7 @@ Version 1 remains the stable catalogue release.
 Open **x64 Native Tools Command Prompt for VS 2022**:
 
 ```bat
-git clone --branch feature/xweather-2.1.0 --recurse-submodules https://github.com/pob220/xweather_routing_pi.git C:\src\xwr
+git clone --branch feature/xweather-2.1.1 --recurse-submodules https://github.com/pob220/xweather_routing_pi.git C:\src\xwr
 cd /d C:\src\xwr
 python ci\circleci-build-windows64.py
 ```

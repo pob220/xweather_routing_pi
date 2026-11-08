@@ -1,8 +1,12 @@
-# xWeatherRouting 2.1.0
+# xWeatherRouting 2.1.1
 
-Version 2.1 is developed on `feature/xweather-2.1.0`, following the 2.0.0 UI trial
+Version 2.1 is developed on `feature/xweather-2.1.1`, following the 2.0.0 UI trial
 and the 1.36 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
-The version is 2.1.0; no alpha suffix or catalogue replacement is involved.
+The version is 2.1.1; no alpha suffix or catalogue replacement is involved.
+
+The 2.1.1 patch automatically aligns NWS download requests to whole UTC hours
+and extends coverage through the original requested end. Passage departure and
+target arrival remain exactly as entered. See [the patch notes](CHANGES-2.1.1.md).
 
 This UI refinement leaves routing engines, scenario parsing and saved vessel
 preferences unchanged. The weather follow-up now defaults fresh setups to forecast

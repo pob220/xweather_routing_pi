@@ -34,7 +34,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.qualification-run }}
-          name: xWeatherRouting-2.1.0-windows-x64-wx3.3.4
+          name: xWeatherRouting-2.1.1-windows-x64-wx3.3.4
           path: artifacts/qualified
       - name: Package matching host, plugin and portable launcher
         shell: pwsh
@@ -42,7 +42,7 @@ jobs:
           $plugins = @(Get-ChildItem artifacts/qualified -Recurse -Filter '*-wx334.tar.gz')
           if ($plugins.Count -ne 1) { throw 'Expected one qualified wx334 archive' }
           $plugin = $plugins[0]
-          python tools/make-windows-ui-trial.py --plugin $plugin.FullName --source-commit "${{ inputs.source-commit }}" --qualification-run "${{ inputs.qualification-run }}" --output artifacts/trial/xWeatherRouting-2.1.0-Windows-UI-Trial.zip
+          python tools/make-windows-ui-trial.py --plugin $plugin.FullName --source-commit "${{ inputs.source-commit }}" --qualification-run "${{ inputs.qualification-run }}" --output artifacts/trial/xWeatherRouting-2.1.1-Windows-UI-Trial.zip
           if ($LASTEXITCODE -ne 0) { throw 'UI trial packaging failed' }
       - name: Test delivered launcher and relocated portable host
         shell: pwsh
@@ -50,11 +50,11 @@ jobs:
           $plugins = @(Get-ChildItem artifacts/qualified -Recurse -Filter '*-wx334.tar.gz')
           if ($plugins.Count -ne 1) { throw 'Expected one qualified wx334 archive' }
           $plugin = $plugins[0]
-          python tools/test-windows-ui-trial.py artifacts/trial/xWeatherRouting-2.1.0-Windows-UI-Trial.zip $plugin.FullName artifacts/trial-checks
+          python tools/test-windows-ui-trial.py artifacts/trial/xWeatherRouting-2.1.1-Windows-UI-Trial.zip $plugin.FullName artifacts/trial-checks
           if ($LASTEXITCODE -ne 0) { throw 'UI trial acceptance failed' }
       - uses: actions/upload-artifact@v4
         with:
-          name: xWeatherRouting-2.1.0-Windows-UI-Trial
+          name: xWeatherRouting-2.1.1-Windows-UI-Trial
           path: artifacts/trial
       - uses: actions/upload-artifact@v4
         if: always()

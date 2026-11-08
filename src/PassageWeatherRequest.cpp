@@ -23,4 +23,13 @@ std::optional<PassageWeatherWindow> BuildPassageWeatherWindow(
       wxDateTime(departure.GetTicks() - offset),
       ((coveringHours + interval - 1) / interval) * interval};
 }
+std::optional<PassageWeatherWindow> BuildWeatherDownloadWindow(
+    const wxDateTime& start, int hours, int stepHours, bool waves,
+    std::string_view currentSource) {
+  if (currentSource == "copernicus_nws" || currentSource == "auto")
+    return BuildPassageWeatherWindow(start, hours, stepHours, waves);
+  if (!start.IsValid() || hours < 1 || hours > 8784 ||
+      stepHours < 1 || stepHours > 24) return std::nullopt;
+  return PassageWeatherWindow{start, hours};
+}
 }  // namespace weather_routing

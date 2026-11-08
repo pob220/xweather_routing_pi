@@ -1,6 +1,6 @@
 # Weather feedback fixes — 8 November 2026
 
-This follow-up is installed in the local **xWeatherRouting 2.1.0 Test** staging
+This follow-up is installed in the local **xWeatherRouting 2.1.0 Test** staging (the earlier development build)
 area. Restart that test copy to load it. Existing saved passages, vessel data
 and explicitly chosen source policies are retained.
 
@@ -12,8 +12,9 @@ and explicitly chosen source policies are retained.
   non-matching timestamp. The UI now starts downloads at the preceding whole
   UTC hour and rounds the duration outward to cover the original passage window
   and selected weather/wave intervals. The passage departure is unchanged.
-- Manually entered non-hourly NWS request times are explained before launching
-  a download. Real forecast-range failures remain errors and offer a plain
+- That earlier build explained manually entered non-hourly NWS request times
+  before launching a download. [Version 2.1.1](CHANGES-2.1.1.md) now aligns them
+  automatically, including the duration needed to retain the requested end. Real forecast-range failures remain errors and offer a plain
   explanation to review the start, duration or current source.
 - The generator's default output/cache folder is now under the version 2 user
   data directory, including the isolated profile in portable tests. The

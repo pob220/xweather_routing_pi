@@ -64,3 +64,36 @@ TEST(PassageWeatherRequest, SubsecondDepartureAlsoKeepsTheLastRequestedInstant) 
   EXPECT_GE(window->start + wxTimeSpan::Hours(window->hours),
             departure + wxTimeSpan::Hours(24));
 }
+
+TEST(PassageWeatherRequest, NwsAndAutoDownloadsRoundDownAndCoverOriginalEnd) {
+  const auto start = Utc("2026-11-08T16:01:23");
+  for (const auto* provider : {"copernicus_nws", "auto"}) {
+    const auto window = wr::BuildWeatherDownloadWindow(start, 24, 1, false, provider);
+    ASSERT_TRUE(window);
+    EXPECT_EQ(window->start, Utc("2026-11-08T16:00:00"));
+    EXPECT_EQ(window->hours, 25);
+    EXPECT_GE(window->start + wxTimeSpan::Hours(window->hours),
+              start + wxTimeSpan::Hours(24));
+    const auto again = wr::BuildWeatherDownloadWindow(
+        window->start, window->hours, 1, false, provider);
+    ASSERT_TRUE(again);
+    EXPECT_EQ(again->start, window->start);
+    EXPECT_EQ(again->hours, window->hours);
+  }
+  EXPECT_EQ(start, Utc("2026-11-08T16:01:23"));
+}
+
+TEST(PassageWeatherRequest, OtherCurrentReadersKeepTheirExistingTimeHandling) {
+  const auto start = Utc("2026-11-08T16:01:23");
+  for (const auto* provider : {"none", "tpxo", "tpxo-cache", "offline-tidal",
+                             "netcdf", "synthetic", "existing-file",
+                             "copernicus_global", "copernicus_ibi",
+                             "copernicus_mediterranean", "noaa_rtofs_global"}) {
+    const auto window = wr::BuildWeatherDownloadWindow(start, 24, 1, false, provider);
+    ASSERT_TRUE(window);
+    EXPECT_EQ(window->start, start);
+    EXPECT_EQ(window->hours, 24);
+  }
+  EXPECT_FALSE(wr::BuildWeatherDownloadWindow(wxInvalidDateTime, 24, 1, false, "auto"));
+  EXPECT_FALSE(wr::BuildWeatherDownloadWindow(start, 0, 1, false, "tpxo"));
+}

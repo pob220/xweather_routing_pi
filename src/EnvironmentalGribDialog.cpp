@@ -997,6 +997,31 @@ void EnvironmentalGribDialog::OnGenerate(wxCommandEvent&) {
     ~ResetTimeConsent() { policy = "review"; }
   } resetTimeConsent{m_timePolicy};
   if (!ValidateAreaInput()) return;
+  wxString preview, inputError;
+  if (!BuildGenerateJobText(&preview, &inputError)) {
+    AppendLog(inputError);
+    wxMessageBox(inputError, _("Review generator settings"),
+                 wxOK | wxICON_WARNING, this);
+    return;
+  }
+  const auto window = DownloadWindow();
+  if (window && (window->start != DisplayedStartUtc() ||
+                 window->hours != m_durationHours->GetValue())) {
+    // These are download controls only. Never write passage configuration here.
+    const wxString zone = m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
+    const auto wall = marine_time::ToWallClock(window->start, zone);
+    m_startUtc->ChangeValue(wall.Format("%Y-%m-%dT%H:%M:%S", wxDateTime::UTC) +
+                           (m_useLocalTimeZone ? wxString() : wxString("Z")));
+    m_durationHours->SetRange(1, std::max(m_durationHours->GetMax(), window->hours));
+    m_durationHours->SetValue(window->hours);
+    const wxString begin = window->start.Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC);
+    const wxString end = (window->start + wxTimeSpan::Hours(window->hours))
+                            .Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC);
+    AppendLog(wxString::Format(_("Weather download window: %s to %s. Passage departure and target arrival are unchanged."), begin, end));
+    RefreshOutputFilenameDefault();
+    QueueEstimate();
+  }
+
   // Already computed alongside the debounced, offline size estimate. Never
   // wait for this cache: the generation worker repeats validation before HTTP.
   if (m_timeSettingsRevision == m_estimateRevision && !m_timeSettingsIssue.empty()) {
@@ -2596,6 +2621,50 @@ void EnvironmentalGribDialog::TryOpenGeneratedGrib() {
   AppendLog("Requested GRIB open through plugin messaging: " + path);
 }
 
+wxString EnvironmentalGribDialog::SelectedCurrentSource() const {
+  wxString currentSource = "none";
+  if (m_generateCurrents->GetValue()) {
+    const wxString selected = m_currentSource->GetStringSelection();
+    if (IsOfflineTidalSelected())
+      currentSource = "offline-tidal";
+    else if (selected.Contains("TPXO cache"))
+      currentSource = "tpxo-cache";
+    else if (selected.Contains("TPXO direct"))
+      currentSource = "tpxo";
+    else if (selected.Contains("Existing"))
+      currentSource = "existing-file";
+    else if (selected.Contains("Marine.ie"))
+      currentSource = "marine_ie_irish_sea";
+    else if (selected.Contains("RTOFS"))
+      currentSource = "noaa_rtofs_global";
+    else if (selected.Contains("OFS"))
+      currentSource = "noaa_ofs_s111";
+    else if (selected.Contains("NWS"))
+      currentSource = "copernicus_nws";
+    else if (selected.Contains("IBI"))
+      currentSource = "copernicus_ibi";
+    else if (selected.Contains("Mediterranean"))
+      currentSource = "copernicus_mediterranean";
+    else if (selected.Contains("Global"))
+      currentSource = "copernicus_global";
+    else if (selected.Contains("Auto"))
+      currentSource = "auto";
+  }
+  if (m_generateCurrents->GetValue() && !IsOfflineTidalSelected()) {
+    if (m_mode->GetSelection() == 2) currentSource = "netcdf";
+    if (m_mode->GetSelection() == 3) currentSource = "synthetic";
+  }
+
+  return currentSource;
+}
+
+std::optional<weather_routing::PassageWeatherWindow>
+EnvironmentalGribDialog::DownloadWindow() const {
+  return weather_routing::BuildWeatherDownloadWindow(
+      DisplayedStartUtc(), m_durationHours->GetValue(), m_stepHours->GetValue(),
+      m_includeWaves->GetValue(), SelectedCurrentSource().ToStdString());
+}
+
 bool EnvironmentalGribDialog::BuildGenerateJobText(wxString* text,
                                                   wxString* error) const {
   wxTextCtrl* controls[] = {m_west, m_south, m_east, m_north};
@@ -2637,38 +2706,7 @@ bool EnvironmentalGribDialog::BuildGenerateJobText(wxString* text,
     weatherPreset = "all";
   }
 
-  wxString currentSource = "none";
-  if (m_generateCurrents->GetValue()) {
-    const wxString selected = m_currentSource->GetStringSelection();
-    if (IsOfflineTidalSelected())
-      currentSource = "offline-tidal";
-    else if (selected.Contains("TPXO cache"))
-      currentSource = "tpxo-cache";
-    else if (selected.Contains("TPXO direct"))
-      currentSource = "tpxo";
-    else if (selected.Contains("Existing"))
-      currentSource = "existing-file";
-    else if (selected.Contains("Marine.ie"))
-      currentSource = "marine_ie_irish_sea";
-    else if (selected.Contains("RTOFS"))
-      currentSource = "noaa_rtofs_global";
-    else if (selected.Contains("OFS"))
-      currentSource = "noaa_ofs_s111";
-    else if (selected.Contains("NWS"))
-      currentSource = "copernicus_nws";
-    else if (selected.Contains("IBI"))
-      currentSource = "copernicus_ibi";
-    else if (selected.Contains("Mediterranean"))
-      currentSource = "copernicus_mediterranean";
-    else if (selected.Contains("Global"))
-      currentSource = "copernicus_global";
-    else if (selected.Contains("Auto"))
-      currentSource = "auto";
-  }
-  if (m_generateCurrents->GetValue() && !IsOfflineTidalSelected()) {
-    if (m_mode->GetSelection() == 2) currentSource = "netcdf";
-    if (m_mode->GetSelection() == 3) currentSource = "synthetic";
-  }
+  const wxString currentSource = SelectedCurrentSource();
 
   wxJSONValue root = CreateGeneratorJobEnvelope();
   wxJSONValue& request = root["request"];
@@ -2676,20 +2714,14 @@ bool EnvironmentalGribDialog::BuildGenerateJobText(wxString* text,
   request["bbox"]["south"] = south;
   request["bbox"]["east"] = east;
   request["bbox"]["north"] = north;
-  const wxString startUtc = StartUtcText();
-  if (startUtc.empty()) {
+  const auto window = DownloadWindow();
+  if (!window) {
     if (error)
-      *error = "start time is invalid or does not exist in the selected time "
-               "zone";
+      *error = _("Review the download start, duration and forecast interval. The time must exist in the selected time zone.");
     return false;
   }
-  if (currentSource == "copernicus_nws" &&
-      !weather_routing::IsHourlyWeatherTime(DisplayedStartUtc())) {
-    if (error) *error = _("Copernicus NWS currents require whole UTC hours. Set the download start to a time such as 16:00:00 UTC; keep the passage departure unchanged.");
-    return false;
-  }
-  request["start"] = startUtc;
-  request["hours"] = m_durationHours->GetValue();
+  request["start"] = window->start.Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC);
+  request["hours"] = window->hours;
   request["stepHours"] = m_stepHours->GetValue();
   request["timePolicy"] = m_timePolicy;
   request["weatherProvider"] = weatherProvider;
@@ -2809,10 +2841,10 @@ wxString EnvironmentalGribDialog::SourceLabel() const {
 }
 
 wxString EnvironmentalGribDialog::ValidTimeSummary() const {
-  const wxDateTime start = DisplayedStartUtc();
-  if (start.IsValid()) {
-    const wxDateTime end =
-        start + wxTimeSpan::Hours(m_durationHours->GetValue());
+  const auto window = DownloadWindow();
+  if (window) {
+    const wxDateTime start = window->start;
+    const wxDateTime end = start + wxTimeSpan::Hours(window->hours);
     const wxString zone =
         m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
     const auto format = [&zone](const wxDateTime& value) {

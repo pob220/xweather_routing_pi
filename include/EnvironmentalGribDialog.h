@@ -13,6 +13,7 @@
 
 #include "ocpn_plugin.h"
 #include "AreaPreset.h"
+#include "PassageWeatherRequest.h"
 
 class EnvironmentalGribDialog : public wxDialog {
 public:
@@ -93,6 +94,8 @@ private:
   wxString BuildGenerateCommand();
   bool WriteGenerateJob(const wxString& job_path, wxString* error) const;
   bool BuildGenerateJobText(wxString* text, wxString* error) const;
+  wxString SelectedCurrentSource() const;
+  std::optional<weather_routing::PassageWeatherWindow> DownloadWindow() const;
   wxString OutputPath() const;
   wxString SourceLabel() const;
   wxString ValidTimeSummary() const;
