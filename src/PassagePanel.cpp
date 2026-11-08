@@ -930,7 +930,10 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
       else summary += "\n";
       if (const auto reason = report.PrimaryFailure()) {
         summary += reason->title;
-        if (!reason->detail.empty()) summary += "\n" + reason->detail;
+        // The first explanatory line belongs here; the full per-engine
+        // transcript remains available in the detailed report.
+        const auto detail = reason->detail.BeforeFirst('\n');
+        if (!detail.empty() && detail != reason->title) summary += "\n" + detail;
         if (!reason->action.empty()) summary += "\n" + reason->action;
         using Review = weather_routing::DiagnosticReview;
         wxString label = _("Review failure details");
