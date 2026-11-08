@@ -15,6 +15,8 @@ import struct
 import subprocess
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from windows_build_tools import select_msvc
@@ -46,8 +48,17 @@ def download(url, path, expected):
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         partial = path.with_suffix(path.suffix + '.part')
-        with urllib.request.urlopen(url, timeout=120) as response, partial.open('wb') as output:
-            shutil.copyfileobj(response, output)
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(url, timeout=120) as response, partial.open('wb') as output:
+                    shutil.copyfileobj(response, output)
+                break
+            except (urllib.error.URLError, TimeoutError, ConnectionResetError) as error:
+                if (attempt == 3 or (isinstance(error, urllib.error.HTTPError) and
+                        error.code not in (408, 429, 500, 502, 503, 504))):
+                    raise
+                print(f'Temporary download failure for {path.name}; retry {attempt + 1}/3: {error}', flush=True)
+                time.sleep(2 * (attempt + 1))
         if digest(partial) != expected:
             raise RuntimeError(f'Checksum mismatch: {path.name}')
         partial.replace(path)
