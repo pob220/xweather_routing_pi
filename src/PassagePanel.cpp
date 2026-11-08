@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassagePanel.h"
+#include "PassagePresentation.h"
 #include "RouteMapOverlay.h"
 #include "WeatherRouting.h"
 #include "weather_routing_pi.h"
@@ -22,6 +23,7 @@
 #include <wx/statbox.h>
 #include <wx/valnum.h>
 #include <algorithm>
+#include <map>
 #include <cmath>
 
 namespace {
@@ -71,7 +73,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
     const int example = wxWindow::NewControlId(),
               reset = wxWindow::NewControlId();
     menu.Append(example, _("Try an example passage"));
-    menu.Append(reset, _("Restore passage preferences…"));
+    menu.Append(reset, _(L"Restore passage preferences…"));
     menu.Bind(
         wxEVT_MENU, [this](wxCommandEvent&) { NewPassage(true); }, example);
     menu.Bind(
@@ -294,16 +296,24 @@ RouteMapConfiguration PassagePanel::PlanningConfiguration(
 }
 void PassagePanel::RefreshPassage() {
   wxArrayString names;
+  std::map<wxString, wxString> passageNames;
   int selected = -1, index = 0;
   auto* current = routing_.FirstCurrentRouteMap();
   for (auto* item : routing_.m_WeatherRoutes) {
     const auto c = item->routemapoverlay->GetConfiguration();
-    names.Add(c.IsMultiLegGenerated
-                  ? c.MultiLegParentRouteName +
-                        wxString::Format(_(" • leg %d/%d"), c.MultiLegLegIndex,
-                                         c.MultiLegLegCount)
-              : c.Start.empty() ? _("New passage")
-                                : c.Start + " to " + c.End);
+    if (c.IsMultiLegGenerated) {
+      auto found = passageNames.find(c.MultiLegGroupId);
+      if (found == passageNames.end()) {
+        const auto passage = PlanningConfiguration(c);
+        found = passageNames.emplace(c.MultiLegGroupId,
+            weather_routing::PassageDisplayName(c.MultiLegParentRouteName,
+                c.MultiLegParentRouteGUID, passage.Start, passage.End)).first;
+      }
+      names.Add(weather_routing::PassageLegLabel(found->second,
+                    c.MultiLegLegIndex, c.MultiLegLegCount));
+    } else {
+      names.Add(c.Start.empty() ? _("New passage") : c.Start + " to " + c.End);
+    }
     if (item->routemapoverlay == current) selected = index;
     ++index;
   }
@@ -352,13 +362,14 @@ void PassagePanel::RefreshPassage() {
                          ? departure.Format("%d %b %Y, %H:%M", wxDateTime::UTC)
                          : _("not set"));
   wxString route = input.positionsValid
-                       ? c.Start + "  →  " + c.End + "\n" + when + " UTC"
+                       ? weather_routing::PassageDirection(c.Start, c.End) + "\n" + when + " UTC"
                        : _("Choose the start, destination and departure or "
                            "target arrival time.");
   if (c.IsMultiLegGenerated) {
-    route += wxString::Format(_("\nLeg %d of %d • "), c.MultiLegLegIndex,
+    route += wxString::Format(_(L"\nLeg %d of %d • "), c.MultiLegLegIndex,
                               c.MultiLegLegCount) +
-             c.MultiLegParentRouteName;
+             weather_routing::PassageDisplayName(c.MultiLegParentRouteName,
+                 c.MultiLegParentRouteGUID, c.Start, c.End);
     route += _("\nCalculate runs this passage's legs in sequence.");
   }
   if (c.IsMultiLegGenerated) {
@@ -463,7 +474,7 @@ void PassagePanel::RefreshPassage() {
   const auto sectionStatus = [&](int section) {
     return weather_routing::PassageSectionStatus(readiness_.sections[section]);
   };
-  route_->SetLabel(sectionStatus(0) + " • " + route);
+  route_->SetLabel(sectionStatus(0) + L" • " + route);
   wxString boat = !boatModel_.Name.empty()
                       ? boatModel_.Name
                       : DisplayName(wxFileName(c.boatFileName).GetName());
@@ -478,8 +489,8 @@ void PassagePanel::RefreshPassage() {
                           ? DisplayName(wxFileName(polar.FileName).GetName())
                           : polar.Name);
       if (!polar.SailConfiguration.empty())
-        boat += " • " + polar.SailConfiguration;
-      boat += " • " + (polar.Source.empty()
+        boat += L" • " + polar.SailConfiguration;
+      boat += L" • " + (polar.Source.empty()
                            ? (input.exampleBoat ? _("illustrative estimate")
                                                 : _("source unknown"))
                            : polar.Source);
@@ -489,7 +500,7 @@ void PassagePanel::RefreshPassage() {
       }
     }
   }
-  boat_->SetLabel(sectionStatus(1) + " • " + boat);
+  boat_->SetLabel(sectionStatus(1) + L" • " + boat);
   wxString weather =
       c.UseGrib ? provider.Summary() + "\n" + provider.Details()
       : climate ? _("Typical seasonal conditions, not a weather forecast")
@@ -498,12 +509,12 @@ void PassagePanel::RefreshPassage() {
   if (!readiness_.sections[2].items.empty() &&
       !weather.Contains(readiness_.sections[2].items.front().title))
     weather += "\n" + readiness_.sections[2].items.front().title;
-  weather_->SetLabel(sectionStatus(2) + " • " + weather);
+  weather_->SetLabel(sectionStatus(2) + L" • " + weather);
   limits_->SetLabel(_("Passage limits: wind ") +
       weather_routing::PassageSettingValue(weather_routing::PassageSetting::TrueWind, c.MaxTrueWindKnots) +
-      _(" • waves ") + weather_routing::PassageSettingValue(weather_routing::PassageSetting::WaveHeight, c.MaxSwellMeters) +
-      " • " + (c.Currents ? _("currents on") : _("currents off")) +
-      " • " + (c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
+      _(L" • waves ") + weather_routing::PassageSettingValue(weather_routing::PassageSetting::WaveHeight, c.MaxSwellMeters) +
+      L" • " + (c.Currents ? _("currents on") : _("currents off")) +
+      L" • " + (c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
   const auto report = readiness_.Report();
   wxString state = readiness_.CanCalculate() ? _("Ready to calculate")
                                              : _("Setup needs attention");
@@ -513,11 +524,11 @@ void PassagePanel::RefreshPassage() {
       break;
     }
   if (readiness_.Warnings())
-    state += wxString::Format(_(" • %u to review"), readiness_.Warnings());
+    state += wxString::Format(_(L" • %u to review"), readiness_.Warnings());
   if (current->Finished() && readiness_.CanCalculate())
     state = current->GetDiagnostics().Summary();
   status_->SetLabel(
-      running ? _("Calculating passage… Setup is preserved if you cancel.")
+      running ? _(L"Calculating passage… Setup is preserved if you cancel.")
               : state);
   checksButton_->SetLabel(readiness_.CanCalculate() ? _("Review checks")
                                                     : _("Resolve setup"));
@@ -648,7 +659,7 @@ void PassagePanel::ChooseRoute() {
     guids.push_back(guid);
     labels.Add((route->m_NameString.empty() ? _("Unnamed route")
                                             : route->m_NameString) +
-               wxString::Format(_(" • %zu waypoints"),
+               wxString::Format(_(L" • %zu waypoints"),
                                 route->pWaypointList->GetCount()));
   }
   if (guids.empty()) {
@@ -900,19 +911,19 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
                " UTC";
     const auto duration = end - start;
     summary += wxString::Format(
-        _(" • Duration: %ld h %ld min\nDistance: %.1f nm"),
+        _(L" • Duration: %ld h %ld min\nDistance: %.1f nm"),
         static_cast<long>(duration.GetHours()),
         static_cast<long>(duration.GetMinutes() % 60), distance);
     const double hours = duration.GetSeconds().ToDouble() / 3600;
     if (hours > 0)
-      summary += wxString::Format(_(" • Average over ground: %.1f kn"),
+      summary += wxString::Format(_(L" • Average over ground: %.1f kn"),
                                   distance / hours);
     summary +=
         _("\nMaximum wind: ") + (std::isfinite(wind) && !missingWind
                                      ? wxString::Format(_("%.1f kn"), wind)
                                      : _("not fully available"));
     summary +=
-        _(" • Maximum waves: ") + (std::isfinite(waves) && !missingWaves
+        _(L" • Maximum waves: ") + (std::isfinite(waves) && !missingWaves
                                        ? wxString::Format(_("%.1f m"), waves)
                                        : _("not fully available"));
     summary +=
@@ -922,7 +933,7 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
              ? _("forecast")
          : !config.UseGrib ? _("Climatology")
                            : _("see detailed report"));
-    summary += wxString::Format(_(" • %u warnings"), warnings);
+    summary += wxString::Format(_(L" • %u warnings"), warnings);
   }
   bool showFailureReview = false;
   if (complete < routes.size()) {
@@ -966,10 +977,10 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
       routes.size() > 1
           ? complete == routes.size()
                 ? wxString::Format(
-                      _("Passage complete • %u warnings across %zu legs"),
+                      _(L"Passage complete • %u warnings across %zu legs"),
                       warnings, routes.size())
                 : wxString::Format(
-                      _("Passage incomplete • %u of %zu legs complete"),
+                      _(L"Passage incomplete • %u of %zu legs complete"),
                       complete, routes.size())
           : current->GetDiagnostics().Summary();
   results_->SetLabel(summary);
@@ -1056,7 +1067,7 @@ void PassagePanel::EditRoute() {
       name[i]->Append(p.Name + (p.GUID.empty() ? wxString() : _(" (waypoint)")));
     grid->Add(name[i], 1, wxEXPAND);
     grid->Add(
-        new wxStaticText(&dialog, wxID_ANY, _("Latitude (north +, south −)")),
+        new wxStaticText(&dialog, wxID_ANY, _(L"Latitude (north +, south −)")),
         0, wxALIGN_CENTER_VERTICAL);
     lat[i] =
         new wxTextCtrl(&dialog, wxID_ANY,
@@ -1065,7 +1076,7 @@ void PassagePanel::EditRoute() {
                            : wxString());
     grid->Add(lat[i], 1, wxEXPAND);
     grid->Add(
-        new wxStaticText(&dialog, wxID_ANY, _("Longitude (east +, west −)")), 0,
+        new wxStaticText(&dialog, wxID_ANY, _(L"Longitude (east +, west −)")), 0,
         wxALIGN_CENTER_VERTICAL);
     lon[i] =
         new wxTextCtrl(&dialog, wxID_ANY,
@@ -1285,7 +1296,7 @@ void PassagePanel::ShowLibrary() {
   auto* details = Text(&dialog, s, "");
   auto* actions = new wxBoxSizer(wxHORIZONTAL);
   auto* duplicate = new wxButton(&dialog, wxID_ANY, _("Duplicate boat"));
-  auto* exportBoat = new wxButton(&dialog, wxID_ANY, _("Export boat…"));
+  auto* exportBoat = new wxButton(&dialog, wxID_ANY, _(L"Export boat…"));
   actions->Add(duplicate, 1, wxALL, 5);
   actions->Add(exportBoat, 1, wxALL, 5);
   s->Add(actions, 0, wxEXPAND | wxALL, 5);
@@ -1317,8 +1328,8 @@ void PassagePanel::ShowLibrary() {
                     ? wxFileName(wxString::FromUTF8(p->Attribute("FileName")))
                           .GetName()
                     : name;
-            value += " • " + (source.empty() ? _("source unknown") : source);
-            if (!sails.empty()) value += " • " + sails;
+            value += L" • " + (source.empty() ? _("source unknown") : source);
+            if (!sails.empty()) value += L" • " + sails;
             if (value.length() > 350) {
               value += _("\nMore details after selection.");
               break;

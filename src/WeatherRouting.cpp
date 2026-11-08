@@ -866,7 +866,7 @@ ChartTileProgress(const RoutingProgressCallback& progress,
                             ? 100
                             : static_cast<int>((100 * completed) / total);
     progress(phase,
-             wxString::Format(_("%s %lu of %lu — %d%%"), item_label,
+             wxString::Format(_(L"%s %lu of %lu — %d%%"), item_label,
                               static_cast<unsigned long>(completed),
                               static_cast<unsigned long>(total), percent),
              value, std::max(1, range));
@@ -10489,7 +10489,7 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
 #ifdef __OCPN__ANDROID__
         State = _("Complete") + (title.empty() ? wxString() : ": " + title);
 #else
-        State = _("Complete") + (title.empty() ? wxString() : " — " + title);
+        State = _("Complete") + (title.empty() ? wxString() : L" — " + title);
 #endif
         if (!mode.empty()) State += " (" + mode + ")";
         const auto warnings = routemapoverlay->GetDiagnostics().Count(
@@ -10515,7 +10515,7 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
 #ifdef __OCPN__ANDROID__
           ? _("Settings changed: recompute (previous engine: ") +
 #else
-          ? _("Settings changed — recompute (previous engine: ") +
+          ? _(L"Settings changed — recompute (previous engine: ") +
 #endif
                 wxGetTranslation(weather_routing::EngineTitle(computedEngine.engine)) + ")"
           : _("Not Computed");

@@ -2051,10 +2051,10 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cRoutingEffortPercent =
       new wxChoice(m_pMainEngine, wxID_ANY, wxDefaultPosition,
                    wxSize(180, -1));
-  m_cRoutingEffortPercent->Append(_("100% — Standard"));
-  m_cRoutingEffortPercent->Append(_("150% — Extended"));
-  m_cRoutingEffortPercent->Append(_("200% — Thorough"));
-  m_cRoutingEffortPercent->Append(_("400% — Exhaustive"));
+  m_cRoutingEffortPercent->Append(_(L"100% — Standard"));
+  m_cRoutingEffortPercent->Append(_(L"150% — Extended"));
+  m_cRoutingEffortPercent->Append(_(L"200% — Thorough"));
+  m_cRoutingEffortPercent->Append(_(L"400% — Exhaustive"));
   m_cRoutingEffortPercent->SetSelection(0);
   m_cRoutingEffortPercent->SetMinSize(wxDefaultSize);
   m_cRoutingEffortPercent->InvalidateBestSize();
@@ -2615,8 +2615,8 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   for (const auto& label : {_("0 / Crude"), _("1 / Low"), _("2 / Intermediate"),
                             _("3 / High"), _("4 / Full")})
 #else
-  for (const auto& label : {_("0 — Crude"), _("1 — Low"), _("2 — Intermediate"),
-                            _("3 — High"), _("4 — Full")})
+  for (const auto& label : {_(L"0 — Crude"), _(L"1 — Low"), _(L"2 — Intermediate"),
+                            _(L"3 — High"), _(L"4 — Full")})
 #endif
     m_cShorelineResolution->Append(label);
   m_cShorelineResolution->SetSelection(2);

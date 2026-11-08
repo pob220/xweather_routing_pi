@@ -513,7 +513,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   m_pAdvanced->FitInside();
   auto* enginePage = m_notebook7->GetPage(5);
   m_androidMemoryStatus = new wxStaticText(enginePage, wxID_ANY,
-      _("Checking available memory…"));
+      _(L"Checking available memory…"));
   wxFont memoryFont = m_androidMemoryStatus->GetFont();
   memoryFont.SetPointSize(16);
   m_androidMemoryStatus->SetFont(memoryFont);

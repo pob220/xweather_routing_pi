@@ -14,8 +14,8 @@ provider, passage checks explain the missing prerequisite before calculation
 and link to Passage settings. The check does not silently remove the constraint.
 Normal routing does not require OpenCPN Draw.
 
-These are local UI/preferences follow-ups to the published Windows trial at
-`d3b8818`. The existing review ZIP remains pinned to its qualified source.
+These UI/preferences follow-ups to the published 2.1.1 Windows trial at
+`d3b8818` are included in 2.1.2. The old review ZIP remains pinned to its qualified source.
 Routing engines, native GRIB providers and headless scenario parsing are unchanged.
 
 Local validation: 653 enabled CTest cases passed, with the existing live timing

@@ -2243,7 +2243,7 @@ void EnvironmentalGribDialog::FinishEstimate(long exit_code) {
   for (int i = 0; i < estimate["components"].Size(); ++i) {
     auto item = estimate["components"].ItemAt(i);
     detail += item["component"].AsString() + ": " + item["status"].AsString();
-    if (item.HasMember("reason")) detail += " — " + item["reason"].AsString();
+    if (item.HasMember("reason")) detail += L" — " + item["reason"].AsString();
     detail += "\n";
   }
   m_estimateSummary->SetToolTip(detail);

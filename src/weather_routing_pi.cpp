@@ -658,7 +658,7 @@ class RouteCheckFixtureMutation : public wxTimer {
     if (action_ == "remove") {
       DeletePlugInRoute(guid_);
     } else if (auto route = GetRoute_Plugin(guid_)) {
-      if (action_ == "rename") route->m_NameString += " — edited";
+      if (action_ == "rename") route->m_NameString += L" — edited";
       else if (route->pWaypointList && route->pWaypointList->GetFirst())
         route->pWaypointList->GetFirst()->GetData()->m_lon += .001;
       UpdatePlugInRoute(route.get());

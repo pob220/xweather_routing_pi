@@ -14,7 +14,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '2.1.1'
+VERSION = '2.1.2'
 NAME = 'xWeatherRouting-' + VERSION + '-Windows-UI-Trial'
 
 LAUNCHER = r'''@echo off
@@ -39,7 +39,7 @@ if errorlevel 1 (
 endlocal
 '''
 
-README = '''xWeatherRouting 2.1.1 - Windows UI trial
+README = '''xWeatherRouting 2.1.2 - Windows UI trial
 
 Please try the new passage-planning interface and tell Paul what feels clear,
 confusing or missing. You do not need to compile or install anything.
@@ -72,10 +72,10 @@ this extracted folder. Always use Start-Weather-Routing.cmd. Close the test
 windows when finished; delete this extracted folder to remove the trial.
 It does not install into or replace your normal OpenCPN or its plugins.
 
-Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.1.1.
+Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.1.2.
 This host is for the UI trial; custom chart-aware hosts are a separate test.
 Source and build instructions:
-https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.1.1/docs/v2/WINDOWS.md
+https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.1.2/docs/v2/WINDOWS.md
 Native binary qualification:
 https://github.com/pob220/xweather_routing_pi/actions/runs/QUALIFICATION_RUN
 OpenCPN and plugin licences are retained with their files. Provenance and

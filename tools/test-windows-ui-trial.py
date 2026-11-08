@@ -109,6 +109,14 @@ def test(archive, plugin, output):
                 time.sleep(0.25)
             else:
                 raise RuntimeError('The delivered launcher did not show the passage planner: ' + repr(sorted(labels)))
+            # GetWindowTextW reads the actual labels from the running Windows UI.
+            # UTF-8 source text decoded through an ANSI code page used to pass
+            # the heading checks while corrupting bullets, arrows and dashes.
+            mojibake = ('\u00e2\u20ac', '\u00e2\u2020', '\u00c2\u00b0')
+            if any(fragment in label for label in labels for fragment in mojibake):
+                raise RuntimeError('Corrupted Unicode in planner labels: ' + repr(sorted(labels)))
+            if not any('\u2022' in label for label in labels):
+                raise RuntimeError('The planner did not render its Unicode bullet labels')
             mains = [(hwnd, title) for hwnd, title in owned_windows() if title.startswith('OpenCPN')]
             if not mains:
                 raise RuntimeError('Missing owned portable OpenCPN main window')
@@ -135,6 +143,7 @@ def test(archive, plugin, output):
         'delivered_launcher_tested': True, 'relocated_path_with_spaces': True,
         'normal_profile_preserved': True, 'external_overrides_cleared': True,
         'app_local_crt': True, 'passage_planner_visible': True,
+        'unicode_labels_verified': True,
         'forecast_climatology_and_fallback_routes': 'complete',
         'visible_labels': sorted(labels), 'zip_sha256': sha(archive),
     }, indent=2) + '\n', encoding='utf-8')

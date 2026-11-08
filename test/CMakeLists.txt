@@ -92,6 +92,8 @@ set(TEST_SRC
     PassageWeather_tests.cpp
     PassageWeatherRequest_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageWeatherRequest.cpp
+    PassagePresentation_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PassagePresentation.cpp
     PassageReadiness_tests.cpp
     PassageSettings_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageSettings.cpp
