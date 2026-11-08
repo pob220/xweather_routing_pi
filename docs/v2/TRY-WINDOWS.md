@@ -45,4 +45,5 @@ The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.1.0.
 It is separate from the stable 1.x catalogue version. Custom chart-aware hosts
 can be tested separately. For source builds, see [Windows developer instructions](WINDOWS.md).
 
-[The delivered ZIP passed native Windows launcher and route checks](https://github.com/pob220/xweather_routing_pi/actions/runs/42423542646), including preservation of a normal OpenCPN profile.
+The [delivered ZIP passed native Windows checks](https://github.com/pob220/xweather_routing_pi/actions/runs/42474024388), including its launcher, relocated-profile calculations and preservation of a normal OpenCPN profile.
+See [the validation receipts](VALIDATION.md) for details.
