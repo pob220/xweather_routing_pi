@@ -12730,19 +12730,29 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
             configuration.DownwindEfficiency * 100.0, configuration.NightCumulativeEfficiency * 100.0),
         _("Review these effective assumptions in Configuration."), {}, true});
   routemapoverlay->BeginDiagnosticRun(std::move(setupDiagnostics));
-  if (auto issue = weather_routing::CheckRouteLegPositions(
+  // Route analysis follows the supplied waypoint sequence, including valid
+  // return passages. Only a routing leg is a single start/destination pair.
+  std::optional<weather_routing::RouteDiagnostic> positionIssue;
+  if (!configuration.RouteGUID.empty()) {
+    std::vector<RouteWaypointInfo> points;
+    wxString error;
+    if (ExtractOpenCPNRouteWaypoints(configuration.RouteGUID, points, error))
+      positionIssue = weather_routing::CheckConsecutiveRouteWaypoints(points);
+  } else {
+    positionIssue = weather_routing::CheckRouteLegPositions(
           {configuration.StartGUID, configuration.Start, configuration.StartLat,
            configuration.StartLon, configuration.IsMultiLegGenerated ? configuration.MultiLegLegIndex : 1},
           {configuration.EndGUID, configuration.End, configuration.EndLat,
            configuration.EndLon, configuration.IsMultiLegGenerated ? configuration.MultiLegLegIndex + 1 : 2},
-          configuration.IsMultiLegGenerated ? configuration.MultiLegLegIndex : 1)) {
-    routemapoverlay->AddDiagnostic(*issue);
-    routemapoverlay->SetError(issue->title);
+          configuration.IsMultiLegGenerated ? configuration.MultiLegLegIndex : 1);
+  }
+  if (positionIssue) {
+    routemapoverlay->AddDiagnostic(*positionIssue);
+    routemapoverlay->SetError(positionIssue->title);
     wxLogMessage("WR_ROUTE_PREFLIGHT code=setup.coincident_waypoints detail=%s",
-                 issue->title + " " + issue->detail);
+                 positionIssue->title + " " + positionIssue->detail);
     return;
   }
-
   // Ensure we have valid start coordinates
   if (std::isnan(configuration.StartLat) ||
       std::isnan(configuration.StartLon)) {
