@@ -10,6 +10,7 @@ src/PassageWeatherRequest.cpp
 src/PassageReadiness.cpp
 src/PassageSettings.cpp
 src/PassagePanel.cpp
+src/PassagePresentation.cpp
 src/EnvironmentalGribDialog.cpp
 src/AreaPreset.cpp
 src/AreaPresetManagerDialog.cpp
@@ -53,6 +54,7 @@ src/Boat.cpp
 src/RouteMap.cpp
 src/RouteMapOverlay.cpp
 src/RouteWaypointExtractor.cpp
+src/RouteWaypointValidation.cpp
 src/MultiLegRouteOutput.cpp
 src/RouteSimplifier.cpp
 src/StabilityRouteAdapter.cpp
@@ -148,6 +150,7 @@ include/DepartureScheduler.h
 include/RoutingQualityPolicy.h
 include/RoutingFootprint.h
 include/RouteWaypointExtractor.h
+include/RouteWaypointValidation.h
 include/RoutingTablePanel.h
 include/Utilities.h
 include/LineBufferOverlay.h

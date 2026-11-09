@@ -225,6 +225,7 @@ wxString RouteDiagnosticReport::Summary() const {
 DiagnosticReview RouteDiagnosticReport::FailureReview() const {
   const auto failure = PrimaryFailure();
   if (!failure) return DiagnosticReview::Report;
+  if (failure->code == "setup.coincident_waypoints") return DiagnosticReview::Route;
   if (failure->code == "runtime.weather") return DiagnosticReview::Weather;
   if (!hasResult) return DiagnosticReview::Report;
   switch (status) {

@@ -49,7 +49,16 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
         _("Define the start and destination"),
         _("Choose named positions or waypoints with valid coordinates."),
         _("Edit route"));
-  else if (!in.distinctPositions)
+  else if (in.savedLegPositionIssue) {
+    auto issue = *in.savedLegPositionIssue;
+    issue.code = "passage.route.coincident_waypoints";
+    result.sections[0].Add(std::move(issue));
+  } else if (in.routeWaypoints.size() >= 2) {
+    if (auto issue = CheckConsecutiveRouteWaypoints(in.routeWaypoints)) {
+      issue->code = "passage.route.coincident_waypoints";
+      result.sections[0].Add(*issue);
+    }
+  } else if (!in.distinctPositions)
     add(PassageSection::Route, "passage.route.same_position", error,
         _("Start and destination must be different"), {}, _("Edit route"));
   if (!in.timeValid)

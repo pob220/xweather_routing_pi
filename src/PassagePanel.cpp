@@ -109,6 +109,10 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   Button(content_, routeActions, _("Waypoints and chart"),
          [this] { ShowWaypoints(); });
   route->Add(routeActions, 0, wxEXPAND);
+  waypointFixButton_ = Button(content_, route, _("Edit route waypoints"),
+                              [this] { EditRouteWaypoints(); });
+  waypointFixButton_->Show(false);
+  mutableControls_.push_back(waypointFixButton_);
   auto* boat = card(_("2. Boat and polars"));
   boat_ = Text(content_, boat, "");
   boat_->SetName(_("Boat status"));
@@ -338,9 +342,8 @@ void PassagePanel::RefreshPassage() {
                          std::isfinite(c.StartLon) && std::isfinite(c.EndLat) &&
                          std::isfinite(c.EndLon) &&
                          std::abs(c.StartLat) <= 90 && std::abs(c.EndLat) <= 90;
-  const double lonDifference = std::remainder(c.StartLon - c.EndLon, 360.0);
-  input.distinctPositions =
-      std::abs(c.StartLat - c.EndLat) > 1e-8 || std::abs(lonDifference) > 1e-8;
+  input.distinctPositions = !weather_routing::PositionsCoincide(
+      c.StartLat, c.StartLon, c.EndLat, c.EndLon);
   const bool arrival =
       c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
   input.timeValid = arrival ? c.PlannedArrivalTime.IsValid() &&
@@ -380,6 +383,28 @@ void PassagePanel::RefreshPassage() {
         ExtractOpenCPNRouteWaypoints(c.MultiLegParentRouteGUID, waypoints,
                                      error) &&
         waypoints.size() == legs.size() + 1;
+    for (auto* item : legs) {
+      auto leg = item->GetConfiguration();
+      leg.Update();
+      if (!input.savedLegPositionIssue)
+        input.savedLegPositionIssue = weather_routing::CheckRouteLegPositions(
+            {leg.StartGUID, leg.Start, leg.StartLat, leg.StartLon, leg.MultiLegLegIndex},
+            {leg.EndGUID, leg.End, leg.EndLat, leg.EndLon, leg.MultiLegLegIndex + 1},
+            leg.MultiLegLegIndex);
+    }
+    input.routeWaypoints = waypoints;
+    // A saved group may outlive its OpenCPN route. Still check its actual legs.
+    if (input.routeWaypoints.empty()) {
+      for (auto* item : legs) {
+        auto leg = item->GetConfiguration();
+        leg.Update();
+        if (input.routeWaypoints.empty())
+          input.routeWaypoints.push_back({leg.StartGUID, leg.Start,
+              leg.StartLat, leg.StartLon, leg.MultiLegLegIndex});
+        input.routeWaypoints.push_back({leg.EndGUID, leg.End,
+            leg.EndLat, leg.EndLon, leg.MultiLegLegIndex + 1});
+      }
+    }
     if (input.routeSequenceValid)
       for (size_t i = 0; i < legs.size(); ++i) {
         const auto leg = legs[i]->GetConfiguration();
@@ -387,6 +412,10 @@ void PassagePanel::RefreshPassage() {
             leg.EndGUID != waypoints[i + 1].guid)
           input.routeSequenceValid = false;
       }
+  }
+  if (!c.IsMultiLegGenerated && !c.RouteGUID.empty()) {
+    wxString error;
+    ExtractOpenCPNRouteWaypoints(c.RouteGUID, input.routeWaypoints, error);
   }
   input.boatError = boatModel_.OpenXML(c.boatFileName, true, false);
   input.boatValid = input.boatError.empty() && !boatModel_.Polars.empty();
@@ -447,8 +476,15 @@ void PassagePanel::RefreshPassage() {
                                       direction, speed);
     }
     input.climatologyWind = climate && climateWindReady_;
-    const double distance =
-        DistGreatCircle_Plugin(c.StartLat, c.StartLon, c.EndLat, c.EndLon);
+    double distance = DistGreatCircle_Plugin(c.StartLat, c.StartLon, c.EndLat, c.EndLon);
+    if (input.routeWaypoints.size() >= 2) {
+      distance = 0;
+      for (size_t i = 1; i < input.routeWaypoints.size(); ++i) {
+        const auto& a = input.routeWaypoints[i - 1];
+        const auto& b = input.routeWaypoints[i];
+        distance += DistGreatCircle_Plugin(a.lat, a.lon, b.lat, b.lon);
+      }
+    }
     input.estimatedFinish =
         arrival ? c.PlannedArrivalTime
                 : departure + wxTimeSpan::Hours(
@@ -474,6 +510,14 @@ void PassagePanel::RefreshPassage() {
   const auto sectionStatus = [&](int section) {
     return weather_routing::PassageSectionStatus(readiness_.sections[section]);
   };
+  bool coincident = false;
+  for (const auto& issue : readiness_.sections[0].items) {
+    if (issue.severity == weather_routing::DiagnosticSeverity::Error)
+      route += "\n" + issue.title +
+               (issue.detail.empty() ? wxString() : "\n" + issue.detail);
+    coincident |= issue.code == "passage.route.coincident_waypoints";
+  }
+  waypointFixButton_->Show(coincident);
   route_->SetLabel(sectionStatus(0) + L" • " + route);
   wxString boat = !boatModel_.Name.empty()
                       ? boatModel_.Name
@@ -727,6 +771,105 @@ void PassagePanel::ShowWaypoints() {
   dialog.CentreOnParent();
   dialog.ShowModal();
 }
+void PassagePanel::EditRouteWaypoints() {
+  auto* selected = routing_.FirstCurrentRouteMap();
+  if (!selected) return;
+  const auto c = selected->GetConfiguration();
+  const wxString guid = c.IsMultiLegGenerated ? c.MultiLegParentRouteGUID : c.RouteGUID;
+  std::vector<RouteWaypointInfo> points;
+  wxString error;
+  if (!ExtractOpenCPNRouteWaypoints(guid, points, error)) {
+    wxMessageBox(error, _("Edit route waypoints"), wxOK | wxICON_INFORMATION, this);
+    return;
+  }
+  wxDialog dialog(this, wxID_ANY, _("Edit route waypoints"), wxDefaultPosition,
+                  wxSize(660, 560), wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+  auto* body = new wxBoxSizer(wxVERTICAL);
+  Text(&dialog, body, _("Select a waypoint to move. Saving changes its position in OpenCPN and in every route that shares it. To remove a waypoint, show it on the chart and use OpenCPN's route-editing controls."));
+  auto* list = new wxListBox(&dialog, wxID_ANY);
+  list->SetName(_("Route waypoints to edit"));
+  for (const auto& point : points)
+    list->Append(wxString::Format("%d. %s", point.index, point.name));
+  body->Add(list, 1, wxEXPAND | wxALL, 8);
+  auto* fields = new wxFlexGridSizer(2, 8, 8);
+  fields->AddGrowableCol(1);
+  fields->Add(new wxStaticText(&dialog, wxID_ANY, _("Latitude (decimal degrees)")));
+  auto* lat = new wxTextCtrl(&dialog, wxID_ANY);
+  lat->SetName(_("Waypoint latitude"));
+  fields->Add(lat, 1, wxEXPAND);
+  fields->Add(new wxStaticText(&dialog, wxID_ANY, _("Longitude (decimal degrees)")));
+  auto* lon = new wxTextCtrl(&dialog, wxID_ANY);
+  lon->SetName(_("Waypoint longitude"));
+  fields->Add(lon, 1, wxEXPAND);
+  body->Add(fields, 0, wxEXPAND | wxALL, 8);
+  auto showPosition = [&] {
+    const auto& point = points.at(list->GetSelection());
+    lat->SetValue(wxString::Format("%.17g", point.lat));
+    lon->SetValue(wxString::Format("%.17g", point.lon));
+  };
+  int initial = 0;
+  for (size_t i = 1; i < points.size(); ++i)
+    if (weather_routing::PositionsCoincide(points[i-1].lat, points[i-1].lon,
+                                         points[i].lat, points[i].lon)) {
+      initial = int(i);
+      break;
+    }
+  list->SetSelection(initial);
+  showPosition();
+  list->Bind(wxEVT_LISTBOX, [&](wxCommandEvent&) { showPosition(); });
+  auto* buttons = new wxBoxSizer(wxHORIZONTAL);
+  Button(&dialog, buttons, _("Show on chart"), [&] {
+    const auto& point = points.at(list->GetSelection());
+    JumpToPosition(point.lat, point.lon, .02);
+    dialog.EndModal(wxID_CANCEL);
+    routing_.Hide();
+  });
+  Button(&dialog, buttons, _("Save waypoint position"), [&] {
+    double a, b;
+    if (!lat->GetValue().ToDouble(&a) || !lon->GetValue().ToDouble(&b) ||
+        !std::isfinite(a) || !std::isfinite(b) || std::abs(a) > 90 || std::abs(b) > 180) {
+      wxMessageBox(_("Enter latitude from -90 to 90 and longitude from -180 to 180."),
+                   _("Invalid waypoint position"), wxOK | wxICON_INFORMATION, &dialog);
+      return;
+    }
+    const auto& point = points.at(list->GetSelection());
+    if (a == point.lat && b == point.lon) { dialog.EndModal(wxID_CANCEL); return; }
+    PlugIn_Waypoint latest;
+    if (!GetSingleWaypoint(point.guid, &latest) ||
+        latest.m_lat != point.lat || latest.m_lon != point.lon) {
+      wxMessageBox(_("This waypoint changed while the editor was open. Close and reopen the editor before saving."),
+                   _("Waypoint changed"), wxOK | wxICON_INFORMATION, &dialog);
+      return;
+    }
+    // Read fresh metadata and change only the coordinates. Do not replace the
+    // route: the V1 route-update API deletes/recreates it and loses properties.
+    latest.m_lat = a;
+    latest.m_lon = b;
+    if (!UpdateSingleWaypoint(&latest)) {
+      wxMessageBox(_("OpenCPN could not update this waypoint."), _("Waypoint not saved"),
+                   wxOK | wxICON_INFORMATION, &dialog);
+      return;
+    }
+    RequestRefresh(GetOCPNCanvasWindow());
+    dialog.EndModal(wxID_OK);
+  });
+  body->Add(buttons, 0, wxEXPAND | wxALL, 8);
+  body->Add(dialog.CreateButtonSizer(wxCANCEL), 0, wxEXPAND | wxALL, 8);
+  dialog.SetSizer(body);
+  dialog.CentreOnParent();
+  if (dialog.ShowModal() == wxID_OK) {
+    // Existing settings and GUIDs are kept. Position resolution on the next
+    // readiness check/calculation reads the newly saved OpenCPN coordinates.
+    for (auto* route : routing_.GetMultiLegGroupRoutes(c.MultiLegGroupId)) {
+      auto leg = route->GetConfiguration();
+      leg.Update();
+      route->Reset();
+      route->SetConfiguration(leg);
+      routing_.UpdateRouteMap(route);
+    }
+  }
+  RefreshPassage();
+}
 void PassagePanel::OpenSettings(size_t section) {
   EnsurePassage();
   routing_.m_ConfigurationDialog.ShowSettingsSection(section);
@@ -769,6 +912,8 @@ void PassagePanel::ShowChecks() {
           if (code == "passage.weather.waves" ||
               code == "passage.weather.destination")
             GenerateWeather();
+          else if (code == "passage.route.coincident_waypoints")
+            EditRouteWaypoints();
           else if (code == "passage.route.sequence")
             ChooseRoute();
           else
@@ -1009,7 +1154,12 @@ void PassagePanel::ReviewFailure() {
     switch (target) {
       case Review::Weather: windPolicy_->SetFocus(); ShowChecks(); break;
       case Review::Boat: ShowLibrary(); break;
-      case Review::Route: EditRoute(); break;
+      case Review::Route:
+        if (const auto failure = route->GetDiagnostics().PrimaryFailure();
+            failure && failure->code == "setup.coincident_waypoints")
+          EditRouteWaypoints();
+        else EditRoute();
+        break;
       case Review::RoutingControls: OpenSettings(1); break;
       default: { wxCommandEvent event; routing_.OnReport(event); break; }
     }

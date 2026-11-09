@@ -25,6 +25,7 @@ private:
   void EnsurePassage();
   void SelectPassage(int index);
   void EditRoute();
+  void EditRouteWaypoints();
   void NewPassage(bool example = false);
   void RestoreDefaults();
   void ChooseRoute();
@@ -49,7 +50,7 @@ private:
   wxSizer* resultsBox_;
   wxStaticText* results_;
   wxStaticText *route_, *boat_, *weather_, *limits_, *status_;
-  wxButton *calculate_, *checksButton_, *failureButton_;
+  wxButton *calculate_, *checksButton_, *failureButton_, *waypointFixButton_;
   std::vector<wxWindow*> mutableControls_;
   weather_routing::PassageReadiness readiness_;
   RouteMapOverlay* resultRoute_{nullptr};

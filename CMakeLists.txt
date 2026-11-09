@@ -89,11 +89,11 @@ set(PACKAGE_CONTACT "Sean d'Epagnier; Weather Routing Plugin Team")
 set(SHORT_DESCRIPTION
     "Integrated passage planning: route, boat, polars and weather.")
 set(LONG_DESCRIPTION
-    "xWeatherRouting 2.1.2 brings route setup, a searchable polar library, boat and polar editing, GRIB loading and xGRIB weather generation into one passage-planning workflow. Includes an illustrative 40 ft monohull and the complete Climatology 2026.2 dataset. A compatible installed Climatology provider with newer data takes precedence. The existing routing engines, reports, OpenCPN route analysis, multi-leg passages and optional chart-aware safety remain available. Ordinary routing and GSHHG land avoidance work on stock OpenCPN; chart-backed checks require a compatible enhanced host. Uses separate version 2 preferences and user data. Version 1 remains the stable catalogue line while this separate development branch is qualified.")
+    "xWeatherRouting 2.1.3 brings route setup, a searchable polar library, boat and polar editing, GRIB loading and xGRIB weather generation into one passage-planning workflow. Includes an illustrative 40 ft monohull and the complete Climatology 2026.2 dataset. A compatible installed Climatology provider with newer data takes precedence. The existing routing engines, reports, OpenCPN route analysis, multi-leg passages and optional chart-aware safety remain available. Ordinary routing and GSHHG land avoidance work on stock OpenCPN; chart-backed checks require a compatible enhanced host. Uses separate version 2 preferences and user data. Version 1 remains the stable catalogue line while this separate development branch is qualified.")
 
 set(VERSION_MAJOR "2")
 set(VERSION_MINOR "1")
-set(VERSION_PATCH "2")
+set(VERSION_PATCH "3")
 set(VERSION_TWEAK "0")
 # Keep all five approved source archives for verification and regression tests.
 # Packages ship only Crude, Low and Intermediate; High and Full are optional
@@ -115,7 +115,7 @@ foreach(_archive IN LISTS _shoreline_archives)
   endif()
 endforeach()
 unset(_shoreline_archives)
-set(VERSION_DATE  "08/11/2026") # DD/MM/YYYY format
+set(VERSION_DATE  "09/11/2026") # DD/MM/YYYY format
 set(OCPN_MIN_VERSION "ov511")
 
 set(OCPN_API_VERSION_MAJOR "1")
@@ -315,6 +315,7 @@ SET(SRCS
             src/RouteMap.cpp
             src/RouteMapOverlay.cpp
             src/RouteWaypointExtractor.cpp
+            src/RouteWaypointValidation.cpp
             src/MultiLegRouteOutput.cpp
             src/RouteSimplifier.cpp
             src/StabilityRouteAdapter.cpp
@@ -417,6 +418,7 @@ SET (HDRS
             include/RoutingQualityPolicy.h
             include/RoutingFootprint.h
             include/RouteWaypointExtractor.h
+            include/RouteWaypointValidation.h
             include/RoutingTablePanel.h
             include/Utilities.h
             include/LineBufferOverlay.h

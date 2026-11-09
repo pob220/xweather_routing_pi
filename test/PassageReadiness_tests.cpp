@@ -158,3 +158,39 @@ TEST(PassageReadiness, MissingDrawProviderBlocksOnlyExplicitBoundaryAvoidance) {
   input.boundaryProviderAvailable = true;
   EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
 }
+
+TEST(PassageReadiness, IntermediateOverlapNamesTheLegAndOffersWaypointEditing) {
+  auto input = Ready();
+  input.routeWaypoints = {{"a", "001", 50, 0, 1}, {"b", "002", 51, 1, 2},
+                          {"c", "003", 51, 1, 3}, {"d", "004", 52, 2, 4}};
+  const auto result = wr::EvaluatePassage(input);
+  ASSERT_FALSE(result.CanCalculate());
+  ASSERT_EQ(result.sections[0].items.size(), 1U);
+  const auto issue = result.sections[0].items.front();
+  EXPECT_EQ(issue.code, "passage.route.coincident_waypoints");
+  EXPECT_EQ(issue.action, "Edit route waypoints");
+  EXPECT_TRUE(issue.title.Contains("002"));
+  EXPECT_TRUE(issue.title.Contains("003"));
+  EXPECT_TRUE(issue.detail.Contains("Leg 2"));
+  EXPECT_EQ(wr::RecoveryAction(issue.code), wr::PassageAction::Route);
+}
+TEST(PassageReadiness, ReturnPassageUsesConsecutiveLegsInsteadOfOverallEndpoints) {
+  auto input = Ready();
+  input.distinctPositions = false;
+  input.routeWaypoints = {{"a", "A", 50, 0, 1}, {"b", "B", 51, 1, 2},
+                          {"a", "A", 50, 0, 3}};
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  input.routeWaypoints[1].lat = 50.000001;
+  input.routeWaypoints[1].lon = 0;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+}
+
+TEST(PassageReadiness, SavedLegOverlapIsCheckedIndependentlyOfParentRoute) {
+  auto input = Ready();
+  input.routeWaypoints = {{"a", "A", 50, 0, 1}, {"b", "B", 51, 1, 2}};
+  input.savedLegPositionIssue = wr::CheckRouteLegPositions(
+      {"c", "002", 51, 1, 2}, {"d", "003", 51, 1, 3}, 2);
+  EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
+  input.routeSequenceValid = false;
+  EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
+}

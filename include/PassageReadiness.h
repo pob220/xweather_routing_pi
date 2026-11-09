@@ -2,6 +2,7 @@
 #pragma once
 
 #include "RouteDiagnostics.h"
+#include "RouteWaypointValidation.h"
 #include "PassageSettings.h"
 #include <array>
 #include <wx/datetime.h>
@@ -21,6 +22,8 @@ enum class PassageWindPolicy {
 struct PassageInputs {
   bool positionsValid{false}, distinctPositions{false}, timeValid{false};
   bool routeSequenceValid{true};
+  std::vector<RouteWaypointInfo> routeWaypoints;
+  std::optional<RouteDiagnostic> savedLegPositionIssue;
   bool boatValid{false}, exampleBoat{false};
   wxString boatError, boatWarnings;
   PassageWindPolicy policy{PassageWindPolicy::Forecast};
