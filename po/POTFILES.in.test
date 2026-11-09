@@ -2,6 +2,8 @@ src/ShorelineDataset.cpp
 src/ShorelineManager.cpp
 src/AppendOnlyCache.cpp
 src/ChartSafetyCache.cpp
+src/ClimatologyCompatibility.cpp
+src/PluginWaypointLists.cpp
 src/ChartSafetyAtlas.cpp
 src/ChartHazardEvaluator.cpp
 src/ChartSafetyHost.cpp
@@ -35,6 +37,7 @@ src/Boat.cpp
 src/RouteMap.cpp
 src/RouteMapOverlay.cpp
 src/RouteWaypointExtractor.cpp
+src/RouteWaypointValidation.cpp
 src/MultiLegRouteOutput.cpp
 src/RouteSimplifier.cpp
 src/StabilityRouteAdapter.cpp
@@ -75,7 +78,6 @@ vendor/original-routing-engine/src/Contour.cpp
 vendor/weather-routing-engine/src/Validator.cpp
 vendor/weather-routing-engine/src/Ensemble.cpp
 src/engine/native/OpenCpnAdapter.cpp
-src/AndroidWeatherRouting.cpp
 include/AppendOnlyCache.h
 include/ChartSafetyCache.h
 include/ChartHazardEvaluator.h
@@ -131,6 +133,7 @@ include/DepartureScheduler.h
 include/RoutingQualityPolicy.h
 include/RoutingFootprint.h
 include/RouteWaypointExtractor.h
+include/RouteWaypointValidation.h
 include/RoutingTablePanel.h
 include/Utilities.h
 include/LineBufferOverlay.h
