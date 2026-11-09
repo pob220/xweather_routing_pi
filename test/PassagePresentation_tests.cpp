@@ -27,3 +27,14 @@ TEST(PassagePresentation, LegAndDirectionUseUnicodeWithoutAnsiDecoding) {
   EXPECT_EQ(wr::PassageLegLabel("001 to 005", 1, 4), wxString(L"001 to 005 • leg 1/4"));
   EXPECT_EQ(wr::PassageDirection("001", "005"), wxString(L"001  →  005"));
 }
+
+TEST(PassagePresentation, EditableCoordinatesAreReadableAndPreserveExactValues) {
+  EXPECT_EQ(wr::WaypointCoordinateText(53.4), "53.4");
+  EXPECT_EQ(wr::WaypointCoordinateText(-5.3), "-5.3");
+  EXPECT_EQ(wr::WaypointCoordinateText(50), "50");
+  for (double value : {53.4, -5.3, 53.400000000001, 1e-9, -179.99999999999997}) {
+    double parsed = 0;
+    ASSERT_TRUE(wr::WaypointCoordinateText(value).ToDouble(&parsed));
+    EXPECT_DOUBLE_EQ(parsed, value);
+  }
+}

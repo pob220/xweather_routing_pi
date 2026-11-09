@@ -804,8 +804,8 @@ void PassagePanel::EditRouteWaypoints() {
   body->Add(fields, 0, wxEXPAND | wxALL, 8);
   auto showPosition = [&] {
     const auto& point = points.at(list->GetSelection());
-    lat->SetValue(wxString::Format("%.17g", point.lat));
-    lon->SetValue(wxString::Format("%.17g", point.lon));
+    lat->SetValue(weather_routing::WaypointCoordinateText(point.lat));
+    lon->SetValue(weather_routing::WaypointCoordinateText(point.lon));
   };
   int initial = 0;
   for (size_t i = 1; i < points.size(); ++i)
