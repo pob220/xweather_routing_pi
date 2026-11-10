@@ -1,6 +1,14 @@
 name: Windows UI trial
 
 on:
+  workflow_dispatch:
+    inputs:
+      qualification-run:
+        type: string
+        required: true
+      source-commit:
+        type: string
+        required: true
   workflow_call:
     inputs:
       qualification-run:
@@ -25,10 +33,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source-commit }}
+          # A manual rerun may fix test automation while keeping the qualified
+          # product inputs and packaged native binaries exactly unchanged.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.source-commit }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify unchanged qualified product inputs
+        env:
+          QUALIFIED_SOURCE_COMMIT: ${{ inputs.source-commit }}
+        shell: python
+        run: |
+          import os, re, subprocess
+          source = os.environ['QUALIFIED_SOURCE_COMMIT']
+          if not re.fullmatch(r'[0-9a-f]{40}', source):
+              raise ValueError('Expected the full qualified source commit')
+          subprocess.run(['git', 'diff', '--exit-code', source, 'HEAD', '--', '.',
+              ':(exclude).github/workflows/windows-ui-trial.yml',
+              ':(exclude)tools/test-windows-ui-trial.py'], check=True)
       - name: Download already-qualified Windows binaries
         uses: actions/download-artifact@v4
         with:
@@ -63,4 +86,5 @@ jobs:
           path: |
             artifacts/trial-checks/acceptance.json
             artifacts/trial-checks/launcher.log
+            artifacts/trial-checks/visible-labels.json
             artifacts/trial-checks/routes

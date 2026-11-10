@@ -104,7 +104,10 @@ def test(archive, plugin, output):
                         labels.add(text(child).replace('&', ''))
                         return True
                     user32.EnumChildWindows(hwnd, visit, 0)
-                if {'Passage actions', '1. Route', '2. Boat and polars', '3. Weather', 'Calculate route'} <= labels:
+                # Native headings exist before the first passage refresh fills in
+                # its status labels. Require both, rather than racing that refresh.
+                if ({'Passage actions', '1. Route', '2. Boat and polars', '3. Weather', 'Calculate route'} <= labels
+                        and any('\u2022' in label for label in labels)):
                     break
                 time.sleep(0.25)
             else:
@@ -124,6 +127,8 @@ def test(archive, plugin, output):
             if process.wait(timeout=30) != 0:
                 raise RuntimeError('Trial launcher did not exit cleanly')
         finally:
+            (output / 'visible-labels.json').write_text(
+                json.dumps(sorted(labels), indent=2) + '\n', encoding='utf-8')
             if process.poll() is None:
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], check=False,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
