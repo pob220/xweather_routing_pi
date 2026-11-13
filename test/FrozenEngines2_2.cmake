@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.20)
 if(NOT DEFINED SOURCE_ROOT)
   get_filename_component(SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 endif()
