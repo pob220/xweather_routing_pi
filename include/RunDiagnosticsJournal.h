@@ -35,7 +35,9 @@ private:
     unsigned omittedStages = 0;
     unsigned omittedInputs = 0, omittedReports = 0;
     std::vector<Stage> stages;
-    std::vector<wxString> inputs, reports;
+    // wxWidgets exports a std::vector<wxString> specialization on Windows.
+    // Keep our private snapshots out of that DLL template specialization.
+    std::deque<wxString> inputs, reports;
   };
   static wxString Bounded(wxString text);
   std::deque<Run> runs_;
