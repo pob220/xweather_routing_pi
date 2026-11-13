@@ -161,7 +161,7 @@ protected:
   void OnGenerateDegreeSteps(wxCommandEvent& event);
   void UpdateChartSafetyRamLabel();
   void UpdateRoutingTimeModeControls();
-  void OnClose(wxCommandEvent& event) { Hide(); }
+  void OnClose(wxCommandEvent& event) { SaveWindowGeometry(); Hide(); }
 
 private:
 #ifdef __OCPN__ANDROID__
@@ -174,6 +174,13 @@ private:
   void UpdateEngineControls();
   bool HandleEngineEdit(wxObject* control);
   void RefreshEnginePresetStatus();
+  void BuildCompactPlanningControls();
+  void RefreshCompactPlanningStatus();
+  void SaveWindowGeometry();
+  void ResetWeatherLimits();
+  wxStaticText* m_compactEngineStatus = nullptr;
+  wxStaticText* m_compactSafetyStatus = nullptr;
+  bool m_compactReady = false;
 
   void SetStartDateTime(wxDateTime datetime);
 

@@ -59,6 +59,10 @@ def test(archive, plugin, output):
     callback_type = ctypes.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
     user32.EnumWindows.argtypes = [callback_type, w.LPARAM]
     user32.EnumChildWindows.argtypes = [w.HWND, callback_type, w.LPARAM]
+    user32.IsWindowVisible.argtypes = [w.HWND]
+    user32.GetWindowRect.argtypes = [w.HWND, ctypes.POINTER(w.RECT)]
+    user32.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_int, ctypes.c_int, w.UINT]
 
     def text(hwnd):
         buffer = ctypes.create_unicode_buffer(4096)
@@ -83,6 +87,45 @@ def test(archive, plugin, output):
             return True
         user32.EnumWindows(visit, 0)
         return result
+
+    def children(hwnd):
+        result = []
+        @callback_type
+        def visit(child, _):
+            result.append((child, text(child).replace('&', '')))
+            return True
+        user32.EnumChildWindows(hwnd, visit, 0)
+        return result
+
+    def wait_for(check):
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            result = check()
+            if result:
+                return result
+            time.sleep(0.2)
+        raise RuntimeError('Timed out during compact settings acceptance')
+
+    def click_label(label):
+        matches = [(child, name) for hwnd, _ in owned_windows()
+                   if user32.IsWindowVisible(hwnd)
+                   for child, name in children(hwnd)
+                   if name == label and user32.IsWindowVisible(child)]
+        if not matches:
+            raise RuntimeError('Missing visible control: ' + label)
+        user32.PostMessageW(matches[-1][0], 0x00F5, 0, 0)  # BM_CLICK
+        time.sleep(0.4)
+
+    def settings_window():
+        return next((hwnd for hwnd, title in owned_windows()
+                     if title == 'WeatherRouting Configuration'
+                     and user32.IsWindowVisible(hwnd)), None)
+
+    def rectangle(hwnd):
+        rect = w.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            raise RuntimeError('Cannot read settings window rectangle')
+        return (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
 
     # Only app-local DLLs and the Windows system directory are available.
     environment = dict(os.environ, PATH=str(Path(os.environ['SystemRoot']) / 'System32'))
@@ -120,6 +163,33 @@ def test(archive, plugin, output):
                 raise RuntimeError('Corrupted Unicode in planner labels: ' + repr(sorted(labels)))
             if not any('\u2022' in label for label in labels):
                 raise RuntimeError('The planner did not render its Unicode bullet labels')
+            click_label('Passage settings')
+            settings = wait_for(settings_window)
+            user32.SetWindowPos(settings, None, 90, 80, 820, 620, 0x0014)
+            time.sleep(0.5)
+            saved_rect = rectangle(settings)
+            settings_labels = [name for _, name in children(settings)]
+            if 'Reset wind/wave limits...' not in settings_labels:
+                raise RuntimeError('Missing scoped wind/wave reset')
+            click_label('OK')
+            wait_for(lambda: not settings_window())
+            click_label('Passage settings')
+            settings = wait_for(settings_window)
+            if rectangle(settings) != saved_rect:
+                raise RuntimeError('Settings size/position was not preserved')
+            click_label('OK')
+            wait_for(lambda: not settings_window())
+            click_label('Routing controls')
+            settings = wait_for(settings_window)
+            # Context help must also work by click/tap without hover or F1.
+            click_label('Help')
+            help_window = wait_for(lambda: next((hwnd for hwnd, title in owned_windows()
+                if title in ('Routing search', 'Land and depth checks', 'Shoreline detail',
+                             'Memory and workers') and user32.IsWindowVisible(hwnd)), None))
+            click_label('Close')
+            wait_for(lambda: not user32.IsWindowVisible(help_window))
+            click_label('OK')
+            wait_for(lambda: not settings_window())
             mains = [(hwnd, title) for hwnd, title in owned_windows() if title.startswith('OpenCPN')]
             if not mains:
                 raise RuntimeError('Missing owned portable OpenCPN main window')
@@ -149,6 +219,7 @@ def test(archive, plugin, output):
         'normal_profile_preserved': True, 'external_overrides_cleared': True,
         'app_local_crt': True, 'passage_planner_visible': True,
         'unicode_labels_verified': True,
+        'compact_settings_geometry_and_click_help': True,
         'forecast_climatology_and_fallback_routes': 'complete',
         'visible_labels': sorted(labels), 'zip_sha256': sha(archive),
     }, indent=2) + '\n', encoding='utf-8')

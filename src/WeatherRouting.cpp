@@ -63,6 +63,11 @@
 #include "RouteWaypointValidation.h"
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
+#include "PlanningHelp.h"
+#include <wx/clipbrd.h>
+#include <wx/dataobj.h>
+#include <wx/ffile.h>
+#include <wx/notebook.h>
 #include "BundledDataUpgradePolicy.h"
 #include "ShorelineManager.h"
 #include "ChartSafetyDefaults.h"
@@ -1463,9 +1468,9 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   pConf->Read(_T("KeepStabilityCorridorAfterResults"),
               &m_StabilityCorridorKeepPreference, false);
   pConf->Read(_T ( "DisableColPane" ), &m_disable_colpane, false);
-#ifdef __OCPN__ANDROID__
+  // The notebook already supplies navigation; an inner collapsed pane leaves
+  // a full-sized, empty Routes and analysis page.
   m_disable_colpane = true;
-#endif
 
   wxBoxSizer* bSizer;
   bSizer = new wxBoxSizer(wxVERTICAL);
@@ -1694,11 +1699,15 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   m_PassagePanel = new PassagePanel(notebook, *this);
   notebook->InsertPage(0, m_PassagePanel, _("Plan passage"), true);
   bSizer->Add(notebook, 1, wxEXPAND);
-  SetTitle(_("xWeatherRouting 2.0.0"));
-  SetMinSize(wxSize(720,540));
-  const wxSize screen = wxGetDisplaySize();
-  SetSize(std::min(860,screen.x-80), std::min(890,screen.y-80));
-  CentreOnScreen();
+  SetTitle(_("xWeatherRouting 2.2.0"));
+  SetMinSize(FromDIP(wxSize(640, 480)));
+  pConf->SetPath("/PlugIns/xWeatherRouting2");
+  if (!pConf->HasEntry("DialogWidth") || !pConf->HasEntry("DialogHeight")) {
+    SetSize(FromDIP(wxSize(860, 790)));
+    CentreOnScreen();
+  } else SetSize(wxRect(p, m_size));
+  weather_routing::KeepPlanningDialogVisible(this);
+  m_size = GetSize();
   Layout();
 #endif
 #ifdef __OCPN__ANDROID__
@@ -2750,8 +2759,9 @@ bool WeatherRouting::RouteMapIsManaged(RouteMapOverlay* routemapoverlay) const {
   return false;
 }
 
-void WeatherRouting::ShowRoutingProgress(const wxString& title) {
+void WeatherRouting::ShowRoutingProgress(const wxString& title, bool newRun) {
   static const int kProgressTextWidth = 540;
+  const bool created = !m_RoutingProgressDialog;
   if (!m_RoutingProgressDialog) {
     m_RoutingProgressDialog =
         new wxDialog(this, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
@@ -2761,10 +2771,14 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
         new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString);
     m_RoutingProgressStage->SetFont(m_RoutingProgressStage->GetFont().Bold());
     topSizer->Add(m_RoutingProgressStage, 0, wxALL | wxEXPAND, 8);
+    auto* pages = new wxNotebook(m_RoutingProgressDialog, wxID_ANY);
+    pages->SetName("Run diagnostics pages");
+    auto* live = new wxPanel(pages);
+    auto* liveSizer = new wxBoxSizer(wxVERTICAL);
     m_RoutingProgressDetail = new wxTextCtrl(
-        m_RoutingProgressDialog, wxID_ANY, wxEmptyString, wxDefaultPosition,
-        wxSize(kProgressTextWidth, 220), wxTE_MULTILINE | wxTE_READONLY);
-    topSizer->Add(m_RoutingProgressDetail,
+        live, wxID_ANY, wxEmptyString, wxDefaultPosition,
+        wxSize(kProgressTextWidth, 200), wxTE_MULTILINE | wxTE_READONLY);
+    liveSizer->Add(m_RoutingProgressDetail,
 #ifdef __OCPN__ANDROID__
                   1,
 #else
@@ -2772,23 +2786,56 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
 #endif
                   wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
     m_RoutingProgressTiming =
-        new wxStaticText(m_RoutingProgressDialog, wxID_ANY, wxEmptyString,
+        new wxStaticText(live, wxID_ANY, wxEmptyString,
                          wxDefaultPosition, wxSize(kProgressTextWidth, -1));
     m_RoutingProgressTiming->Wrap(kProgressTextWidth);
-    topSizer->Add(m_RoutingProgressTiming, 0,
+    liveSizer->Add(m_RoutingProgressTiming, 0,
                   wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
     m_RoutingProgressGauge =
-        new wxGauge(m_RoutingProgressDialog, wxID_ANY, 100);
-    topSizer->Add(m_RoutingProgressGauge, 0,
+        new wxGauge(live, wxID_ANY, 100);
+    liveSizer->Add(m_RoutingProgressGauge, 0,
                   wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
+    live->SetSizer(liveSizer);
+    pages->AddPage(live, _("Live"));
+    auto* record = new wxPanel(pages);
+    auto* recordSizer = new wxBoxSizer(wxVERTICAL);
+    m_RoutingProgressHistory = new wxTextCtrl(record, wxID_ANY, wxEmptyString,
+        wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY);
+    m_RoutingProgressHistory->SetName("Run diagnostics record");
+    recordSizer->Add(m_RoutingProgressHistory, 1, wxEXPAND | wxALL, 5);
+    auto* exportRow = new wxBoxSizer(wxHORIZONTAL);
+    auto* copy = new wxButton(record, wxID_ANY, _("Copy record"));
+    auto* save = new wxButton(record, wxID_ANY, _("Save record..."));
+    exportRow->Add(copy, 0, wxALL, 4); exportRow->Add(save, 0, wxALL, 4);
+    recordSizer->Add(exportRow, 0, wxALIGN_RIGHT);
+    copy->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+      if (wxTheClipboard && wxTheClipboard->Open()) {
+        wxTheClipboard->SetData(new wxTextDataObject(m_RunDiagnostics.Text()));
+        wxTheClipboard->Close();
+      }
+    });
+    save->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+      wxFileDialog file(m_RoutingProgressDialog, _("Save run diagnostics"),
+          wxEmptyString, "routing-diagnostics.txt", _("Text files (*.txt)|*.txt"),
+          wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+      if (file.ShowModal() != wxID_OK) return;
+      wxFFile output(file.GetPath(), "w");
+      if (!output.IsOpened() || !output.Write(m_RunDiagnostics.Text(), wxConvUTF8))
+        WR_MessageBox(_("Could not save the diagnostic record."), _("Run diagnostics"), wxOK | wxICON_ERROR, m_RoutingProgressDialog);
+    });
+    record->SetSizer(recordSizer);
+    pages->AddPage(record, _("Run record"));
+    pages->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& event) {
+      RefreshRunDiagnosticsRecord(); event.Skip();
+    });
+    topSizer->Add(pages, 1, wxEXPAND | wxALL, 5);
     wxStaticText* note = new wxStaticText(
         m_RoutingProgressDialog, wxID_ANY,
 #ifdef __OCPN__ANDROID__
         _("Hide keeps routing running. Reopen from Results > Routing status. "
           "The last update shows activity, not time remaining."));
 #else
-        _("Hide keeps computations running. Reopen with View > Routing progress. "
-          "Worker update age reports activity; it is not a completion estimate."));
+        _("Hide keeps routing running. View > Routing progress reopens this window."));
 #endif
     note->Wrap(kProgressTextWidth);
     topSizer->Add(note, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
@@ -2869,13 +2916,28 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
     m_RoutingProgressDialog->SetTitle(title);
   }
 
-  m_RoutingProgressStartTime = wxDateTime::Now();
-  m_RoutingProgressStageStartTime = m_RoutingProgressStartTime;
-  m_RoutingProgressCurrentStage.Clear();
-  m_RoutingProgressPreviousStage.Clear();
-  m_RoutingProgressPreviousStageDuration = wxTimeSpan(0);
-  m_RoutingProgressFinished = false;
-  m_RoutingProgressGauge->Show();
+  if (newRun && !m_RunDiagnostics.Active()) {
+    m_RunDiagnostics.Begin(wxDateTime::Now().ToUTC().FormatISOCombined());
+    m_RoutingProgressFinishedAt = wxInvalidDateTime;
+    m_RoutingProgressStartTime = wxDateTime::Now();
+    m_RoutingProgressStageStartTime = m_RoutingProgressStartTime;
+    m_RoutingProgressCurrentStage.Clear();
+    m_RoutingProgressPreviousStage.Clear();
+    m_RoutingProgressPreviousStageDuration = wxTimeSpan(0);
+    m_RoutingProgressFinished = false;
+    m_RoutingProgressGauge->Show();
+  }
+#ifndef __OCPN__ANDROID__
+  m_RoutingProgressDialog->SetMinSize(FromDIP(wxSize(500, 400)));
+  if (created) {
+    m_RoutingProgressDialog->SetSize(FromDIP(wxSize(650, 560)));
+    weather_routing::KeepPlanningDialogVisible(m_RoutingProgressDialog);
+  }
+#endif
+  RefreshRunDiagnosticsRecord();
+  if (!newRun)
+    if (auto* pages = wxDynamicCast(m_RoutingProgressDialog->FindWindow("Run diagnostics pages"), wxNotebook))
+      pages->SetSelection(m_RunDiagnostics.Active() ? 0 : 1);
 #ifdef __OCPN__ANDROID__
   const wxSize canvas = GetCanvasByIndex(0)->GetClientSize();
   m_RoutingProgressDialog->SetSize(wxSize(canvas.x * 9 / 10, canvas.y * 8 / 10));
@@ -2885,7 +2947,7 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title) {
   m_RoutingProgressDialog->Raise();
   RefreshRoutingProgressTiming();
   PaintRoutingProgressNow();
-  m_tRoutingProgress.Start(1000);
+  if (!m_RoutingProgressFinished) m_tRoutingProgress.Start(1000);
 }
 
 void WeatherRouting::UpdateRoutingProgress(const wxString& stage,
@@ -2910,6 +2972,8 @@ void WeatherRouting::UpdateRoutingProgress(const wxString& stage,
   if (!stage.IsEmpty()) m_RoutingProgressStage->SetLabel(stage);
 
   m_RoutingProgressDetail->ChangeValue(detail);
+  m_RunDiagnostics.Observe(stage);
+  RefreshRunDiagnosticsRecord();
   RefreshRoutingProgressTiming();
   wxLogMessage("WR_PROGRESS stage=\"%s\" detail=\"%s\" value=%d range=%d",
                stage, detail, value, range);
@@ -2920,20 +2984,33 @@ void WeatherRouting::FinishRoutingProgress(const wxString& stage,
                                            const wxString& detail) {
   UpdateRoutingProgress(stage, detail);
   m_RoutingProgressFinished = true;
+  m_RoutingProgressFinishedAt = wxDateTime::Now();
+  m_RunDiagnostics.Finish(stage + "\n" + detail);
+  RefreshRunDiagnosticsRecord();
   RefreshRoutingProgressTiming();
   if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
 }
 
 void WeatherRouting::CloseRoutingProgress() {
   if (m_tRoutingProgress.IsRunning()) m_tRoutingProgress.Stop();
-  if (m_RoutingProgressDialog) m_RoutingProgressDialog->Hide();
+  // Retain both the visible window and its record after completion/cancel.
+  // An explicitly hidden window stays hidden and can be reopened from View.
+  RefreshRunDiagnosticsRecord();
+}
+
+void WeatherRouting::RefreshRunDiagnosticsRecord() {
+  if (!m_RoutingProgressHistory) return;
+  const wxString text = m_RunDiagnostics.Text();
+  if (m_RoutingProgressHistory->GetValue() != text)
+    m_RoutingProgressHistory->ChangeValue(text);
 }
 
 void WeatherRouting::OnRoutingProgressTimer(wxTimerEvent&) {
   RefreshRoutingProgressTiming();
   if (m_RoutingProgressFinished || m_RunningRouteMaps.empty()) return;
   UpdateStates();
-  if (!m_RoutingProgressDialog || !m_RoutingProgressDialog->IsShown()) return;
+  if (!m_RoutingProgressDialog) return;
+  // Keep observing stage transitions when the progress window is hidden.
   // Preparation counts are not a percentage of the route search.
   m_RoutingProgressGauge->Hide();
   wxString details, currentStage;
@@ -2966,6 +3043,8 @@ void WeatherRouting::OnRoutingProgressTimer(wxTimerEvent&) {
     m_RoutingProgressPreviousStage = m_RoutingProgressCurrentStage;
     m_RoutingProgressPreviousStageDuration = now - m_RoutingProgressStageStartTime;
     m_RoutingProgressCurrentStage = displayedStage;
+    m_RunDiagnostics.Observe(displayedStage);
+    RefreshRunDiagnosticsRecord();
     m_RoutingProgressStageStartTime = now;
     m_RoutingProgressStage->SetLabel(displayedStage);
     m_RoutingProgressDetail->ChangeValue(details);
@@ -2986,7 +3065,8 @@ void WeatherRouting::RefreshRoutingProgressTiming() {
     m_StopComfortButton->Enable(exploring);
   }
   if (!m_RoutingProgressDialog || !m_RoutingProgressTiming) return;
-  wxDateTime now = wxDateTime::Now();
+  wxDateTime now = m_RoutingProgressFinished && m_RoutingProgressFinishedAt.IsValid()
+      ? m_RoutingProgressFinishedAt : wxDateTime::Now();
   wxString timing;
   if (m_RoutingProgressStageStartTime.IsValid()) {
     wxTimeSpan stageElapsed = now - m_RoutingProgressStageStartTime;
@@ -3025,9 +3105,6 @@ void WeatherRouting::PaintRoutingProgressNow() {
   painting = true;
 
   m_RoutingProgressDialog->Layout();
-#ifndef __OCPN__ANDROID__
-  m_RoutingProgressDialog->Fit();
-#endif
   if (m_RoutingProgressStage) {
     m_RoutingProgressStage->Refresh();
     m_RoutingProgressStage->Update();
@@ -8011,12 +8088,8 @@ void WeatherRouting::OnEditMultiLegGroupSettings(wxCommandEvent& event) {
 }
 
 void WeatherRouting::OnShowRoutingStatus(wxCommandEvent& event) {
-  if (m_RoutingProgressDialog && !m_RoutingProgressFinished &&
-      (m_DeferredRoutingStartPending || !m_RunningRouteMaps.empty() ||
-       !m_WaitingRouteMaps.empty() || m_RoutePreparationDepth > 0 ||
-       !m_PreparingChartSafetyRoutes.empty())) {
-    m_RoutingProgressDialog->Show();
-    m_RoutingProgressDialog->Raise();
+  if (m_RoutingProgressDialog || m_RunDiagnostics.Size()) {
+    ShowRoutingProgress(_("Run diagnostics"), false);
     return;
   }
   ShowRoutingStatus(FirstCurrentRouteMap());
@@ -9281,6 +9354,8 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
                                      m_RunningRouteMaps.size());
       sectionTimer.Start();
       UpdateRouteMap(routemapoverlay);
+      m_RunDiagnostics.Report(routemapoverlay->GetDiagnostics().Text());
+      RefreshRunDiagnosticsRecord();
       updateRouteMs += sectionTimer.Time();
       // Completed routes retain their compact route/weather results. The
       // aggregate timeline cache stays alive for other departure candidates
@@ -9372,6 +9447,10 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     AdvanceMultiLegDepartureOptimization(routemapoverlay);
   }
   FinishChartSafetyComputeProgressIfDone();
+  if (m_RunningRouteMaps.empty() && m_WaitingRouteMaps.empty() &&
+      !m_ActiveMultiLegSequence && !m_ActiveMultiLegDepartureOptimization &&
+      !m_DeferredRoutingStartPending && m_RunDiagnostics.Active())
+    FinishRoutingProgress(_("Computation finished"), _("See the retained route reports for individual outcomes."));
   if (!completedRouteMaps.empty()) SetEnableConfigurationMenu();
   advanceMs += sectionTimer.Time();
 
@@ -12890,6 +12969,11 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
             configuration.WindStrength * 100.0, configuration.UpwindEfficiency * 100.0,
             configuration.DownwindEfficiency * 100.0, configuration.NightCumulativeEfficiency * 100.0),
         _("Review these effective assumptions in Configuration."), {}, true});
+  if (!m_RunDiagnostics.Active())
+    m_RunDiagnostics.Begin(wxDateTime::Now().ToUTC().FormatISOCombined());
+  m_RunDiagnostics.Inputs(setupDiagnostics.context + wxString::Format(
+      "\nSelected engine mask: %u; GRIB timeline cache: %d MiB", configuration.EngineSettings.SelectedEngines(), configuration.SelectedGribTimelineCacheMiB()));
+  RefreshRunDiagnosticsRecord();
   routemapoverlay->BeginDiagnosticRun(std::move(setupDiagnostics));
   // Route analysis follows the supplied waypoint sequence, including valid
   // return passages. Only a routing leg is a single start/destination pair.
@@ -13516,6 +13600,8 @@ void WeatherRouting::StopAll() {
     if (weatherroute && weatherroute->routemapoverlay)
       weatherroute->routemapoverlay->ReleaseGribTimelineFrameReference();
 
+  for (auto* route : m_RunningRouteMaps)
+    m_RunDiagnostics.Report(route->GetDiagnostics().Text());
   m_RunningRouteMaps.clear();
   m_WaitingRouteMaps.clear();
   ReleaseGribTimelineCacheBatch();
@@ -13535,6 +13621,8 @@ void WeatherRouting::StopAll() {
   m_ChartSafetyComputeProgressTotalRoutes = 0;
   m_ChartSafetyComputeProgressStartedRoutes = 0;
   m_ChartSafetyComputeProgressCompletedRoutes = 0;
+  if (m_RunDiagnostics.Active())
+    FinishRoutingProgress(_("Stopped"), _("Route computations stopped."));
   CloseRoutingProgress();
 
   SetEnableConfigurationMenu();

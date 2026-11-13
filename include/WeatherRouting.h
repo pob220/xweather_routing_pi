@@ -57,6 +57,7 @@ class wxScrolledWindow;
 #include "RouteSimplifier.h"
 #include "StabilityCorridorLifecycle.h"
 #include "GribTimelineFrameCache.h"
+#include "RunDiagnosticsJournal.h"
 #include "weather_routing_engine/StabilityCorridor.h"
 
 class weather_routing_pi;
@@ -760,7 +761,7 @@ private:
   void AdvanceMultiLegDepartureOptimization(RouteMapOverlay* completedRoute);
   void ShowMultiLegDepartureOptimizationResults();
   void DeleteMultiLegOptimizationCandidateRows();
-  void ShowRoutingProgress(const wxString& title);
+  void ShowRoutingProgress(const wxString& title, bool newRun = true);
   void UpdateRoutingProgress(const wxString& stage, const wxString& detail,
                              int value = -1, int range = -1);
   void FinishRoutingProgress(const wxString& stage, const wxString& detail);
@@ -768,6 +769,7 @@ private:
   void OnRoutingProgressTimer(wxTimerEvent&);
   void RefreshRoutingProgressTiming();
   void PaintRoutingProgressNow();
+  void RefreshRunDiagnosticsRecord();
   void RecordChartSafetyPreparationFailure(RouteMapOverlay* route,
                                            const wxString& reason);
   bool ValidateChartSafetyEndpoints(RouteMapOverlay* route,
@@ -973,6 +975,9 @@ private:
   wxStaticText* m_RoutingProgressStage;
   wxTextCtrl* m_RoutingProgressDetail;
   wxStaticText* m_RoutingProgressTiming;
+  wxTextCtrl* m_RoutingProgressHistory = nullptr;
+  weather_routing::RunDiagnosticsJournal m_RunDiagnostics;
+  wxDateTime m_RoutingProgressFinishedAt;
   wxGauge* m_RoutingProgressGauge;
   wxButton* m_StopComfortButton{nullptr};
   wxDateTime m_RoutingProgressStartTime;

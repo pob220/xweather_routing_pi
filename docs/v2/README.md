@@ -1,22 +1,17 @@
-# xWeatherRouting 2.1.2
+# xWeatherRouting 2.2.0
 
-Version 2.1 is developed on `feature/xweather-2.1.2`, following the 2.0.0 UI trial
-and the 1.36 baseline f2b78a7. Version 1 remains the stable catalogue and maintenance line.
-The version is 2.1.2; no alpha suffix or catalogue replacement is involved.
+Version 2.2 is developed on `feature/xweather-2.2.0`, following 2.1.3. Version 1
+remains the stable catalogue and maintenance line. Version 2 uses separate
+preferences and user data.
 
-The 2.1.2 patch fixes Windows punctuation display and gives unnamed linked
-passages readable endpoint names. It also includes the weather-preference and
-optional OpenCPN Draw help follow-ups. See [the patch notes](CHANGES-2.1.2.md).
-The 2.1.1 GRIB timestamp fix is retained; passage departure and target arrival
-remain exactly as entered.
+See [2.2 changes](CHANGES-2.2.md) and [the issue triage](ISSUE-TRIAGE-2.2.md).
+This pass refines the interface and retains run diagnostics. The production
+engines, dispatch and routing defaults remain unchanged; performance experiments
+are separate standalone executables. The coincident-waypoint checks from
+[2.1.3](CHANGES-2.1.3.md), Unicode correction and GRIB timestamp fix remain.
 
-This UI refinement leaves routing engines, scenario parsing and saved vessel
-preferences unchanged. The weather follow-up now defaults fresh setups to forecast
-with Climatology fallback; see [weather feedback fixes](WEATHER-FOLLOWUP.md). See [the 2.1 changes and mapping to
-review feedback](CHANGES-2.1.md).
-
-For a first Windows UI review, use the [ready-to-run trial](TRY-WINDOWS.md).
-It includes its own portable OpenCPN, so compiling and plugin setup are optional.
+For Windows UI review, use the [portable trial](TRY-WINDOWS.md), which includes
+its matching OpenCPN host.
 
 The desktop workspace groups passage, boat and weather preparation, without
 experience levels. Its settings areas are labelled Passage settings and Routing

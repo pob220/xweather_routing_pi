@@ -43,6 +43,9 @@
 #include "DepartureScheduler.h"
 #include "RoutingResourcePolicy.h"
 #include "ConfigurationDialog.h"
+#include "PlanningHelp.h"
+#include <set>
+#include <wx/tokenzr.h>
 #include "ChartSafetyDefaults.h"
 #include "PassageSettings.h"
 #include "BoatDialog.h"
@@ -183,20 +186,19 @@ void StyleTabletControls(wxWindow* parent) {
 }
 #endif
 
-constexpr int kDefaultConfigurationWidthDip = 1320;
-constexpr int kDefaultConfigurationHeightDip = 900;
+constexpr int kDefaultConfigurationWidthDip = 1100;
+constexpr int kDefaultConfigurationHeightDip = 740;
 constexpr int kConfigurationScreenMarginDip = 40;
 
 wxSize DefaultConfigurationDialogSize(wxWindow* window) {
-  const wxSize best = window->GetBestSize();
   const wxSize preferred = WR_FromDIP(window,
       wxSize(kDefaultConfigurationWidthDip, kDefaultConfigurationHeightDip));
   const int margin = WR_FromDIP(window, kConfigurationScreenMarginDip);
   const wxSize display = wxGetClientDisplayRect().GetSize();
   const wxSize available(std::max(1, display.x - margin),
                          std::max(1, display.y - margin));
-  return wxSize(std::min(available.x, std::max(best.x, preferred.x)),
-                std::min(available.y, std::max(best.y, preferred.y)));
+  return wxSize(std::min(available.x, preferred.x),
+                std::min(available.y, preferred.y));
 }
 
 bool GetWaypointByGuid(const wxString& guid, PlugIn_Waypoint* waypoint) {
@@ -373,6 +375,8 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       weather_routing::PassageSetting::TimeStep));
   m_sTimeStepMinutes->SetToolTip(weather_routing::PassageSettingHelp(
       weather_routing::PassageSetting::TimeStep));
+
+  BuildCompactPlanningControls();
 
   wxFileConfig* pConf = GetOCPNConfigObject();
   pConf->SetPath(_T( "/PlugIns/xWeatherRouting2" ));
@@ -595,7 +599,28 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   pConf->Read(_T ( "ConfigurationX" ), &p.x, p.x);
   pConf->Read(_T ( "ConfigurationY" ), &p.y, p.y);
   SetPosition(p);
+  SetMinSize(FromDIP(wxSize(620, 440)));
+  weather_routing::KeepPlanningDialogVisible(this);
 #endif
+  Bind(wxEVT_SHOW, [this](wxShowEvent& event) {
+    if (!event.IsShown()) SaveWindowGeometry();
+    event.Skip();
+  });
+  Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveWindowGeometry(); Hide(); });
+  Bind(wxEVT_HELP, [this](wxHelpEvent&) {
+    weather_routing::ShowFocusedPlanningHelp(this,
+        m_notebook7->GetSelection() == 0 ? weather_routing::PlanningHelpTopic::Timing
+                                       : weather_routing::PlanningHelpTopic::Search);
+  });
+  Bind(wxEVT_CHAR_HOOK, [this](wxKeyEvent& event) {
+    if (event.GetKeyCode() != WXK_F1 || event.HasAnyModifiers()) {
+      event.Skip();
+      return;
+    }
+    weather_routing::ShowFocusedPlanningHelp(this,
+        m_notebook7->GetSelection() == 0 ? weather_routing::PlanningHelpTopic::Timing
+                                       : weather_routing::PlanningHelpTopic::Search);
+  });
 }
 
 #ifdef __OCPN__ANDROID__
@@ -855,12 +880,10 @@ void ConfigurationDialog::UpdateRoutingTimeModeControls() {
   m_sArrivalSafetyMarginMinutes->Show(arrival);
   m_staticTextArrivalSafetyMarginMinutes->Show(arrival);
   m_tArrivalPlanningHint->Show(arrival);
-  const wxSize current_size = GetSize();
   Layout();
-  Fit();
-  const wxSize fitted_size = GetSize();
-  SetSize(wxSize(std::max(current_size.x, fitted_size.x),
-                 std::max(current_size.y, fitted_size.y)));
+  m_pBasic->FitInside();
+  m_pAdvanced->FitInside();
+  RefreshCompactPlanningStatus();
 }
 
 void ConfigurationDialog::OnStartFromBoat(wxCommandEvent& event) {
@@ -1038,6 +1061,7 @@ static void SetConfigurationChoiceValue(wxComboBox* combo,
 
 void ConfigurationDialog::SetConfigurations(
     std::list<RouteMapConfiguration> configurations) {
+  m_compactReady = true;
   m_bBlockUpdate = true;
 
   m_edited_controls.clear();
@@ -1668,6 +1692,7 @@ void ConfigurationDialog::UpdateEngineControls() {
 }
 
 void ConfigurationDialog::RefreshEnginePresetStatus() {
+  RefreshCompactPlanningStatus();
   wxString status;
   const auto engine = weather_routing::EngineFromSelection(m_cRoutingEngine->GetSelection());
   const bool combined = weather_routing::IsCombinedEngine(engine);
@@ -2315,4 +2340,198 @@ bool ConfigurationDialog::RunComfortHostContract() {
   Raise();
   wxLogMessage("WR_COMFORT_CONFIGURATION_CONTRACT passed=%d", passed ? 1 : 0);
   return passed;
+}
+
+void ConfigurationDialog::BuildCompactPlanningControls() {
+  using namespace weather_routing;
+#ifndef __OCPN__ANDROID__
+  // The old desktop Basic page is a fixed panel. Preserve its complete
+  // controls/bindings but give the page the same scrolling capability as the
+  // Android page, without changing the generated base class.
+  auto* previous = m_pBasic;
+  auto* scroll = new wxScrolledWindow(m_notebook7, wxID_ANY, wxDefaultPosition,
+      wxDefaultSize, wxVSCROLL | wxHSCROLL | wxTAB_TRAVERSAL);
+  auto* contents = previous->GetSizer();
+  previous->SetSizer(nullptr, false);
+  std::vector<wxWindow*> children;
+  for (auto* child : previous->GetChildren()) children.push_back(child);
+  for (auto* child : children) child->Reparent(scroll);
+  scroll->SetSizer(contents);
+  m_notebook7->RemovePage(0);
+  m_pBasic = scroll;
+  m_notebook7->InsertPage(0, scroll, _("Passage settings"), true);
+  previous->Hide(); previous->Destroy();
+#endif
+  // Keep generated controls and all their bindings. Only presentation changes;
+  // the hidden notes can still be reflowed by the legacy platform handlers.
+  std::vector<wxStaticText*> notes;
+  const auto collect = [&](auto&& self, wxWindow* parent) -> void {
+    for (auto* child : parent->GetChildren()) {
+      if (auto* text = wxDynamicCast(child, wxStaticText))
+        if (text->GetLabel().length() >= 180 || text == m_tRoutingEngineDescription ||
+            text == m_tArrivalPlanningHint) notes.push_back(text);
+      self(self, child);
+    }
+  };
+  collect(collect, this);
+  std::set<std::pair<wxWindow*, PlanningHelpTopic>> groups;
+  for (auto* note : notes) {
+    auto* owner = note->GetParent();
+    auto* box = wxDynamicCast(owner, wxStaticBox);
+    auto topic = PlanningHelpTopic::Safety;
+    if (note == m_tRoutingEngineDescription ||
+        (box && box->GetLabel() == _("Engine settings"))) topic = PlanningHelpTopic::Search;
+    else if (note == m_tArrivalPlanningHint) topic = PlanningHelpTopic::Timing;
+    else if (box && box->GetLabel() == _("Resources")) topic = PlanningHelpTopic::Resources;
+    auto* containing = note->GetContainingSizer();
+    note->Hide();
+    if (containing && groups.insert({owner, topic}).second)
+      AddPlanningHelpButton(owner, containing, topic);
+  }
+  auto* engineSizer = m_tRoutingEngineDescription->GetContainingSizer();
+  m_compactEngineStatus = new wxStaticText(m_tRoutingEngineDescription->GetParent(), wxID_ANY, wxEmptyString);
+  m_compactEngineStatus->SetName("Compact engine status");
+  engineSizer->Add(m_compactEngineStatus, 0, wxEXPAND | wxALL, 5);
+  auto* safetySizer = m_cbDetectLand->GetContainingSizer();
+  m_compactSafetyStatus = new wxStaticText(m_cbDetectLand->GetParent(), wxID_ANY, wxEmptyString);
+  m_compactSafetyStatus->SetName("Safety validation status");
+  safetySizer->Add(m_compactSafetyStatus, 0, wxEXPAND | wxALL, 5);
+  AddPlanningHelpButton(m_bShorelineData->GetParent(),
+                        m_bShorelineData->GetContainingSizer(), PlanningHelpTopic::Shoreline);
+  m_bResetAdvanced->SetLabel(_("Reset search preset..."));
+  m_pBasic->SetMinSize(wxSize(0, 0));
+  m_pAdvanced->SetMinSize(wxSize(0, 0));
+  static_cast<wxScrolledWindow*>(m_pBasic)->SetScrollRate(12, 12);
+  m_pAdvanced->SetScrollRate(12, 12);
+  if (auto* checks = dynamic_cast<wxFlexGridSizer*>(m_cbDetectLand->GetContainingSizer()))
+    checks->SetCols(1);
+  SetPlanningHelp(m_cRoutingEngine, PlanningHelpTopic::Search, _("Choose a search mode; Help explains engine order and applicable controls."));
+  SetPlanningHelp(m_cBasicRoutingMode, PlanningHelpTopic::Search, _("Auto finds a validated route; All compares selected engines."));
+  SetPlanningHelp(m_sTimeStepHours, PlanningHelpTopic::Search, _("Nominal time step; engines may adapt it. Press F1 for details."));
+  SetPlanningHelp(m_sTimeStepMinutes, PlanningHelpTopic::Search, m_sTimeStepHours->GetToolTipText());
+  SetPlanningHelp(m_sMaxSearchAngle, PlanningHelpTopic::Search, _("Heading search around the target bearing; separate from diverted-course limits."));
+  SetPlanningHelp(m_cRoutingEffortPercent, PlanningHelpTopic::Search, _("Professional search allowance; Auto sets its own effort."));
+  SetPlanningHelp(m_sMainGribTimelineCacheMiB, PlanningHelpTopic::Resources, _("Maximum retained forecast-frame memory; actual use adapts to available RAM."));
+  SetPlanningHelp(m_sQuickGribTimelineCacheMiB, PlanningHelpTopic::Resources, m_sMainGribTimelineCacheMiB->GetToolTipText());
+  SetPlanningHelp(m_sMinimumDepthMeters, PlanningHelpTopic::Safety, _("0 = Off. Positive depth requires compatible, enforced chart checks."));
+  SetPlanningHelp(m_sSafetyMarginLand, PlanningHelpTopic::Safety, _("Requested land clearance in nautical miles; Help explains coastal endpoint access."));
+  SetPlanningHelp(m_cbDetectLand, PlanningHelpTopic::Safety, _("Avoid land using the selected shoreline or required chart checks."));
+  SetPlanningHelp(m_cbUseExperimentalChartSafety, PlanningHelpTopic::Safety, _("Inspect loaded charts for land and depth; requires a compatible host."));
+  SetPlanningHelp(m_cbEnforceExperimentalChartSafety, PlanningHelpTopic::Safety, _("Require loaded-chart land and depth validation."));
+  SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Avoid exclusion areas supplied by a compatible OpenCPN Draw provider."));
+  SetPlanningHelp(m_sDepartureTimeOptimizationConcurrentRoutes, PlanningHelpTopic::Resources, _("0 = Auto. Available RAM also limits concurrent departures."));
+  SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this engine; High and Full need installed data."));
+#ifndef __OCPN__ANDROID__
+  auto* reset = new wxButton(this, wxID_ANY, _("Reset wind/wave limits..."));
+  reset->SetName("Reset wind and wave limits");
+  reset->SetToolTip(_("Review factory wind and wave limits; keep route, vessel, weather sources and safety settings."));
+  reset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ResetWeatherLimits(); });
+  // Keep the notebook in the growable first row of the generated outer grid.
+  // Inserting a button before it would give that button all spare height.
+  auto* footer = new wxBoxSizer(wxHORIZONTAL);
+  auto* outer = m_bOK->GetContainingSizer();
+  outer->Detach(m_bOK);
+  footer->Add(reset, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  footer->AddStretchSpacer();
+  footer->Add(m_bOK, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  outer->Add(footer, 0, wxEXPAND);
+  const auto reflow = [this](wxSizeEvent& event) {
+    const bool narrow = event.GetSize().x < FromDIP(1060);
+    if (auto* columns = dynamic_cast<wxFlexGridSizer*>(m_pBasic->GetSizer())) {
+      if (narrow && columns->GetCols() != 1) {
+        if (columns->IsColGrowable(1)) columns->RemoveGrowableCol(1);
+        columns->SetCols(1);
+      } else if (!narrow && columns->GetCols() != 2) {
+        columns->SetCols(2); columns->AddGrowableCol(1);
+      }
+    }
+    if (auto* columns = dynamic_cast<wxBoxSizer*>(m_pAdvanced->GetSizer()))
+      columns->SetOrientation(narrow ? wxVERTICAL : wxHORIZONTAL);
+    m_pBasic->Layout(); m_pBasic->FitInside();
+    m_pAdvanced->Layout(); m_pAdvanced->FitInside();
+    event.Skip();
+  };
+  m_pBasic->Bind(wxEVT_SIZE, reflow);
+  m_pAdvanced->Bind(wxEVT_SIZE, reflow);
+#endif
+}
+
+void ConfigurationDialog::RefreshCompactPlanningStatus() {
+  if (!m_compactReady || !m_compactEngineStatus || !m_compactSafetyStatus) return;
+  m_tArrivalPlanningHint->Hide();
+  const auto engine = weather_routing::EngineFromSelection(m_cRoutingEngine->GetSelection());
+  wxString label = wxGetTranslation(weather_routing::EngineTitle(engine));
+  if (weather_routing::IsCombinedEngine(engine)) {
+    int count = -1;
+    for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
+      const unsigned mask = route->GetConfiguration().EngineSettings.SelectedEngines();
+      int selected = 0;
+      for (unsigned i = 0; i < m_cbAutoEngines.size(); ++i) selected += (mask >> i) & 1U;
+      if (count == -1) count = selected;
+      else if (count != selected) { count = -2; break; }
+    }
+    if (count >= 0) label += wxString::Format(_(L" · %d engines selected"), count);
+    else label += _(L" · mixed selection");
+    if (count == 0) label += _(L" · select at least one engine");
+  } else if (engine == weather_routing::RoutingEngine::Atlas ||
+             engine == weather_routing::RoutingEngine::Quick2)
+    label += _(L" · engine-managed search controls");
+  m_compactEngineStatus->SetLabel(label);
+  weather_routing::SetPlanningHelp(m_cShorelineResolution, weather_routing::PlanningHelpTopic::Shoreline,
+      _("Shoreline detail for this engine; High and Full need installed data."));
+  if (m_cbDetectLand->Get3StateValue() == wxCHK_UNDETERMINED ||
+      m_cbUseExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED ||
+      m_cbEnforceExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED) {
+    m_compactSafetyStatus->SetLabel(_("Mixed safety settings - review the selected routes."));
+    return;
+  }
+  const bool land = m_cbDetectLand->GetValue();
+  const bool enforced = m_cbUseExperimentalChartSafety->GetValue() &&
+                         m_cbEnforceExperimentalChartSafety->GetValue() &&
+                         m_WeatherRouting.HasEnhancedChartSafety();
+  wxString safety = !land ? _("Land avoidance: Off")
+                         : enforced ? _("Land checks: loaded charts") : _("Land checks: GSHHG");
+  if (m_sMinimumDepthMeters->GetValue() > 0 && (!land || !enforced))
+    safety += _(L" · depth limit needs required chart checks");
+  else if (!enforced || m_sMinimumDepthMeters->GetValue() == 0)
+    safety += _(L" · depth limit: Off");
+  else safety += wxString::Format(_(L" · minimum depth %.1f m"), m_sMinimumDepthMeters->GetValue());
+  m_compactSafetyStatus->SetLabel(safety);
+  m_compactSafetyStatus->Wrap(std::max(260, m_pBasic->GetClientSize().x / 2 - 30));
+}
+
+void ConfigurationDialog::SaveWindowGeometry() {
+#ifndef __OCPN__ANDROID__
+  if (getenv("WR_HEADLESS_ROUTE_TEST") || GetSize().x <= 0 || GetSize().y <= 0) return;
+  auto* config = GetOCPNConfigObject();
+  config->SetPath("/PlugIns/xWeatherRouting2");
+  config->Write("ConfigurationX", GetPosition().x);
+  config->Write("ConfigurationY", GetPosition().y);
+  config->Write("ConfigurationWidth", GetSize().x);
+  config->Write("ConfigurationHeight", GetSize().y);
+#endif
+}
+
+void ConfigurationDialog::ResetWeatherLimits() {
+  const auto routes = m_WeatherRouting.CurrentRouteMaps(false);
+  if (routes.empty()) return;
+  for (auto* route : routes) if (route->Running()) return;
+  WR_MessageDialog preview(this,
+      _("Apply factory limits to the selected routes?\n\nMaximum true wind: 30 kn\nMaximum apparent wind: 40 kn\nMaximum wave height: 3 m\n\nRoute, boat, weather sources, chart safety and search settings are preserved."),
+      _("Reset wind and wave limits"), wxOK | wxCANCEL);
+  preview.SetOKLabel(_("Apply limits"));
+  if (preview.ShowModal() != wxID_OK) return;
+  std::list<RouteMapConfiguration> configs;
+  for (auto* route : routes) {
+    auto config = route->GetConfiguration();
+    config.MaxTrueWindKnots = weather_routing::PassageDefaults::windKnots;
+    config.MaxApparentWindKnots = weather_routing::PassageDefaults::apparentWindKnots;
+    config.MaxSwellMeters = weather_routing::PassageDefaults::waveMeters;
+    route->SetConfiguration(config);
+    m_WeatherRouting.SaveLastUsedConfigurationDefaults(config);
+    configs.push_back(config);
+  }
+  SetConfigurations(configs);
+  m_WeatherRouting.UpdateCurrentConfigurations();
+  m_WeatherRouting.ScheduleAutoSave();
 }

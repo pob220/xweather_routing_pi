@@ -43,6 +43,9 @@ REQUIRED)
 include(${wxWidgets_USE_FILE})
 
 set(TEST_SRC
+    PlanningPresentation_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PlanningHelp.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/RunDiagnosticsJournal.cpp
     RouteWaypointValidation_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteWaypointValidation.cpp
     RouteDiagnostics_tests.cpp
@@ -272,6 +275,9 @@ set(TEST_SRC
 # register the executable as one aggregate test: that reruns the complete
 # suite, and the duplicate process can exceed CTest's default timeout on the
 # supported 32-bit Windows executor even though every discovered case passes.
+add_test(NAME weather_routing_2_2_engine_freeze
+    COMMAND ${CMAKE_COMMAND} -DSOURCE_ROOT=${WEATHER_ROUTING_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_LIST_DIR}/FrozenEngines2_2.cmake)
 add_test(
     NAME weather_routing_time_zone_lifecycle_contract
     COMMAND ${CMAKE_COMMAND}

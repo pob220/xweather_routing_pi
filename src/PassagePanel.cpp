@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassagePanel.h"
+#include "PlanningHelp.h"
+#include <wx/aui/auibook.h>
 #include "PassagePresentation.h"
 #include "RouteMapOverlay.h"
 #include "WeatherRouting.h"
@@ -132,6 +134,9 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                     [this] { EditBoatDetails(); }));
   boat->Add(boatActions, 0, wxEXPAND);
   auto* weather = card(_("3. Weather"));
+  weather_routing::SetPlanningHelp(route->GetStaticBox(), weather_routing::PlanningHelpTopic::Timing, _("Route definition and passage times."));
+  weather_routing::SetPlanningHelp(boat->GetStaticBox(), weather_routing::PlanningHelpTopic::Performance, _("Boat profile, polars and vessel performance."));
+  weather_routing::SetPlanningHelp(weather->GetStaticBox(), weather_routing::PlanningHelpTopic::Weather, _("Forecast and Climatology source policy."));
   auto* sourceRow = new wxBoxSizer(wxHORIZONTAL);
   auto* label = new wxStaticText(content_, wxID_ANY, _("Wind source"));
   sourceRow->Add(label, 0, wxALIGN_CENTER_VERTICAL | wxALL, 7);
@@ -176,6 +181,24 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                     [this] { OpenSettings(0); }));
   mutableControls_.push_back(Button(content_, settings, _("Routing controls"),
                                     [this] { OpenSettings(1); }));
+  Button(content_, settings, _("Analysis tools..."), [this] {
+    wxMenu menu;
+    const auto action = [&](const wxString& label, auto function) {
+      const int id = wxWindow::NewControlId();
+      menu.Append(id, label);
+      menu.Bind(wxEVT_MENU, [function](wxCommandEvent&) { function(); }, id);
+      return id;
+    };
+    action(_("Routes and analysis"), [this] {
+      if (routing_.m_PassageNotebook) routing_.m_PassageNotebook->SetSelection(1);
+    });
+    menu.AppendSeparator();
+    action(_("Run diagnostics"), [this] { wxCommandEvent e; routing_.OnShowRoutingStatus(e); });
+    action(_("Detailed report"), [this] { wxCommandEvent e; routing_.OnReport(e); });
+    action(_("Statistics"), [this] { wxCommandEvent e; routing_.OnStatistics(e); });
+    action(_("Plot"), [this] { wxCommandEvent e; routing_.OnPlot(e); });
+    PopupMenu(&menu);
+  });
   Button(content_, settings, _("Planning help"), [this] { ShowHelp(); });
   page->Add(settings, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   limits_ = Text(content_, page, "");
@@ -222,7 +245,9 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   });
   outer->Add(compute, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
   SetSizer(outer);
-  Bind(wxEVT_HELP, [this](wxHelpEvent&) { ShowHelp(); });
+  Bind(wxEVT_HELP, [this](wxHelpEvent&) {
+    weather_routing::ShowFocusedPlanningHelp(this, weather_routing::PlanningHelpTopic::Navigation);
+  });
   Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
     if (IsShownOnScreen()) RefreshPassage();
   });
@@ -968,39 +993,9 @@ void PassagePanel::ShowChecks() {
   dialog.ShowModal();
 }
 void PassagePanel::ShowHelp() {
-  wxDialog dialog(this, wxID_ANY, _("Planning a passage"));
-  auto* s = new wxBoxSizer(wxVERTICAL);
-  Text(
-      &dialog, s,
-      _("Route\nChoose your own positions or an existing OpenCPN route. "
-        "Departure and target arrival times are UTC. OpenCPN routes retain "
-        "their waypoint identities; "
-        "their legs run in sequence.\n\nBoat and polars\nThe example 40 ft "
-        "monohull is illustrative. "
-        "Choose your vessel's data, or duplicate a library polar and edit your "
-        "own copy. "
-        "Unknown source information is shown honestly and does not prevent "
-        "using a polar.\n\n"
-        "Weather\nForecast only uses the selected GRIB. Climatology uses "
-        "typical seasonal conditions. "
-        "Forecast with Climatology fallback allows typical conditions where "
-        "wind forecasts are missing. "
-        "A loaded GRIB is retained when you change source policy. Missing "
-        "waves or currents remain "
-        "unknown; Review checks explains their effect.\n\nCalculate\nReadiness "
-        "means the inputs "
-        "permit a calculation. Review operating limits for your vessel and "
-        "passage. "
-        "The result shows actual arrival and source use, with further checks "
-        "in the report.\n\n"
-        "New passage keeps the boat and preferences. Passage actions contains "
-        "a separate, optional "
-        "example and a scoped restore action. All settings remain available."));
-  s->Add(dialog.CreateButtonSizer(wxOK), 0, wxEXPAND | wxALL, 12);
-  dialog.SetSizerAndFit(s);
-  dialog.CentreOnParent();
-  dialog.ShowModal();
+  weather_routing::ShowPlanningHelp(this, weather_routing::PlanningHelpTopic::Navigation);
 }
+
 void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
   if (busy || !current->Finished()) {
     resultsBox_->Show(false);

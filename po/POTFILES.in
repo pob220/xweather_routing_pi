@@ -9,6 +9,8 @@ src/PassageWeather.cpp
 src/PassageWeatherRequest.cpp
 src/PassageReadiness.cpp
 src/PassageSettings.cpp
+src/PlanningHelp.cpp
+src/RunDiagnosticsJournal.cpp
 src/PassagePanel.cpp
 src/PassagePresentation.cpp
 src/EnvironmentalGribDialog.cpp
