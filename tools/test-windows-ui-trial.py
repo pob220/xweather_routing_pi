@@ -215,8 +215,13 @@ def test(archive, plugin, output):
             # in both independently saved lists (six existing engines each).
             visible_controls = [(child, name) for child, name in children(settings)
                                 if user32.IsWindowVisible(child)]
-            if not any(name == 'Auto' and class_name(child) == 'combobox'
-                       for child, name in visible_controls):
+            # GetWindowTextW cannot reliably read another process's combo
+            # selection. Query the eight-item engine selector directly.
+            engine_selectors = [child for child, _ in visible_controls
+                                if class_name(child) == 'combobox'
+                                and user32.SendMessageW(child, 0x0146, 0, 0) == 8]  # CB_GETCOUNT
+            if len(engine_selectors) != 1 or user32.SendMessageW(engine_selectors[0], 0x0147, 0, 0) != 0:  # CB_GETCURSEL
+                (output / 'window-state.json').write_text(json.dumps(window_state(), indent=2), encoding='utf-8')
                 raise RuntimeError('Fresh route did not default to Auto')
             membership = [child for child, name in visible_controls
                           if not name and class_name(child) == 'button'
