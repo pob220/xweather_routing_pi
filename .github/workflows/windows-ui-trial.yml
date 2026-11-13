@@ -87,4 +87,5 @@ jobs:
             artifacts/trial-checks/acceptance.json
             artifacts/trial-checks/launcher.log
             artifacts/trial-checks/visible-labels.json
+            artifacts/trial-checks/window-state.json
             artifacts/trial-checks/routes

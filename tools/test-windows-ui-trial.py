@@ -60,6 +60,11 @@ def test(archive, plugin, output):
     user32.EnumWindows.argtypes = [callback_type, w.LPARAM]
     user32.EnumChildWindows.argtypes = [w.HWND, callback_type, w.LPARAM]
     user32.IsWindowVisible.argtypes = [w.HWND]
+    user32.IsWindowEnabled.argtypes = [w.HWND]
+    user32.GetAncestor.argtypes = [w.HWND, w.UINT]
+    user32.GetAncestor.restype = w.HWND
+    user32.SetForegroundWindow.argtypes = [w.HWND]
+    user32.GetClassNameW.argtypes = [w.HWND, w.LPWSTR, ctypes.c_int]
     user32.GetWindowRect.argtypes = [w.HWND, ctypes.POINTER(w.RECT)]
     user32.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
                                   ctypes.c_int, ctypes.c_int, w.UINT]
@@ -97,6 +102,14 @@ def test(archive, plugin, output):
         user32.EnumChildWindows(hwnd, visit, 0)
         return result
 
+    def window_state():
+        return [{'title': title, 'visible': bool(user32.IsWindowVisible(hwnd)),
+                 'enabled': bool(user32.IsWindowEnabled(hwnd)),
+                 'children': [{'text': name, 'visible': bool(user32.IsWindowVisible(child)),
+                               'enabled': bool(user32.IsWindowEnabled(child))}
+                              for child, name in children(hwnd)]}
+                for hwnd, title in owned_windows()]
+
     def wait_for(check):
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
@@ -104,16 +117,25 @@ def test(archive, plugin, output):
             if result:
                 return result
             time.sleep(0.2)
+        (output / 'window-state.json').write_text(json.dumps(window_state(), indent=2), encoding='utf-8')
         raise RuntimeError('Timed out during compact settings acceptance')
 
     def click_label(label):
         matches = [(child, name) for hwnd, _ in owned_windows()
                    if user32.IsWindowVisible(hwnd)
                    for child, name in children(hwnd)
-                   if name == label and user32.IsWindowVisible(child)]
+                   if name == label and user32.IsWindowVisible(child) and user32.IsWindowEnabled(child)]
         if not matches:
             raise RuntimeError('Missing visible control: ' + label)
-        user32.PostMessageW(matches[-1][0], 0x00F5, 0, 0)  # BM_CLICK
+        button = matches[-1][0]
+        # BM_CLICK can fail when its containing dialog is inactive (notably
+        # after a child settings window hides). Activate the intended owner
+        # before sending the semantic click, just as a pointer click would.
+        root_window = user32.GetAncestor(button, 2)  # GA_ROOT
+        user32.SetForegroundWindow(root_window)
+        time.sleep(0.1)
+        print('Click:', label, 'owner:', text(root_window), flush=True)
+        user32.PostMessageW(button, 0x00F5, 0, 0)  # BM_CLICK
         time.sleep(0.4)
 
     def settings_window():
