@@ -1,11 +1,43 @@
 # 2.2.1 readiness and first-use patch
 
-The local Release suite passes all 683 enabled checks; the existing timing
-comparison remains disabled. Four additional readiness tests cover explicit
-Draw blockers/actions, blocker counts, warning-only fallback and bundled
-Climatology without optional providers. All 164 frozen engine inputs match.
-Native Windows and GUI acceptance records for this patch will be added after
-qualification; the 2.2.0 evidence below describes the previous trial only.
+Product source: `2b9f7f0a9175539e0ea67c81f9600268612d7fbc`. The Linux Release suite passes all
+683 enabled checks; the existing timing comparison remains disabled. All 164
+frozen production engine/model inputs match the 2.1.3 baseline.
+
+Both native Windows builds pass 674 enabled checks each, with matching stock
+OpenCPN exports, packaged scientific-helper checks, real weather-route cases,
+clean shutdown and preservation of personal data on reinstall:
+[wxWidgets 3.3.4 and 3.2.9 qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43421264149).
+
+The [delivered portable Windows trial](https://github.com/pob220/xweather_routing_pi/actions/runs/43424469493) passes its
+launcher, relocation into a path with spaces, Unicode, compact settings/help,
+first-use example and Draw recovery checks. This run uses UI automation commit
+`6284253cb133c1bc34370158543c3237262ebeb0`; the workflow verifies that the qualified
+product inputs are unchanged. The earlier automatic UI test expected a multi-leg
+completion label for a single route; the corrected test recognizes the existing
+single-route completion label. No routing implementation changed.
+
+Private Linux GUI checks also establish:
+
+* A fresh profile has Draw off, land avoidance on and all six engines checked
+  in both Auto/All lists. An example passage completes with xWeatherRouting as
+  the only loaded plugin, using bundled boat and Climatology data.
+* Warnings do not disable calculation. Blockers name the problem and show a
+  direct fix; detailed checks list blockers before warnings.
+* A saved two-leg passage reports missing Draw even when only its other leg
+  requests it. The recovery changes Draw from `[off, on]` to `[off, off]`, while
+  an unrelated passage remains on. Land avoidance, all other passage settings
+  and the saved future Draw preference are preserved. The fix survives restart.
+* The actual installed 2.2.1 desktop target opens with the copied test routes,
+  boat and saved engine choices. The working OpenCPN files remain unchanged.
+* Duplicate consecutive waypoints are rejected before search, while a legitimate
+  two-leg return passage completes. Nearby distinct waypoint handling is unchanged.
+
+The ZIP is published separately from 2.2.0 as a prerelease; stable 1.x remains
+the catalogue release. Its SHA-256 is
+`d5158a0e1399d6275b04b7489cc4df7354ccf3d951a46f7450ce02e0cf346492`. See [Windows download instructions](TRY-WINDOWS.md).
+
+The following evidence describes the preceding 2.2.0 trial.
 
 # 2.2 validation
 
