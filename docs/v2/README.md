@@ -88,7 +88,7 @@ It neither changes a working launcher nor installs into system/user plugin paths
 For Windows x64, see [source build and isolated test instructions](WINDOWS.md).
 The helper builds separately from the matched OpenCPN/wx SDK and carries its
 own scientific dependencies. Native CI checks both pinned wx 3.3.4 and 3.2.9
-hosts; qualification evidence is recorded in [VALIDATION.md](VALIDATION.md).
+hosts; qualification evidence is recorded in [VALIDATION-2.2.md](VALIDATION-2.2.md).
 macOS, Android's in-process generator adapter and the touch workspace require
 their own follow-up qualification. The inherited 1.x matrix is not evidence
 that these new paths have passed. Development packages do not replace the

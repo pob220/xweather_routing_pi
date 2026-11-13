@@ -8,7 +8,9 @@ The standalone lab has no plugin target, registration or Auto/All entry.
 Linux Release validation on 2026-11-13:
 
 * Plugin builds and installs into an isolated prefix.
-* The full enabled CTest suite passes; the existing timing benchmark remains
+* All 673 enabled Linux CTest cases passed. After the Windows DLL collection
+  compatibility fix, all seven focused presentation/history/freeze checks and
+  the private GUI acceptance passed again. The existing timing benchmark remains
   disabled. Geometry, record retention, fixed completion clocks, copied input
   snapshots, stopped outcomes and bounded long-run history have focused tests.
 * A private X display, private D-Bus and disposable OpenCPN profile exercise the
@@ -24,10 +26,22 @@ Linux Release validation on 2026-11-13:
   Twelve expected non-completions remain non-completions. See the lab's README
   and raw JSON for timing and passage-quality tradeoffs.
 
-Native Windows qualification uses both wxWidgets 3.3.4 and 3.2.9 hosts and tests
-both the build and packaged runtime. The portable UI trial additionally tests
-settings geometry and click/tap Help through native window controls. These runs
-must pass before Windows release qualification is claimed. The unchanged
+[Native Windows qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43404923105)
+passed on both wxWidgets 3.3.4 and 3.2.9 hosts: 664 enabled CTest cases each,
+matched-host ABI/import, orderly shutdown, reinstall preservation, packaged
+helper and forecast/Climatology/fallback calculations. Product source is
+`821d62e47a9b86d6cffb9a7957a113f49ebf7b74`.
+
+[Portable UI qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43407754718)
+passed settings geometry, click/tap Help, Unicode labels, relocated paths,
+forecast/Climatology/fallback routes and preservation of a normal profile.
+Its automation source is `013befc72fd1f6a88829f5704f4973eb8e345194`; only the
+native focus helper and test workflow changed after product qualification.
+The delivered archive and every manifest file were checksum-verified again
+locally. The archive SHA256 is `40b810b1f36b3b80bd6d8656a7d023aa9062eb6c526df783e43df7e0af7c838f`.
+
+The private Linux headless regression also rejected both coincident-leg cases
+before routing, and completed both legs of a legitimate return passage. The unchanged
 scientific helper is reused only after source/build-input and staged-source hash
 checks; its packaged runtime is tested again with the new plugin.
 
