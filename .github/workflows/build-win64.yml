@@ -93,7 +93,11 @@ jobs:
           source = Path('third_party/environmental-grib-generator')
           staged = json.loads(Path('.windows-deps/stage/runtime/stage.json').read_text())
           actual = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
-          if actual != staged['source_sha256']:
+          # The 2.2 freeze checks out exact LF repository bytes. The previously
+          # qualified Windows helper recorded core.autocrlf's CRLF checkout.
+          # Require the original per-file hashes after only that conversion.
+          qualified_crlf = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')).hexdigest() for p in source.rglob('*') if p.is_file()}
+          if actual != staged['source_sha256'] and qualified_crlf != staged['source_sha256']:
               raise RuntimeError('Qualified helper source hashes do not match this checkout')
           print('Using unchanged helper qualified by native run 42409887075; packaged runtime checks run again with each new plugin')
       - uses: actions/upload-artifact@v4
