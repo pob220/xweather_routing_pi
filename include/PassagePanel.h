@@ -31,6 +31,7 @@ private:
   void ChooseRoute();
   void ShowWaypoints();
   void ShowChecks();
+  void ResolveReadinessIssue(const std::string& code);
   void ShowHelp();
   void OpenSettings(size_t section);
   void EditBoatDetails();
@@ -49,8 +50,9 @@ private:
   wxScrolledWindow* content_;
   wxSizer* resultsBox_;
   wxStaticText* results_;
-  wxStaticText *route_, *boat_, *weather_, *limits_, *status_;
+  wxStaticText *route_, *boat_, *weather_, *limits_, *status_, *warnings_;
   wxButton *calculate_, *checksButton_, *failureButton_, *waypointFixButton_;
+  wxButton *fixButton_, *drawSetupButton_, *exampleButton_;
   std::vector<wxWindow*> mutableControls_;
   weather_routing::PassageReadiness readiness_;
   RouteMapOverlay* resultRoute_{nullptr};

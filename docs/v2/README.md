@@ -1,4 +1,4 @@
-# xWeatherRouting 2.2.0
+# xWeatherRouting 2.2.1
 
 Version 2.2 is developed on `feature/xweather-2.2.0`, following 2.1.3. Version 1
 remains the stable catalogue and maintenance line. Version 2 uses separate

@@ -69,9 +69,17 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
           "Land margin is in nautical miles. Coastal departure/arrival access "
           "is local: at most twice the margin from an endpoint, bounded "
           "between 0.5 and 2 NM. Land and minimum-depth checks still apply.\n\n"
-          "OpenCPN Draw exclusion areas are independent of land/depth checks "
-          "and require a compatible enabled Draw provider. Active setup "
-          "problems remain in Passage checks.");
+          "OpenCPN Draw exclusion areas are optional and off by default. "
+          "Ordinary weather routing and shoreline checks work without Draw "
+          "or any other plugin. To use areas you created in Draw, enable a "
+          "compatible OpenCPN Draw plugin in OpenCPN Options > Plugins, then "
+          "enable Use OpenCPN Draw exclusion areas in Passage settings. "
+          "Draw availability is shown beside that setting.\n\n"
+          "If a saved passage requests Draw when it is unavailable, choose "
+          "Turn off Draw exclusions for this passage on the planning screen "
+          "or in Passage checks. This affects all linked legs of that "
+          "passage and keeps land avoidance, other passages and saved "
+          "defaults unchanged.");
     case PlanningHelpTopic::Shoreline:
       return _(
           "Crude, Low and Intermediate GSHHG datasets are bundled. High and "

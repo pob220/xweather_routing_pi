@@ -118,8 +118,8 @@ def test(archive, plugin, output):
         user32.GetClassNameW(hwnd, buffer, len(buffer))
         return buffer.value.lower()
 
-    def wait_for(check):
-        deadline = time.monotonic() + 20
+    def wait_for(check, seconds=20):
+        deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             result = check()
             if result:
@@ -201,6 +201,12 @@ def test(archive, plugin, output):
             settings_labels = [name for _, name in children(settings)]
             if 'Reset wind/wave limits...' not in settings_labels:
                 raise RuntimeError('Missing scoped wind/wave reset')
+            draw = [(child, name) for child, name in children(settings)
+                    if name.startswith('Use OpenCPN Draw exclusion areas (optional;')]
+            if len(draw) != 1 or user32.SendMessageW(draw[0][0], 0x00F0, 0, 0) != 0:
+                raise RuntimeError('Fresh passage must leave optional Draw exclusions unchecked')
+            if 'Draw unavailable' not in draw[0][1]:
+                raise RuntimeError('Draw availability must be explicit')
             click_label('OK')
             wait_for(lambda: not settings_window())
             click_label('Passage settings')
@@ -239,6 +245,39 @@ def test(archive, plugin, output):
             wait_for(lambda: not user32.IsWindowVisible(help_window))
             click_label('OK')
             wait_for(lambda: not settings_window())
+            # Exercise the actual first-use path, without GRIB/Climatology/Draw
+            # plugins. A warning about unknown waves must not disable routing.
+            click_label('Try example passage')
+            wait_for(lambda: any(title == 'Planning tools' and user32.IsWindowVisible(hwnd)
+                                 for hwnd, title in owned_windows()))
+            click_label('Close')
+            def planner_controls():
+                return [(child, name) for hwnd, title in owned_windows()
+                        if title.startswith('WeatherRouting -') and user32.IsWindowVisible(hwnd)
+                        for child, name in children(hwnd) if user32.IsWindowVisible(child)]
+            def ready():
+                return any(name == 'Calculate route' and user32.IsWindowEnabled(child)
+                           for child, name in planner_controls())
+            wait_for(ready)
+            click_label('Calculate route')
+            wait_for(lambda: any('Passage complete' in name for _, name in planner_controls()), 120)
+            click_label('Passage settings')
+            settings = wait_for(settings_window)
+            draw = [(child, name) for child, name in children(settings)
+                    if name.startswith('Use OpenCPN Draw exclusion areas (optional;')]
+            if len(draw) != 1:
+                raise RuntimeError('Missing optional Draw checkbox')
+            click_label(draw[0][1])
+            click_label('OK')
+            wait_for(lambda: not settings_window())
+            wait_for(lambda: any(name.startswith('Cannot calculate: Draw exclusion checking is enabled')
+                                 for _, name in planner_controls()))
+            if ready():
+                raise RuntimeError('Explicit Draw requirement must block when its provider is missing')
+            click_label('Turn off Draw exclusions for this passage')
+            wait_for(ready)
+            if any('Cannot calculate:' in name for _, name in planner_controls()):
+                raise RuntimeError('Direct Draw recovery did not clear the blocker')
             mains = [(hwnd, title) for hwnd, title in owned_windows() if title.startswith('OpenCPN')]
             if not mains:
                 raise RuntimeError('Missing owned portable OpenCPN main window')
@@ -270,6 +309,9 @@ def test(archive, plugin, output):
         'unicode_labels_verified': True,
         'compact_settings_geometry_and_click_help': True,
         'fresh_auto_all_engines_checked': True,
+        'draw_off_by_default_and_availability_explicit': True,
+        'first_use_example_passage_complete_without_other_plugins': True,
+        'unavailable_draw_blocks_and_direct_recovery_enables_calculation': True,
         'forecast_climatology_and_fallback_routes': 'complete',
         'visible_labels': sorted(labels), 'zip_sha256': sha(archive),
     }, indent=2) + '\n', encoding='utf-8')

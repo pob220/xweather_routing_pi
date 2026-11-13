@@ -1945,6 +1945,32 @@ void WeatherRouting::ApplyPassageConfiguration(const RouteMapConfiguration& conf
   ScheduleAutoSave();
 }
 
+void WeatherRouting::DisablePassageDrawExclusions() {
+  auto* selected = FirstCurrentRouteMap();
+  if (!selected || !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() ||
+      m_RoutePreparationDepth || m_DeferredRoutingStartPending)
+    return;
+  const auto passage = selected->GetConfiguration();
+  for (auto* item : m_WeatherRoutes) {
+    auto* route = item->routemapoverlay;
+    auto config = route->GetConfiguration();
+    const bool samePassage = passage.IsMultiLegGenerated &&
+        !passage.MultiLegGroupId.empty() && config.IsMultiLegGenerated &&
+        config.MultiLegGroupId == passage.MultiLegGroupId;
+    if ((route != selected && !samePassage) || !config.DetectBoundary) continue;
+    config.DetectBoundary = false;
+    route->SetConfiguration(config);
+    route->Reset();
+    SetConfigurationRoute(item);
+  }
+  m_bSkipUpdateCurrentItems = true;
+  m_ConfigurationDialog.SetConfigurations({selected->GetConfiguration()});
+  m_bSkipUpdateCurrentItems = false;
+  // This explicit recovery changes only this passage. Do not replace the
+  // user's saved defaults or the settings of unrelated passages.
+  ScheduleAutoSave();
+}
+
 void WeatherRouting::RequestGribTimelineFrame(
     RouteMapOverlay* routeMapOverlay, const wxDateTime& time) {
   if (!routeMapOverlay || !time.IsValid()) return;

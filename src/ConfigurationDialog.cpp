@@ -342,7 +342,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
         "uncheck this and set Minimum Depth to 0 m."));
 
   // Shared UI descriptions also support passage-readiness messages.
-  m_cbDetectBoundary->SetLabel(_("Use OpenCPN Draw exclusion areas"));
+  m_cbDetectBoundary->SetLabel(_("Use OpenCPN Draw exclusion areas (optional)"));
   m_cbDetectBoundary->SetToolTip(
       _("Avoid custom exclusion areas supplied by OpenCPN Draw. Requires a compatible enabled OpenCPN Draw provider. This does not control land avoidance or chart/depth checks."));
   m_sMaxTrueWindKnots->SetToolTip(weather_routing::PassageSettingHelp(
@@ -1314,6 +1314,9 @@ void ConfigurationDialog::SetConfigurations(
 
   SET_CHECKBOX(DetectLand);
   SET_CHECKBOX(DetectBoundary);
+  m_cbDetectBoundary->SetLabel(RouteMap::ODFindClosestBoundaryLineCrossing
+      ? _("Use OpenCPN Draw exclusion areas (optional; Draw available)")
+      : _("Use OpenCPN Draw exclusion areas (optional; Draw unavailable)"));
   SET_CHECKBOX(Currents);
   SET_CHECKBOX(OptimizeTacking);
   SET_CHECKBOX(ExploreComfortAlternatives);
@@ -2418,7 +2421,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   SetPlanningHelp(m_cbDetectLand, PlanningHelpTopic::Safety, _("Avoid land using the selected shoreline or required chart checks."));
   SetPlanningHelp(m_cbUseExperimentalChartSafety, PlanningHelpTopic::Safety, _("Inspect loaded charts for land and depth; requires a compatible host."));
   SetPlanningHelp(m_cbEnforceExperimentalChartSafety, PlanningHelpTopic::Safety, _("Require loaded-chart land and depth validation."));
-  SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Avoid exclusion areas supplied by a compatible OpenCPN Draw provider."));
+  SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Optional custom exclusions from OpenCPN Draw. Leave unchecked for ordinary routing; land avoidance is separate."));
   SetPlanningHelp(m_sDepartureTimeOptimizationConcurrentRoutes, PlanningHelpTopic::Resources, _("0 = Auto. Available RAM also limits concurrent departures."));
   SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this engine; High and Full need installed data."));
 #ifndef __OCPN__ANDROID__

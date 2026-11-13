@@ -1,11 +1,11 @@
-# Try xWeatherRouting 2.2.0 on Windows
+# Try xWeatherRouting 2.2.1 on Windows
 
 Please try the new passage-planning screen and tell Paul what feels clear,
 confusing or missing. **You do not need to compile anything for this first look.**
 
 ## Download and open
 
-1. [Download the Windows 64-bit trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.2.0/xWeatherRouting-2.2.0-Windows-UI-Trial.zip).
+1. [Download the Windows 64-bit trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.2.1/xWeatherRouting-2.2.1-Windows-UI-Trial.zip).
 2. Right-click the ZIP and choose **Extract All** into a new folder on your
    Desktop, then open that extracted folder.
 3. Double-click **Start-Weather-Routing.cmd**. Allow a few seconds for the
@@ -18,7 +18,7 @@ each time. To remove the trial, close its windows and delete that extracted fold
 
 ## First calculation — no weather download needed
 
-1. On **Plan passage**, choose **Passage actions → Try an example passage**.
+1. On **Plan passage**, click **Try example passage** (also available under **Passage actions**).
 2. Close the planning-help note and click **Calculate route**.
 3. Look at the result, then try **Edit route**, **Boat and polar library** and
    **Passage settings**. Change something and calculate again.
@@ -31,7 +31,15 @@ If you want to try one of your own OpenCPN routes, add test charts and a copy
 of the route to this test copy first. Then try **Use OpenCPN route**, or its
 right-click routing action. The trial starts without your personal charts/routes.
 
-## What changed in 2.2?
+## What changed in 2.2.1?
+
+- Calculation blockers name the problem and offer a direct fix beside it.
+- Missing Draw has a passage-only **Turn off Draw exclusions** action; land
+  avoidance and saved defaults stay unchanged. Draw is optional and off on a
+  fresh installation.
+- Warnings are separate from blockers, and the first-use example is easier to find.
+
+## Other improvements in 2.2
 
 - New passages default to **Auto**, with all six engines checked for **Auto**
   and **All**. Saved mode and checkbox choices are remembered for the next
@@ -53,7 +61,7 @@ Screenshots and the steps that confused you are useful. Please mention your
 Windows display scaling if anything is clipped or too small. The aim of this
 first look is feedback on using the interface; a build-system review is optional.
 
-The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.2.0.
+The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.2.1.
 It is separate from the stable 1.x catalogue version. Custom chart-aware hosts
 can be tested separately. For source builds, see [Windows developer instructions](WINDOWS.md).
 

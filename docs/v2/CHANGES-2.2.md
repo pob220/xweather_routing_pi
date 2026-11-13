@@ -1,3 +1,22 @@
+# xWeatherRouting 2.2.1
+
+* Explain disabled calculation with **Cannot calculate**, the exact blocking
+  setting, a blocker count and an action beside it. Keep warnings separate.
+* Offer **Turn off Draw exclusions for this passage** when a saved passage
+  requires an unavailable Draw provider. Apply to all linked legs, preserving
+  land avoidance, other passages and saved preferences. Passage checks offer
+  the same action, with blockers listed before warnings.
+* Mark Draw exclusions optional and show provider availability in Passage
+  settings. Fresh defaults remain Draw off, land avoidance on, Auto with every
+  engine checked; explicit saved choices remain intact.
+* Expose **Try example passage** when the route is unset. The example uses
+  bundled boat/Climatology data and clears inherited Draw/depth requirements.
+* Clarify that unavailable Climatology fallback is a warning when forecast
+  wind exists at departure; later coverage is still checked during routing.
+
+Production engines and resource policies remain unchanged. Native exclusion
+area creation/editing is outside this patch; Draw integration remains optional.
+
 # xWeatherRouting 2.2.0
 
 This release focuses on the planning interface and diagnostic records. All

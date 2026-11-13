@@ -1,3 +1,12 @@
+# 2.2.1 readiness and first-use patch
+
+The local Release suite passes all 683 enabled checks; the existing timing
+comparison remains disabled. Four additional readiness tests cover explicit
+Draw blockers/actions, blocker counts, warning-only fallback and bundled
+Climatology without optional providers. All 164 frozen engine inputs match.
+Native Windows and GUI acceptance records for this patch will be added after
+qualification; the 2.2.0 evidence below describes the previous trial only.
+
 # 2.2 validation
 
 The production baseline is 2.1.3 commit

@@ -44,6 +44,9 @@ struct PassageInputs {
 struct PassageReadiness {
   std::array<RouteDiagnosticReport, 4> sections;
   bool CanCalculate() const;
+  const RouteDiagnostic* FirstBlocker() const;
+  unsigned Blockers() const;
+  wxString Summary() const;
   unsigned Warnings() const;
   RouteDiagnosticReport Report() const;
 };

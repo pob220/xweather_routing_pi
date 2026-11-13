@@ -159,6 +159,65 @@ TEST(PassageReadiness, MissingDrawProviderBlocksOnlyExplicitBoundaryAvoidance) {
   EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
 }
 
+TEST(PassageReadiness, BlockerSummaryIdentifiesTheEnabledSettingAndDirectRemedy) {
+  auto input = Ready();
+  input.avoidBoundaries = true;
+  input.exampleBoat = true;
+  input.wavesAvailable = false;
+  const auto result = wr::EvaluatePassage(input);
+  ASSERT_NE(result.FirstBlocker(), nullptr);
+  EXPECT_EQ(result.Blockers(), 1U);
+  EXPECT_EQ(result.Warnings(), 2U);
+  EXPECT_TRUE(result.Summary().StartsWith("Cannot calculate: "));
+  EXPECT_TRUE(result.Summary().Contains("Draw exclusion checking is enabled"));
+  EXPECT_FALSE(result.Summary().Contains("warning"));
+  EXPECT_EQ(result.FirstBlocker()->action,
+            "Turn off Draw exclusions for this passage");
+  EXPECT_TRUE(result.FirstBlocker()->detail.Contains("keeps land avoidance unchanged"));
+}
+
+TEST(PassageReadiness, ReadinessWarningsDoNotBecomeCalculationBlockers) {
+  auto input = Ready();
+  input.policy = wr::PassageWindPolicy::ForecastWithClimatology;
+  input.climatologyWind = false;
+  const auto result = wr::EvaluatePassage(input);
+  EXPECT_EQ(result.FirstBlocker(), nullptr);
+  EXPECT_EQ(result.Blockers(), 0U);
+  EXPECT_EQ(result.Warnings(), 1U);
+  EXPECT_EQ(result.Summary(), "Ready to calculate");
+  ASSERT_EQ(result.sections[2].items.size(), 1U);
+  EXPECT_TRUE(result.sections[2].items[0].title.Contains(
+      "Forecast wind is available at the departure"));
+  EXPECT_TRUE(result.sections[2].items[0].detail.Contains(
+      "Coverage along the passage is checked during routing"));
+}
+
+TEST(PassageReadiness, BlockerCountIncludesProblemsBeyondTheFirstVisibleFix) {
+  auto input = Ready();
+  input.positionsValid = false;
+  input.boatValid = false;
+  input.avoidBoundaries = true;
+  const auto result = wr::EvaluatePassage(input);
+  ASSERT_NE(result.FirstBlocker(), nullptr);
+  EXPECT_EQ(result.Blockers(), 3U);
+  EXPECT_EQ(result.FirstBlocker()->code, "passage.route.positions");
+  EXPECT_FALSE(result.CanCalculate());
+}
+
+TEST(PassageReadiness, BundledClimatologyPassageDoesNotRequireOtherPlugins) {
+  auto input = Ready();
+  input.policy = wr::PassageWindPolicy::Climatology;
+  input.forecastLoaded = input.departureWind = input.destinationWind = false;
+  input.climatologyWind = true;
+  input.wavesAvailable = false;
+  input.boundaryProviderAvailable = input.chartDepthAvailable = false;
+  const auto result = wr::EvaluatePassage(input);
+  EXPECT_TRUE(result.CanCalculate());
+  EXPECT_EQ(result.Blockers(), 0U);
+  EXPECT_TRUE(input.avoidLand);
+  EXPECT_FALSE(input.avoidBoundaries);
+}
+
 TEST(PassageReadiness, IntermediateOverlapNamesTheLegAndOffersWaypointEditing) {
   auto input = Ready();
   input.routeWaypoints = {{"a", "001", 50, 0, 1}, {"b", "002", 51, 1, 2},

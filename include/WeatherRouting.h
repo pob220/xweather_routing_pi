@@ -287,6 +287,7 @@ public:
   weather_routing::PassageWeather& PassageForecast();
   bool OpenPassageForecast(const wxString& path, wxString& error);
   void ApplyPassageConfiguration(const RouteMapConfiguration& configuration);
+  void DisablePassageDrawExclusions();
   void RememberWeatherSourceChoice(const RouteMapConfiguration& configuration);
   void ApplyWeatherSourceChoice(RouteMapConfiguration& configuration) const;
   void ApplyNewPassageEngineChoices(RouteMapConfiguration& configuration) const;

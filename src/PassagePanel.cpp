@@ -68,6 +68,10 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   auto* add = new wxButton(content_, wxID_ANY, _("New passage"));
   plans->Add(add, 0, wxALL, 5);
   add->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { NewPassage(); });
+  exampleButton_ = new wxButton(content_, wxID_ANY, _("Try example passage"));
+  plans->Add(exampleButton_, 0, wxALL, 5);
+  exampleButton_->Bind(wxEVT_BUTTON,
+                       [this](wxCommandEvent&) { NewPassage(true); });
   auto* more = new wxButton(content_, wxID_ANY, _("Passage actions"));
   plans->Add(more, 0, wxALL, 5);
   more->Bind(wxEVT_BUTTON, [this, more](wxCommandEvent&) {
@@ -82,7 +86,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
         wxEVT_MENU, [this](wxCommandEvent&) { RestoreDefaults(); }, reset);
     more->PopupMenu(&menu);
   });
-  mutableControls_ = {add, more, passages_};
+  mutableControls_ = {add, more, passages_, exampleButton_};
   passages_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) {
     SelectPassage(passages_->GetSelection());
   });
@@ -212,6 +216,25 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   checksButton_->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ShowChecks(); });
   statusRow->Add(checksButton_, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
   outer->Add(statusRow, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
+  warnings_ = Text(this, outer, "");
+  warnings_->SetName(_("Readiness warnings"));
+  auto* recovery = new wxBoxSizer(wxHORIZONTAL);
+  fixButton_ = Button(this, recovery, "", [this] {
+    RefreshPassage();
+    if (const auto* blocker = readiness_.FirstBlocker())
+      ResolveReadinessIssue(blocker->code);
+  });
+  fixButton_->SetName(_("Fix calculation blocker"));
+  drawSetupButton_ = Button(this, recovery, _("Draw setup"), [this] {
+    weather_routing::ShowPlanningHelp(
+        this, weather_routing::PlanningHelpTopic::Safety);
+  });
+  recovery->GetItem(drawSetupButton_)->SetProportion(0);
+  fixButton_->Show(false);
+  drawSetupButton_->Show(false);
+  mutableControls_.push_back(fixButton_);
+  mutableControls_.push_back(drawSetupButton_);
+  outer->Add(recovery, 0, wxEXPAND | wxLEFT | wxRIGHT, 10);
   auto* compute = new wxBoxSizer(wxHORIZONTAL);
   calculate_ = Button(this, compute, _("Calculate route"), [this] {
     auto* r = routing_.FirstCurrentRouteMap();
@@ -524,6 +547,11 @@ void PassagePanel::RefreshPassage() {
   input.waveLimit = c.MaxSwellMeters;
   input.avoidLand = c.DetectLand;
   input.avoidBoundaries = c.DetectBoundary;
+  // A passage's other saved legs can have different settings. A missing Draw
+  // provider must be visible even when the selected leg has exclusions off.
+  if (c.IsMultiLegGenerated)
+    for (auto* leg : routing_.GetMultiLegGroupRoutes(c.MultiLegGroupId))
+      input.avoidBoundaries |= leg->GetConfiguration().DetectBoundary;
   input.boundaryProviderAvailable =
       RouteMap::ODFindClosestBoundaryLineCrossing != nullptr;
   input.useMotor = c.UseMotor;
@@ -532,6 +560,7 @@ void PassagePanel::RefreshPassage() {
   input.minimumDepth = c.MinimumDepthMeters;
   input.chartDepthAvailable = routing_.HasEnhancedChartSafety();
   readiness_ = weather_routing::EvaluatePassage(input);
+  exampleButton_->Show(!input.positionsValid);
   const auto sectionStatus = [&](int section) {
     return weather_routing::PassageSectionStatus(readiness_.sections[section]);
   };
@@ -584,23 +613,29 @@ void PassagePanel::RefreshPassage() {
       _(L" • waves ") + weather_routing::PassageSettingValue(weather_routing::PassageSetting::WaveHeight, c.MaxSwellMeters) +
       L" • " + (c.Currents ? _("currents on") : _("currents off")) +
       L" • " + (c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
-  const auto report = readiness_.Report();
-  wxString state = readiness_.CanCalculate() ? _("Ready to calculate")
-                                             : _("Setup needs attention");
-  for (const auto& issue : report.items)
-    if (issue.severity == weather_routing::DiagnosticSeverity::Error) {
-      state = issue.title;
-      break;
-    }
-  if (readiness_.Warnings())
-    state += wxString::Format(_(L" • %u to review"), readiness_.Warnings());
+  wxString state = readiness_.Summary();
   if (current->Finished() && readiness_.CanCalculate())
     state = current->GetDiagnostics().Summary();
   status_->SetLabel(
       running ? _(L"Calculating passage… Setup is preserved if you cancel.")
               : state);
+  warnings_->SetLabel(wxString::Format(
+      wxPLURAL("%u warning - see checks", "%u warnings - see checks",
+               readiness_.Warnings()), readiness_.Warnings()));
+  warnings_->Show(!running && readiness_.Warnings() != 0);
+  const auto* blocker = readiness_.FirstBlocker();
+  fixButton_->Show(!running && blocker && !blocker->action.empty());
+  if (blocker) fixButton_->SetLabel(blocker->action);
+  const bool missingDraw = blocker &&
+      blocker->code == "passage.limits.boundary_provider";
+  drawSetupButton_->Show(!running && missingDraw);
+  if (missingDraw)
+    fixButton_->SetToolTip(_("Turn off Draw exclusions on all linked legs of this passage. Land avoidance, other passages and saved defaults stay unchanged."));
+  else
+    fixButton_->UnsetToolTip();
   checksButton_->SetLabel(readiness_.CanCalculate() ? _("Review checks")
-                                                    : _("Resolve setup"));
+      : wxString::Format(wxPLURAL("%u blocker - details", "%u blockers - details",
+                                 readiness_.Blockers()), readiness_.Blockers()));
   calculate_->SetLabel(running ? _("Cancel calculation")
                                : _("Calculate route"));
   calculate_->Enable(running || readiness_.CanCalculate());
@@ -615,6 +650,9 @@ void PassagePanel::RefreshPassage() {
     t->SetMinSize(wxSize(1, -1));
   }
   status_->Wrap(std::max(180, GetClientSize().x - 230));
+  warnings_->Wrap(std::max(180, GetClientSize().x - 40));
+  status_->SetMinSize(wxSize(1, -1));
+  warnings_->SetMinSize(wxSize(1, -1));
   content_->Layout();
   content_->FitInside();
   Layout();
@@ -678,6 +716,8 @@ void PassagePanel::NewPassage(bool example) {
     c.Currents = false;
     c.UseMotor = false;
     c.DetectLand = true;
+    c.DetectBoundary = false;
+    c.MinimumDepthMeters = 0;
     c.RequireWaveCoverage = false;
     c.MaxTrueWindKnots = weather_routing::PassageDefaults::windKnots;
     c.MaxApparentWindKnots =
@@ -916,14 +956,23 @@ void PassagePanel::ShowChecks() {
   auto* scroll = new wxScrolledWindow(&dialog);
   scroll->SetScrollRate(0, 14);
   auto* body = new wxBoxSizer(wxVERTICAL);
-  const wxString sections[] = {_("Route"), _("Boat and polars"), _("Weather"),
-                               _("Passage limits")};
-  for (size_t i = 0; i < readiness_.sections.size(); ++i) {
-    const auto& section = readiness_.sections[i];
-    Text(scroll, body,
-         sections[i] + ": " + weather_routing::PassageSectionStatus(section),
-         true);
-    for (const auto& issue : section.items) {
+  Text(scroll, body, readiness_.Summary(), true)->Wrap(600);
+  // Show every blocker before warnings, regardless of its setup section.
+  for (const auto severity : {weather_routing::DiagnosticSeverity::Error,
+                              weather_routing::DiagnosticSeverity::Warning,
+                              weather_routing::DiagnosticSeverity::Notice}) {
+    bool heading = false;
+    for (const auto& issue : readiness_.Report().items) {
+      if (issue.severity != severity) continue;
+      if (!heading) {
+        Text(scroll, body,
+             severity == weather_routing::DiagnosticSeverity::Error
+                 ? _("Fix before calculating")
+                 : severity == weather_routing::DiagnosticSeverity::Warning
+                       ? _("Warnings - do not prevent calculation")
+                       : _("Information"), true);
+        heading = true;
+      }
       auto* text =
           Text(scroll, body,
                issue.title + (issue.detail.empty() ? wxString() : "\n" + issue.detail));
@@ -936,31 +985,16 @@ void PassagePanel::ShowChecks() {
         dialog.EndModal(wxID_OK);
         // Defer until the modal stack unwinds, and resolve current selection at
         // execution rather than retaining pointers to route models.
-        CallAfter([this, code] {
-          if (code == "passage.weather.waves" ||
-              code == "passage.weather.destination")
-            GenerateWeather();
-          else if (code == "passage.route.coincident_waypoints")
-            EditRouteWaypoints();
-          else if (code == "passage.route.sequence")
-            ChooseRoute();
-          else
-            switch (weather_routing::RecoveryAction(code)) {
-              case weather_routing::PassageAction::Route:
-                EditRoute();
-                break;
-              case weather_routing::PassageAction::Boat:
-                ShowLibrary();
-                break;
-              case weather_routing::PassageAction::Weather:
-                windPolicy_->SetFocus();
-                break;
-              case weather_routing::PassageAction::Limits:
-                OpenSettings(0);
-                break;
-            }
-        });
+        CallAfter([this, code] { ResolveReadinessIssue(code); });
       });
+      if (issue.code == "passage.limits.boundary_provider") {
+        auto* setup = new wxButton(scroll, wxID_ANY, _("Draw setup"));
+        body->Add(setup, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
+        setup->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
+          weather_routing::ShowPlanningHelp(
+              &dialog, weather_routing::PlanningHelpTopic::Safety);
+        });
+      }
     }
   }
   if (auto* route = routing_.FirstCurrentRouteMap();
@@ -994,6 +1028,25 @@ void PassagePanel::ShowChecks() {
   dialog.SetSizer(s);
   dialog.CentreOnParent();
   dialog.ShowModal();
+}
+void PassagePanel::ResolveReadinessIssue(const std::string& code) {
+  if (code == "passage.limits.boundary_provider") {
+    routing_.DisablePassageDrawExclusions();
+    RefreshPassage();
+  } else if (code == "passage.weather.waves" ||
+             code == "passage.weather.destination")
+    GenerateWeather();
+  else if (code == "passage.route.coincident_waypoints")
+    EditRouteWaypoints();
+  else if (code == "passage.route.sequence")
+    ChooseRoute();
+  else
+    switch (weather_routing::RecoveryAction(code)) {
+      case weather_routing::PassageAction::Route: EditRoute(); break;
+      case weather_routing::PassageAction::Boat: ShowLibrary(); break;
+      case weather_routing::PassageAction::Weather: windPolicy_->SetFocus(); break;
+      case weather_routing::PassageAction::Limits: OpenSettings(0); break;
+    }
 }
 void PassagePanel::ShowHelp() {
   weather_routing::ShowPlanningHelp(this, weather_routing::PlanningHelpTopic::Navigation);

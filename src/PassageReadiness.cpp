@@ -5,9 +5,24 @@
 
 namespace weather_routing {
 bool PassageReadiness::CanCalculate() const {
+  return FirstBlocker() == nullptr;
+}
+const RouteDiagnostic* PassageReadiness::FirstBlocker() const {
   for (const auto& section : sections)
-    if (section.HasErrors()) return false;
-  return true;
+    for (const auto& item : section.items)
+      if (item.severity == DiagnosticSeverity::Error) return &item;
+  return nullptr;
+}
+unsigned PassageReadiness::Blockers() const {
+  unsigned count = 0;
+  for (const auto& section : sections)
+    count += section.Count(DiagnosticSeverity::Error);
+  return count;
+}
+wxString PassageReadiness::Summary() const {
+  if (const auto* blocker = FirstBlocker())
+    return _("Cannot calculate: ") + blocker->title;
+  return _("Ready to calculate");
 }
 unsigned PassageReadiness::Warnings() const {
   unsigned count = 0;
@@ -111,8 +126,12 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
   if (climate && in.coverageChecked && !in.climatologyWind)
     add(PassageSection::Weather, "passage.weather.climatology",
         forecast && in.departureWind ? warning : error,
-        _("Climatology wind is unavailable at the departure"),
-        _("Choose a forecast covering the passage or review the position."),
+        forecast && in.departureWind
+            ? _("Forecast wind is available at the departure; Climatology fallback is unavailable here")
+            : _("Climatology wind is unavailable at the departure"),
+        forecast && in.departureWind
+            ? _("Calculation can start using forecast wind. Coverage along the passage is checked during routing; Climatology cannot supply missing wind here.")
+            : _("Choose a forecast covering the passage or review the position."),
         _("Review weather"));
   if (forecast && in.departureWind && !in.destinationWind)
     add(PassageSection::Weather, "passage.weather.destination", warning,
@@ -183,9 +202,9 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
         _("Passage settings"));
   if (in.avoidBoundaries && !in.boundaryProviderAvailable)
     add(PassageSection::Limits, "passage.limits.boundary_provider", error,
-        _("OpenCPN Draw exclusion areas are unavailable"),
-        _("This passage has OpenCPN Draw boundary avoidance enabled. Enable a compatible OpenCPN Draw provider, or switch off 'Use OpenCPN Draw exclusion areas' in Passage settings. Land avoidance is a separate setting."),
-        _("Passage settings"));
+        _("Draw exclusion checking is enabled, but OpenCPN Draw is unavailable"),
+        _("Turn off Draw exclusions for this passage, or enable a compatible OpenCPN Draw plugin in OpenCPN's plugin settings. Turning off Draw exclusions keeps land avoidance unchanged. Ordinary weather routing does not require Draw."),
+        _("Turn off Draw exclusions for this passage"));
   return result;
 }
 }  // namespace weather_routing

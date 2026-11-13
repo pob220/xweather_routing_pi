@@ -14,7 +14,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '2.2.0'
+VERSION = '2.2.1'
 NAME = 'xWeatherRouting-' + VERSION + '-Windows-UI-Trial'
 
 LAUNCHER = r'''@echo off
@@ -39,7 +39,7 @@ if errorlevel 1 (
 endlocal
 '''
 
-README = '''xWeatherRouting 2.2.0 - Windows UI trial
+README = '''xWeatherRouting 2.2.1 - Windows UI trial
 
 Please try the new passage-planning interface and tell Paul what feels clear,
 confusing or missing. You do not need to compile or install anything.
@@ -47,7 +47,7 @@ confusing or missing. You do not need to compile or install anything.
 1. Extract the whole ZIP to a new folder, for example on your Desktop.
 2. Double-click Start-Weather-Routing.cmd. Allow a few seconds for the
    Weather Routing window to open in the included OpenCPN test copy.
-3. In Plan passage, choose Passage actions > Try an example passage.
+3. In Plan passage, click Try example passage (also in Passage actions).
 4. Close the planning-help note, then click Calculate route.
 
 The offshore example uses the illustrative 40 ft monohull and bundled
@@ -72,7 +72,7 @@ this extracted folder. Always use Start-Weather-Routing.cmd. Close the test
 windows when finished; delete this extracted folder to remove the trial.
 It does not install into or replace your normal OpenCPN or its plugins.
 
-Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.2.0.
+Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.2.1.
 This host is for the UI trial; custom chart-aware hosts are a separate test.
 Source and build instructions:
 https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.2.0/docs/v2/WINDOWS.md
