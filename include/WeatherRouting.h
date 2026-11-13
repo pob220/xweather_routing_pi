@@ -289,6 +289,7 @@ public:
   void ApplyPassageConfiguration(const RouteMapConfiguration& configuration);
   void RememberWeatherSourceChoice(const RouteMapConfiguration& configuration);
   void ApplyWeatherSourceChoice(RouteMapConfiguration& configuration) const;
+  void ApplyNewPassageEngineChoices(RouteMapConfiguration& configuration) const;
   void RefreshPassageSelection() { OnWeatherRouteSelected(); }
 
 #ifdef __OCPN__ANDROID__
@@ -918,9 +919,9 @@ private:
       const std::vector<RouteMapOverlay*>& selectedRoutes, wxString* status);
 
   void DeleteRouteMaps(std::list<RouteMapOverlay*> routemapoverlays);
-  RouteMapConfiguration DefaultConfiguration();
+  RouteMapConfiguration DefaultConfiguration(bool newPassagePreferences = true);
   void ApplyLastUsedConfigurationDefaults(
-      RouteMapConfiguration& configuration) const;
+      RouteMapConfiguration& configuration, bool newPassagePreferences = true) const;
 
   void AddRoutingPanel();
 

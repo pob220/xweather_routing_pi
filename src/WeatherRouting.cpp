@@ -64,6 +64,7 @@
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
 #include "PlanningHelp.h"
+#include "NewPassageEnginePreferences.h"
 #include <wx/clipbrd.h>
 #include <wx/dataobj.h>
 #include <wx/ffile.h>
@@ -5068,7 +5069,8 @@ void WeatherRouting::RunHeadlessRouteTestFromEnv() {
                                        : EnvDouble("WR_HEADLESS_END_LON", NAN);
       if (!std::isnan(start_lat) && !std::isnan(start_lon) &&
           !std::isnan(end_lat) && !std::isnan(end_lon)) {
-        RouteMapConfiguration configuration = DefaultConfiguration();
+        // Scenario defaults retain their historical engine/membership policy.
+        RouteMapConfiguration configuration = DefaultConfiguration(false);
         if (!scenario_loaded && !m_WeatherRoutes.empty() &&
             m_WeatherRoutes.front() &&
             m_WeatherRoutes.front()->routemapoverlay) {
@@ -13769,6 +13771,18 @@ void WeatherRouting::ApplyWeatherSourceChoice(
     configuration.ClimatologyType = static_cast<RouteMapConfiguration::ClimatologyDataType>(type);
 }
 
+void WeatherRouting::ApplyNewPassageEngineChoices(
+    RouteMapConfiguration& configuration) const {
+  auto* config = GetOCPNConfigObject();
+  if (!config) {
+    weather_routing::ApplyNewPassageEngineChoices(configuration.EngineSettings, nullptr);
+    return;
+  }
+  wxConfigPathChanger path(config,
+      "/PlugIns/xWeatherRouting2/LastUsedConfiguration/RoutingEngine");
+  weather_routing::ApplyNewPassageEngineChoices(configuration.EngineSettings, config);
+}
+
 void WeatherRouting::SaveLastUsedConfigurationDefaults(
     const RouteMapConfiguration& configuration) {
   wxFileConfig* pConf = GetOCPNConfigObject();
@@ -13847,7 +13861,7 @@ void WeatherRouting::SaveLastUsedConfigurationDefaults(
 }
 
 void WeatherRouting::ApplyLastUsedConfigurationDefaults(
-    RouteMapConfiguration& configuration) const {
+    RouteMapConfiguration& configuration, bool newPassagePreferences) const {
   wxFileConfig* pConf = GetOCPNConfigObject();
   if (!pConf) return;
 
@@ -13965,8 +13979,13 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
   configuration.ArrivalSafetyMarginMinutes =
       static_cast<int>(std::max(0L, std::min(360L,
                                             arrival_safety_margin)));
-  const bool hasSavedDefaults = pConf->GetNumberOfEntries() > 0;
-  configuration.EngineSettings = weather_routing::ReadRoutingEngineSettings(*pConf);
+  if (newPassagePreferences)
+    configuration.EngineSettings = weather_routing::ReadNewPassageEnginePreferences(pConf);
+  else {
+    const bool hasSavedDefaults = pConf->GetNumberOfEntries() > 0;
+    configuration.EngineSettings = weather_routing::ReadRoutingEngineSettings(*pConf);
+    weather_routing::ApplyFirstUseEngineDefaults(configuration.EngineSettings, hasSavedDefaults);
+  }
   pConf->Read("ExploreComfortAlternatives", &configuration.ExploreComfortAlternatives, false);
   configuration.ComfortAdditionalPercent =
       std::clamp(static_cast<int>(pConf->ReadLong("ComfortAdditionalPercent", 200)), 0, 400);
@@ -13987,7 +14006,6 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
   configuration.QuickGribTimelineCacheMiB =
       weather_routing::NormalizeGribTimelineCacheMiB(
           static_cast<int>(quick_grib_cache), true);
-  weather_routing::ApplyFirstUseEngineDefaults(configuration.EngineSettings, hasSavedDefaults);
   long routing_effort_percent = configuration.RoutingEffortPercent;
   pConf->Read(_T("RoutingEffortPercent"), &routing_effort_percent,
               routing_effort_percent);
@@ -13996,8 +14014,10 @@ void WeatherRouting::ApplyLastUsedConfigurationDefaults(
           static_cast<int>(routing_effort_percent));
 }
 
-RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
+RouteMapConfiguration WeatherRouting::DefaultConfiguration(bool newPassagePreferences) {
   RouteMapConfiguration configuration;
+  if (newPassagePreferences)
+    configuration.EngineSettings = weather_routing::ReadNewPassageEnginePreferences(nullptr);
 
   if (RouteMap::Positions.size() >= 1) {
     RouteMapPosition& p = *RouteMap::Positions.begin();
@@ -14066,7 +14086,7 @@ RouteMapConfiguration WeatherRouting::DefaultConfiguration() {
   configuration.MotorSpeedThreshold = 2.0;
   configuration.MotorSpeed = 5.0;
 
-  ApplyLastUsedConfigurationDefaults(configuration);
+  ApplyLastUsedConfigurationDefaults(configuration, newPassagePreferences);
   ApplyWeatherSourceChoice(configuration);
 
   return configuration;

@@ -38,9 +38,9 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
       return _(
           "Auto uses the checked engines in order. Quick2 can supply a "
           "retained fallback while later engines search independently with "
-          "fresh allowances. Atlas is optional and runs after Quick2, before "
+          "fresh allowances. Atlas runs after Quick2, before "
           "Standard. All compares the checked engines. Select at least one "
-          "engine for each mode.\n\n"
+          "engine for each mode. New passages start in Auto with all engines checked in both lists, unless you have saved different choices.\n\n"
           "Time step and heading separation are nominal search settings. Quick "
           "reduces its step near departure and destination; Standard has a "
           "separate adaptive offshore step. Auto permits Professional up to "

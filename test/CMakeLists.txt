@@ -43,6 +43,7 @@ REQUIRED)
 include(${wxWidgets_USE_FILE})
 
 set(TEST_SRC
+    NewPassageEnginePreferences_tests.cpp
     PlanningPresentation_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PlanningHelp.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RunDiagnosticsJournal.cpp

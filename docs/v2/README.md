@@ -6,8 +6,9 @@ preferences and user data.
 
 See [2.2 changes](CHANGES-2.2.md) and [the issue triage](ISSUE-TRIAGE-2.2.md).
 This pass refines the interface and retains run diagnostics. The production
-engines, dispatch and routing defaults remain unchanged; performance experiments
-are separate standalone executables. The coincident-waypoint checks from
+engine implementations and solver policies remain unchanged; performance experiments
+are separate standalone executables. New passages default to Auto with every
+engine checked for Auto and All; saved mode and membership choices take precedence. The coincident-waypoint checks from
 [2.1.3](CHANGES-2.1.3.md), Unicode correction and GRIB timestamp fix remain.
 
 For Windows UI review, use the [portable trial](TRY-WINDOWS.md), which includes

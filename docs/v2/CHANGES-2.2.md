@@ -2,9 +2,12 @@
 
 This release focuses on the planning interface and diagnostic records. All
 production engine sources, dispatch policies, resource policies, vessel inputs
-and default routing configuration are unchanged from 2.1.3. Experimental search
+and solver defaults are unchanged from 2.1.3. Experimental search
 work is confined to an independently built executable under `tools/engine-lab`.
 
+* New passages use Auto with all six engines checked for both Auto and All.
+  Saved mode and checkbox choices carry forward to the next route and survive
+  restart. Existing routes keep their own settings.
 * Replace lengthy always-visible configuration notes with section Help buttons,
   short tooltips and F1 help. Help is available offline by click/tap and keyboard.
   Active readiness problems and current safety status remain visible.
@@ -22,6 +25,6 @@ work is confined to an independently built executable under `tools/engine-lab`.
   Finished elapsed time remains fixed. Copy or save records for comparisons.
   Interface-observed stage times are explicitly distinguished from solver times.
 
-No engine is added to Auto/All, no heading or time-step defaults change, and no
+No new engine is registered, no heading or time-step defaults change, and no
 solver failure is reclassified. The standalone Atlas policy experiment documents
 its route-quality tradeoff rather than changing the production search.

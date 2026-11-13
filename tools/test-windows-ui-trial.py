@@ -65,6 +65,9 @@ def test(archive, plugin, output):
     user32.GetAncestor.restype = w.HWND
     user32.SetForegroundWindow.argtypes = [w.HWND]
     user32.GetClassNameW.argtypes = [w.HWND, w.LPWSTR, ctypes.c_int]
+    user32.GetWindowLongW.argtypes = [w.HWND, ctypes.c_int]
+    user32.SendMessageW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
+    user32.SendMessageW.restype = w.LPARAM
     user32.GetWindowRect.argtypes = [w.HWND, ctypes.POINTER(w.RECT)]
     user32.SetWindowPos.argtypes = [w.HWND, w.HWND, ctypes.c_int, ctypes.c_int,
                                   ctypes.c_int, ctypes.c_int, w.UINT]
@@ -109,6 +112,11 @@ def test(archive, plugin, output):
                                'enabled': bool(user32.IsWindowEnabled(child))}
                               for child, name in children(hwnd)]}
                 for hwnd, title in owned_windows()]
+
+    def class_name(hwnd):
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, len(buffer))
+        return buffer.value.lower()
 
     def wait_for(check):
         deadline = time.monotonic() + 20
@@ -203,6 +211,20 @@ def test(archive, plugin, output):
             wait_for(lambda: not settings_window())
             click_label('Routing controls')
             settings = wait_for(settings_window)
+            # A fresh profile starts Auto, with every membership box checked
+            # in both independently saved lists (six existing engines each).
+            visible_controls = [(child, name) for child, name in children(settings)
+                                if user32.IsWindowVisible(child)]
+            if not any(name == 'Auto' and class_name(child) == 'combobox'
+                       for child, name in visible_controls):
+                raise RuntimeError('Fresh route did not default to Auto')
+            membership = [child for child, name in visible_controls
+                          if not name and class_name(child) == 'button'
+                          and (user32.GetWindowLongW(child, -16) & 15) in (2, 3, 5, 6)]
+            if len(membership) != 12 or any(user32.SendMessageW(child, 0x00F0, 0, 0) != 1
+                                           for child in membership):
+                (output / 'window-state.json').write_text(json.dumps(window_state(), indent=2), encoding='utf-8')
+                raise RuntimeError('Fresh Auto/All membership did not check all six engines')
             # Context help must also work by click/tap without hover or F1.
             click_label('Help')
             help_window = wait_for(lambda: next((hwnd for hwnd, title in owned_windows()
@@ -242,6 +264,7 @@ def test(archive, plugin, output):
         'app_local_crt': True, 'passage_planner_visible': True,
         'unicode_labels_verified': True,
         'compact_settings_geometry_and_click_help': True,
+        'fresh_auto_all_engines_checked': True,
         'forecast_climatology_and_fallback_routes': 'complete',
         'visible_labels': sorted(labels), 'zip_sha256': sha(archive),
     }, indent=2) + '\n', encoding='utf-8')

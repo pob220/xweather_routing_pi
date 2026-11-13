@@ -636,6 +636,9 @@ void PassagePanel::NewPassage(bool example) {
   // A copied route's incidental source settings are not a remembered choice.
   // Use the last explicit weather selection, or the first-use fallback policy.
   routing_.ApplyWeatherSourceChoice(c);
+  // Selecting an older route is not a new engine preference. Use the last
+  // saved selector/membership choices, or Auto with every engine on first use.
+  routing_.ApplyNewPassageEngineChoices(c);
   // Start a new passage, retaining the vessel and planning preferences, never
   // the identity or computed scheduling state of a linked leg or candidate.
   c.RouteGUID.clear();
