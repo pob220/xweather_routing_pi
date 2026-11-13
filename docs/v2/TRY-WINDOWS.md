@@ -5,9 +5,8 @@ confusing or missing. **You do not need to compile anything for this first look.
 
 ## Download and open
 
-1. [Download the qualified Windows review artifact (about 80 MiB)](https://github.com/pob220/xweather_routing_pi/actions/runs/43407754718/artifacts/14028276301).
-2. Open the artifact download and extract the inner
-   **xWeatherRouting-2.2.0-Windows-UI-Trial.zip** into a new folder on your
+1. [Download the Windows 64-bit trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.2.0/xWeatherRouting-2.2.0-Windows-UI-Trial.zip).
+2. Right-click the ZIP and choose **Extract All** into a new folder on your
    Desktop, then open that extracted folder.
 3. Double-click **Start-Weather-Routing.cmd**. Allow a few seconds for the
    Weather Routing window to open in the included OpenCPN test copy.
@@ -31,6 +30,18 @@ No separate Climatology or Polars plugin is needed for this exercise.
 If you want to try one of your own OpenCPN routes, add test charts and a copy
 of the route to this test copy first. Then try **Use OpenCPN route**, or its
 right-click routing action. The trial starts without your personal charts/routes.
+
+## What changed in 2.2?
+
+- New passages default to **Auto**, with all six engines checked for **Auto**
+  and **All**. Saved mode and checkbox choices are remembered for the next
+  route and after restarting. Existing routes retain their own settings.
+- Shorter settings pages, with tooltips, Help buttons and F1 help.
+- Scrollable settings that remember window size and position.
+- Clear, separate wind/wave and search-preset resets.
+- Direct access to Routes and analysis, reports, statistics and plots.
+- Session run records with inputs, outcomes and observed timings, ready to copy
+  or save. The production routing algorithms and budgets are unchanged.
 
 ## What feedback would help?
 

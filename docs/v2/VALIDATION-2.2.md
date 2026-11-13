@@ -8,9 +8,8 @@ The standalone lab has no plugin target, registration or Auto/All entry.
 Linux Release validation on 2026-11-13:
 
 * Plugin builds and installs into an isolated prefix.
-* All 673 enabled Linux CTest cases passed. After the Windows DLL collection
-  compatibility fix, all seven focused presentation/history/freeze checks and
-  the private GUI acceptance passed again. The existing timing benchmark remains
+* All 679 enabled Linux CTest cases passed. The new-passage preference tests and the private GUI checks verify Auto/all-six
+  defaults, independent checkbox changes, the next route and host restart. The existing timing benchmark remains
   disabled. Geometry, record retention, fixed completion clocks, copied input
   snapshots, stopped outcomes and bounded long-run history have focused tests.
 * A private X display, private D-Bus and disposable OpenCPN profile exercise the
@@ -26,19 +25,20 @@ Linux Release validation on 2026-11-13:
   Twelve expected non-completions remain non-completions. See the lab's README
   and raw JSON for timing and passage-quality tradeoffs.
 
-[Native Windows qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43404923105)
-passed on both wxWidgets 3.3.4 and 3.2.9 hosts: 664 enabled CTest cases each,
+[Native Windows qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43410521523)
+passed on both wxWidgets 3.3.4 and 3.2.9 hosts: 670 enabled CTest cases each,
 matched-host ABI/import, orderly shutdown, reinstall preservation, packaged
 helper and forecast/Climatology/fallback calculations. Product source is
-`821d62e47a9b86d6cffb9a7957a113f49ebf7b74`.
+`c2218df518f671f335d01f5f6b38ed2fd0d510ac`.
 
-[Portable UI qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43407754718)
-passed settings geometry, click/tap Help, Unicode labels, relocated paths,
+[Portable UI qualification](https://github.com/pob220/xweather_routing_pi/actions/runs/43413555188)
+passed fresh Auto/all-six checkbox defaults, settings geometry, click/tap Help,
+Unicode labels, relocated paths,
 forecast/Climatology/fallback routes and preservation of a normal profile.
-Its automation source is `013befc72fd1f6a88829f5704f4973eb8e345194`; only the
-native focus helper and test workflow changed after product qualification.
+Its automation source is `4fc6dd144722ee9cf35deae30d4aaacbe5ecdfd0`; only the
+native selector-reading assertion changed after product qualification.
 The delivered archive and every manifest file were checksum-verified again
-locally. The archive SHA256 is `40b810b1f36b3b80bd6d8656a7d023aa9062eb6c526df783e43df7e0af7c838f`.
+locally. The archive SHA256 is `99370e2c6621b1beaf17f1af311f817d7084cc08f47651b7978456574e685b0b`.
 
 The private Linux headless regression also rejected both coincident-leg cases
 before routing, and completed both legs of a legitimate return passage. The unchanged
@@ -48,5 +48,6 @@ checks; its packaged runtime is tested again with the new plugin.
 This is not an Android UI qualification or a broad DPI/display-matrix test.
 The synthetic lab results do not reproduce Rick's original passage and do not
 justify promoting the first-valid policy or adopting issue #33's algorithm.
-No production engine behavior, status classification or weather constraints
-were changed to make the tests pass.
+Production engine implementations, solver defaults, status classification and
+weather constraints remain unchanged. Only new GUI passage selection defaults
+use Auto/all-six; legacy route XML and headless scenario defaults are retained.
