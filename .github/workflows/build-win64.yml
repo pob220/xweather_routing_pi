@@ -34,6 +34,9 @@ jobs:
     env:
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.windows-deps/binary-cache,readwrite
       VCPKG_DISABLE_METRICS: '1'
+      # UI passes reuse a qualified helper only after verifying its exact inputs.
+      # Set to 1 when intentionally rebuilding and requalifying that helper.
+      WR_REBUILD_GENERATOR: '0'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,12 +46,12 @@ jobs:
         with:
           python-version: '3.12'
       - uses: ilammy/msvc-dev-cmd@v1
-        if: github.ref != 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR == '1'
         with:
           arch: x64
           vsversion: '2022'
       - uses: actions/cache/restore@v4
-        if: github.ref != 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR == '1'
         id: dependencies
         with:
           path: |
@@ -56,36 +59,36 @@ jobs:
             .windows-deps/vcpkg/downloads
           key: wr-v2-msvc2022-release-${{ hashFiles('ci/windows-generator/vcpkg.json', 'ci/vcpkg-triplets/**', 'ci/vcpkg-overlay-ports/**') }}
       - name: Prepare scientific dependencies
-        if: github.ref != 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR == '1'
         run: python ci/build-windows-generator.py --dependencies-only
       - uses: actions/cache/save@v4
-        if: always() && github.ref != 'refs/heads/feature/xweather-2.2.0' && steps.dependencies.outputs.cache-hit != 'true'
+        if: always() && env.WR_REBUILD_GENERATOR == '1' && steps.dependencies.outputs.cache-hit != 'true'
         with:
           path: |
             .windows-deps/binary-cache
             .windows-deps/vcpkg/downloads
           key: ${{ steps.dependencies.outputs.cache-primary-key }}
       - name: Build, test and stage independent GRIB helper
-        if: github.ref != 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR == '1'
         run: python ci/build-windows-generator.py
       # This UI-only pass does not rebuild the unchanged scientific helper.
       # Fail rather than reuse it if its source or build inputs have changed.
       - name: Verify unchanged helper inputs
-        if: github.ref == 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR != '1'
         shell: pwsh
         run: |
-          git diff --exit-code 743c443a5029edbb4c40272ed0861b2f58e4a789 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
+          git diff --exit-code 1cb4ab91ba788375bacf8b93d7ede04ea3327fc6 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
           if ($LASTEXITCODE -ne 0) { throw 'Helper inputs changed; rebuild and qualify the scientific helper before reuse' }
       - name: Retrieve qualified unchanged helper
-        if: github.ref == 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR != '1'
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 42409887075
+          run-id: 43622382776
           name: windows-generator-stage
           path: .windows-deps/stage
       - name: Verify staged helper source provenance
-        if: github.ref == 'refs/heads/feature/xweather-2.2.0'
+        if: env.WR_REBUILD_GENERATOR != '1'
         shell: python
         run: |
           import hashlib, json
@@ -99,7 +102,7 @@ jobs:
           qualified_crlf = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')).hexdigest() for p in source.rglob('*') if p.is_file()}
           if actual != staged['source_sha256'] and qualified_crlf != staged['source_sha256']:
               raise RuntimeError('Qualified helper source hashes do not match this checkout')
-          print('Using unchanged helper qualified by native run 42409887075; packaged runtime checks run again with each new plugin')
+          print('Using unchanged helper qualified by native run 43622382776; packaged runtime checks run again with each new plugin')
       - uses: actions/upload-artifact@v4
         with:
           name: windows-generator-stage
