@@ -302,7 +302,7 @@ def test(archive, plugin, output):
     # Exercise the packaged GUI's real adaptive checkbox, mouse handlers,
     # tab refreshes and queued edits on a native Windows host. Product binaries
     # are exactly those from the qualified source; this only adds acceptance.
-    adaptive_prefix = (output / 'adaptive-controls').resolve()
+    adaptive_prefix = (output / 'routes/adaptive-controls').resolve()
     route_environment = dict(os.environ,
         WR_HEADLESS_ADAPTIVE_CONFIGURATION_CONTRACT='1',
         WR_HEADLESS_ADAPTIVE_XML_PREFIX=str(adaptive_prefix))
@@ -314,11 +314,15 @@ def test(archive, plugin, output):
     if marker not in (output / 'routes/opencpn.log').read_text(encoding='utf-8', errors='replace'):
         raise RuntimeError('Packaged adaptive GUI control contract did not pass')
     import xml.etree.ElementTree as ET
+    contract_scenario = json.loads((output / 'routes/scenario.json').read_text())
     for mode, flag in [('automatic', '1'), ('manual', '0')]:
         snapshot = ET.parse(str(adaptive_prefix) + '-' + mode + '.xml')
-        configurations = snapshot.findall('Configuration')
+        # SaveXML includes the blank new-passage template as well as routes.
+        configurations = [c for c in snapshot.findall('Configuration')
+                          if c.get('Start') == contract_scenario['start']['name']
+                          and c.get('End') == contract_scenario['end']['name']]
         if len(configurations) != 1:
-            raise RuntimeError('Expected one saved GUI contract route')
+            raise RuntimeError('Expected one matching saved GUI contract route')
         route = configurations[0]
         if not (route.get('AutomaticAdaptiveSettings') == flag and
                 float(route.get('dt')) == 5370 and
