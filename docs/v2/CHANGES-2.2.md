@@ -1,3 +1,64 @@
+# 2.2.4 — automatic adaptive settings
+
+* New passages default to automatic numerical settings and remember the user's
+  explicit choice. Existing routes keep their manual inputs until enabled.
+* Managed controls are greyed out; switching off restores the exact saved values.
+* Route/boat/weather preflight informs Quick and Quick2 inputs. Buffered local
+  current/geometry regions favour hourly stepping while engine-local adaptation
+  stays active. Standard gains a bounded recovery reserve where appropriate.
+* Route-aware work admission checks memory headroom alongside shared cache and
+  concurrent-route guards. Count limits remain distinct from actual memory errors.
+* Auto stops at the first accepted validated result, including Quick2; All
+  compares selected engines and admitted alternatives.
+* Original solver sources are preserved; the two adaptive variants are separate.
+* Includes 2.2.3 forecast-provider backoff and incorporated JPEG2000 reader fixes,
+  plus the 2.2.2 date/time controls and clearer allowance wording.
+
+See [the policy, evidence and limits](ADAPTIVE-SETTINGS.md).
+
+# xWeatherRouting 2.2.3 (in development)
+
+* Share the production 1.36.2 weather-service fix: retain confirmed missing
+  timeline frames in a separate bounded cache allowance, so long passages and
+  engine fallbacks do not evict them merely to retain forecast grids.
+* Distinguish a provider that does not reply from a confirmed missing frame.
+  Retry an unresponsive service with a 1–30 second backoff, resetting it on
+  an actual reply or a new computation batch. Existing cached forecasts remain
+  usable; permitted Climatology fallback no longer waits on every timestamp.
+* Report negative cache hits, unanswered requests, backoff skips and cumulative
+  request waiting alongside the existing cache and eviction counters.
+
+* Fix the incorporated reader's JPEG2000/JasPer initialization abort. Own and
+  serialize decoder initialization, decoding and cleanup, including worker
+  calls; apply a bounded decoder memory allowance. Add a real Farallon fixture
+  with 1,260 independently decoded wind/wave values and missing masks, plus
+  repeated concurrent loads.
+* Headless external-provider setup no longer queries an absent UI timeline
+  after a failed/unsupported file load. Dated weather requests and interactive
+  timeline synchronization are unchanged. Set `WR_HEADLESS_GRIB_PROVIDER` to
+  `external` to test either GRIB or xGRIB; the default remains `internal`.
+
+The common cache/broker and headless bridge corrections also ship in production 1.36.2. Routing
+algorithms, safety checks, sampling defaults and engine allowances are unchanged.
+
+# xWeatherRouting 2.2.2 (in development)
+
+* Distinguish search-history/search-memory/time allowances from failed memory
+  allocations in summaries and individual engine results. Keep raw reasons and
+  statuses; mixed or unknown resource stops remain neutral.
+* Make successful fallback explicit when other engine attempts stop.
+* Replace typed ISO/Zulu timestamps in passage setup and weather requests with
+  calendar/clock controls, an explicit time-zone choice and Now. Keep UTC
+  instants internally and preserve separate departure/arrival edits.
+* Rename the progress action to **Stop exploration - keep results**.
+
+The public Windows trial remains 2.2.1 until 2.2.2 is qualified and published.
+Automatic/adaptive settings are being designed separately; production engines,
+resource allowances and saved manual search settings are unchanged in this pass.
+Two standalone input-policy prototypes have completed the full 253-case corpus
+across all six engines. Neither is qualified as a new default; see
+[the screening results](AUTOMATIC-INPUT-SCREENING-2.2.2.md).
+
 # xWeatherRouting 2.2.1
 
 * Explain disabled calculation with **Cannot calculate**, the exact blocking

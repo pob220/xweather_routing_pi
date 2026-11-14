@@ -2,6 +2,7 @@
 
 #include "AreaPresetManagerDialog.h"
 #include "TimeZoneDisplay.h"
+#include "PlanningTimeCtrl.h"
 #include "GeneratorJobJson.h"
 #include "ProcessCommand.h"
 #include "XgribPaths.h"
@@ -39,14 +40,13 @@ void EnvironmentalGribDialog::SetPassage(double west,double south,double east,do
   m_south->SetValue(wxString::Format("%.3f",south));
   m_east->SetValue(wxString::Format("%.3f",east));
   m_north->SetValue(wxString::Format("%.3f",north));
-  SetDisplayTimeZone(false,"UTC");
   const auto window = weather_routing::BuildPassageWeatherWindow(
       start, hours, m_stepHours->GetValue(), waves);
   if (!window) {
     AppendLog(_("Cannot prefill weather: review the passage time and forecast interval."));
     return;
   }
-  m_startUtc->SetValue(window->start.Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC));
+  m_startUtc->SetUtc(window->start);
   m_durationHours->SetRange(1, std::max(360, window->hours));
   m_durationHours->SetValue(window->hours);
   if (window->start != start || window->hours != hours)
@@ -106,12 +106,9 @@ wxString TimestampedFilename(const wxString& prefix) {
          ".grb";
 }
 
-wxString DefaultStartUtc() {
-  wxDateTime now = wxDateTime::Now().ToUTC();
-  now.SetMinute(0);
-  now.SetSecond(0);
-  now.SetMillisecond(0);
-  return now.FormatISOCombined('T') + "Z";
+wxDateTime DefaultStartUtc() {
+  const auto seconds = wxDateTime::Now().GetTicks();
+  return wxDateTime(seconds - seconds % 3600);
 }
 
 bool IsMarineIeProvider(const wxString& provider) {
@@ -417,7 +414,7 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   areaPresetPanel->SetSizer(areaPresetSizer);
   m_areaPresets = xgrib::LoadAreaPresets(GetOCPNConfigObject());
   PopulateAreaPresetChoice();
-  m_startUtc = new wxTextCtrl(scrolled, wxID_ANY, DefaultStartUtc());
+  m_startUtc = new PlanningTimeCtrl(scrolled, DefaultStartUtc(), _("GRIB start"));
   m_startUtc->SetToolTip(_("Start of the weather download window. Passage requests start at the preceding whole UTC hour and extend to cover the planned period; the passage departure itself is unchanged."));
   m_durationHours = new wxSpinCtrl(scrolled, wxID_ANY);
   m_durationHours->SetRange(1, 360);
@@ -575,7 +572,7 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   addRow("East longitude", m_east);
   addRow("North latitude", m_north);
   addRow("Area preset", areaPresetPanel);
-  m_startTimeLabel = addRow("Start UTC", m_startUtc);
+  m_startTimeLabel = addRow(_("Start time"), m_startUtc);
   addRow("Forecast duration (hours)", m_durationHours);
   addRow("Step hours", m_stepHours);
   grid->Add(new wxStaticText(scrolled, wxID_ANY, "Forecast extension"), 0,
@@ -754,7 +751,7 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   Bind(wxEVT_END_PROCESS, &EnvironmentalGribDialog::OnProcessTerminated, this);
   // Existing handlers still run. Also catch fields which previously had no
   // change handler (date, duration, cadence and grid spacing).
-  for (wxTextCtrl* field : {m_west, m_south, m_east, m_north, m_startUtc,
+  for (wxTextCtrl* field : {m_west, m_south, m_east, m_north,
                            m_tpxoGridSpacing, m_generatorPath})
     field->Bind(wxEVT_TEXT, [this](wxCommandEvent& event) {
       QueueEstimate(); event.Skip();
@@ -767,6 +764,11 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
       QueueEstimate(); event.Skip();
     });
   }
+  m_startUtc->Bind(wxEVT_PLANNING_TIME_CHANGED, [this](wxCommandEvent&) {
+    m_displayTimeZone = m_startUtc->TimeZone();
+    m_useLocalTimeZone = m_displayTimeZone != "UTC";
+    QueueEstimate();
+  });
 
   AppendLog(
       "Generated environmental GRIBs are model data for planning and "
@@ -1008,10 +1010,7 @@ void EnvironmentalGribDialog::OnGenerate(wxCommandEvent&) {
   if (window && (window->start != DisplayedStartUtc() ||
                  window->hours != m_durationHours->GetValue())) {
     // These are download controls only. Never write passage configuration here.
-    const wxString zone = m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
-    const auto wall = marine_time::ToWallClock(window->start, zone);
-    m_startUtc->ChangeValue(wall.Format("%Y-%m-%dT%H:%M:%S", wxDateTime::UTC) +
-                           (m_useLocalTimeZone ? wxString() : wxString("Z")));
+    m_startUtc->SetUtc(window->start);
     m_durationHours->SetRange(1, std::max(m_durationHours->GetMax(), window->hours));
     m_durationHours->SetValue(window->hours);
     const wxString begin = window->start.Format("%Y-%m-%dT%H:%M:%SZ", wxDateTime::UTC);
@@ -2670,6 +2669,11 @@ bool EnvironmentalGribDialog::BuildGenerateJobText(wxString* text,
   wxTextCtrl* controls[] = {m_west, m_south, m_east, m_north};
   double bounds[4]{};
   if (!ReadAreaCoordinates(controls, bounds, error)) return false;
+  wxString timeError;
+  if (!m_startUtc->GetUtc(&timeError).IsValid()) {
+    if (error) *error = timeError;
+    return false;
+  }
   const double west = bounds[0], south = bounds[1], east = bounds[2], north = bounds[3];
   double currentSpacing = 0.0;
   if (!m_tpxoGridSpacing->GetValue().ToDouble(&currentSpacing)) {
@@ -2849,28 +2853,17 @@ wxString EnvironmentalGribDialog::ValidTimeSummary() const {
         m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
     const auto format = [&zone](const wxDateTime& value) {
       const wxDateTime wall = marine_time::ToWallClock(value, zone);
-      return wall.Format("%Y-%m-%dT%H:%M:%S", wxDateTime::UTC) + " " +
+      return wall.Format("%d %b %Y, %H:%M", wxDateTime::UTC) + " " +
              marine_time::TimeZoneAbbreviation(value, zone);
     };
     return format(start) + " to " + format(end);
   }
-  return m_startUtc->GetValue() + " plus " +
+  return _("Review the start date/time") + " plus " +
          wxString::Format("%d hours", m_durationHours->GetValue());
 }
 
 wxDateTime EnvironmentalGribDialog::DisplayedStartUtc() const {
-  wxString text = m_startUtc->GetValue();
-  text.Trim(true).Trim(false);
-  if (text.EndsWith("Z")) text.RemoveLast();
-  wxDateTime fields;
-  if (!fields.ParseISOCombined(text, 'T')) return wxInvalidDateTime;
-  const wxString zone =
-      m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
-  return marine_time::FromWallClock(
-             fields.GetYear(), static_cast<int>(fields.GetMonth()) + 1,
-             fields.GetDay(), fields.GetHour(), fields.GetMinute(),
-             fields.GetSecond(), zone)
-      .utc;
+  return m_startUtc->GetUtc();
 }
 
 wxString EnvironmentalGribDialog::StartUtcText() const {
@@ -2881,23 +2874,12 @@ wxString EnvironmentalGribDialog::StartUtcText() const {
 
 void EnvironmentalGribDialog::SetDisplayTimeZone(
     bool enabled, const wxString& zoneName) {
-  const wxDateTime instant = DisplayedStartUtc();
   m_useLocalTimeZone =
       enabled && marine_time::IsTimeZoneAvailable(zoneName);
   m_displayTimeZone = marine_time::IsTimeZoneAvailable(zoneName)
                           ? zoneName
                           : wxString("UTC");
-  const wxString zone =
-      m_useLocalTimeZone ? m_displayTimeZone : wxString("UTC");
-  m_startTimeLabel->SetLabel(m_useLocalTimeZone
-                                 ? "Start (" + m_displayTimeZone + ")"
-                                 : wxString("Start UTC"));
-  if (instant.IsValid()) {
-    const wxDateTime wall = marine_time::ToWallClock(instant, zone);
-    m_startUtc->SetValue(
-        wall.Format("%Y-%m-%dT%H:%M:%S", wxDateTime::UTC) +
-        (m_useLocalTimeZone ? wxString() : wxString("Z")));
-  }
+  m_startUtc->SetDisplayTimeZone(m_useLocalTimeZone, m_displayTimeZone);
   Layout();
 }
 

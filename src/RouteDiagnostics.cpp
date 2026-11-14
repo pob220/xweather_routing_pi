@@ -17,6 +17,45 @@ bool Complete(wr::RoutingStatus status) {
       status == wr::RoutingStatus::CompleteUsingFrontierRecovery ||
       status == wr::RoutingStatus::CompleteUsingGraphFallback;
 }
+// ResourceLimitReached includes deliberate allowances and failed allocations.
+// Interpret only known engine reasons; retain unknown reasons without guessing
+// that the machine ran out of RAM. Engine statuses and raw evidence stay intact.
+wxString ResultStatusTitle(wr::RoutingStatus status, const std::string& reason) {
+  if (status != wr::RoutingStatus::ResourceLimitReached)
+    return RoutingStatusTitle(status);
+  if (reason == "retained lineage limit" ||
+      reason == "Quick2 retained-state allowance exhausted before finding a validated route")
+    return _("Search-history limit reached");
+  if (reason == "memory allocation failed" || reason == "Frontier allocation failed" ||
+      reason == "Atlas search memory allowance" ||
+      reason.starts_with("Quick allocation failed:"))
+    return _("Memory allocation failed");
+  if (reason == "geometry memory limit" || reason == "performance profile limit")
+    return _("Search-memory allowance reached");
+  if (reason == "contour nesting limit")
+    return _("Search-geometry limit reached");
+  if (reason == "wall-clock limit" || reason == "Comfort search time allowance reached")
+    return _("Calculation time allowance reached");
+  if (reason == "generated state limit" || reason == "geometry work limit" ||
+      reason == "weather query limit" ||
+      reason == "Quick2 search allowance exhausted before finding a validated route" ||
+      reason == "Quick attempted-motion allowance reached" ||
+      reason == "Quick weather-work allowance reached")
+    return _("Search allowance reached");
+  return RoutingStatusTitle(status);
+}
+
+wxString ResultFailureTitle(const wr::RoutingResult& result,
+                            wr::RoutingStatus status) {
+  if (status != wr::RoutingStatus::ResourceLimitReached ||
+      result.attemptFailures.empty())
+    return ResultStatusTitle(status, result.message);
+  const auto title = ResultStatusTitle(status, result.attemptFailures.front().detail);
+  for (const auto& attempt : result.attemptFailures)
+    if (ResultStatusTitle(attempt.status, attempt.detail) != title)
+      return RoutingStatusTitle(status);
+  return title;
+}
 wxString DurationText(long long seconds) {
   return wxString::Format(_("%lld h %02lld min"), seconds / 3600,
                           (seconds % 3600) / 60);
@@ -173,7 +212,7 @@ wxString RoutingStatusTitle(wr::RoutingStatus status) {
     case wr::RoutingStatus::CompleteUsingGraphFallback: return _("Complete");
     case wr::RoutingStatus::NoFeasibleRoute: return _("No validated complete route found");
     case wr::RoutingStatus::SearchIncomplete: return _("Search stopped before completion");
-    case wr::RoutingStatus::ResourceLimitReached: return _("Calculation allowance or memory limit reached");
+    case wr::RoutingStatus::ResourceLimitReached: return _("Calculation resource limit reached");
     case wr::RoutingStatus::WindForecastRequired: return _("Usable wind data are required");
     case wr::RoutingStatus::CurrentDataRequired: return _("Required current data are unavailable");
     case wr::RoutingStatus::WaveDataRequired: return _("Required wave-height coverage is unavailable");
@@ -391,7 +430,7 @@ RouteDiagnosticReport DescribeRoutingResult(const wr::RoutingResult& result,
         RequiredAction(report, action);
     if (!report.HasErrors())
       report.Add({"result." + wr::toString(report.status),
-          DiagnosticSeverity::Error, RoutingStatusTitle(report.status),
+          DiagnosticSeverity::Error, ResultFailureTitle(result, report.status),
           wxString::FromUTF8(result.message.c_str()), StatusAction(report.status)});
   }
   if (report.cancelled)
@@ -447,8 +486,8 @@ RouteDiagnosticReport DescribeRoutingResult(const wr::RoutingResult& result,
   }
   if (report.complete && !result.attemptFailures.empty())
     report.Add({"sequence.incomplete", DiagnosticSeverity::Warning,
-        _("Some selected engines did not produce a complete route"),
-        wxString::Format(_("%u unsuccessful engine attempts; a validated result is available."),
+        _("Other engine attempts stopped; this route completed"),
+        wxString::Format(_("%u engine attempts did not complete; another engine produced a validated route."),
                          static_cast<unsigned>(result.attemptFailures.size())),
         _("Review the individual engine results below. Comparisons apply to the completed validated candidates.")});
   report.technical = wxString::FromUTF8(wr::toString(result.status).c_str()) +
@@ -465,7 +504,7 @@ RouteDiagnosticReport DescribeRoutingResult(const wr::RoutingResult& result,
       ? result.attemptFailures : result.engineAttempts;
   for (const auto& attempt : attemptHistory)
     report.technical += "\n" + wxString::FromUTF8(attempt.engine.c_str()) +
-        ": " + RoutingStatusTitle(attempt.status) + "\n" +
+        ": " + ResultStatusTitle(attempt.status, attempt.detail) + "\n" +
         wxString::FromUTF8(attempt.detail.c_str());
   for (const auto& reason : result.diagnostics.stageStopReasons)
     report.technical += "\n" + wxString::FromUTF8(reason.c_str());

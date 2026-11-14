@@ -291,6 +291,9 @@ public:
   void RememberWeatherSourceChoice(const RouteMapConfiguration& configuration);
   void ApplyWeatherSourceChoice(RouteMapConfiguration& configuration) const;
   void ApplyNewPassageEngineChoices(RouteMapConfiguration& configuration) const;
+  void ApplyNewAdaptiveSettingsChoice(RouteMapConfiguration& configuration) const;
+  void RememberAdaptiveSettingsChoice(bool enabled);
+  void SaveAdaptiveHostContractSnapshot(const wxString& path);
   void RefreshPassageSelection() { OnWeatherRouteSelected(); }
 
 #ifdef __OCPN__ANDROID__

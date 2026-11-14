@@ -43,6 +43,9 @@ REQUIRED)
 include(${wxWidgets_USE_FILE})
 
 set(TEST_SRC
+    AdaptiveController_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/adaptive/Quick2.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/engine/adaptive/StandardRecovery.cpp
     NewPassageEnginePreferences_tests.cpp
     PlanningPresentation_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PlanningHelp.cpp
@@ -65,6 +68,8 @@ set(TEST_SRC
     ChartSafetyDefaults_tests.cpp
     HeadlessRouteMonitor_tests.cpp
     KeyedRequestCache_tests.cpp
+    GribTimelineFrameCache_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/GribTimelineFrameCache.cpp
     GribTimelineCachePolicy_tests.cpp
     DeviceMemoryPolicy_tests.cpp
     OceanPrewarmPolicy_tests.cpp
@@ -338,3 +343,13 @@ if(WIN32)
             "$<TARGET_FILE_DIR:partial_routes_qt_macro_tests>")
 endif()
 gtest_discover_tests(partial_routes_qt_macro_tests DISCOVERY_MODE PRE_TEST)
+
+# Opt-in real date/clock widget checks. Kept outside the display-free CTest
+# suite; run this target in a private GUI session (or native Windows runner).
+add_executable(planning_time_gui_tests EXCLUDE_FROM_ALL
+    PlanningTimeCtrl_gui.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/PlanningTimeCtrl.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/TimeZoneDisplay.cpp)
+target_include_directories(planning_time_gui_tests PRIVATE
+    ${WEATHER_ROUTING_SOURCE_DIR}/include)
+target_link_libraries(planning_time_gui_tests PRIVATE ${wxWidgets_LIBRARIES})

@@ -231,6 +231,71 @@ TEST(RouteDiagnostics, ResourceAndReplayFailuresRetainUnderlyingEvidence) {
   result.validation.failureReason = "leg 2 trajectory missed by 0.3 NM";
   EXPECT_NE(weather_routing::DescribeRoutingResult(result).Text().Find("0.3 NM"), wxNOT_FOUND);
 }
+TEST(RouteDiagnostics, RickHistoryLimitDoesNotReportAnAllocationFailure) {
+  wr::RoutingResult result;
+  result.status = wr::RoutingStatus::ResourceLimitReached;
+  result.message = "retained lineage limit";
+  const auto report = weather_routing::DescribeRoutingResult(result);
+  EXPECT_EQ(report.Summary(), "Search-history limit reached");
+  EXPECT_EQ(report.status, result.status);
+  EXPECT_TRUE(report.Text().Contains("retained lineage limit"));
+  EXPECT_FALSE(report.Text().Contains("Memory allocation failed"));
+}
+TEST(RouteDiagnostics, SuccessfulFallbackKeepsSpecificAttemptStopReasons) {
+  auto result = Completed();
+  result.attemptFailures = {
+      {"Quick", wr::RoutingStatus::ResourceLimitReached, "retained lineage limit"},
+      {"Quick2", wr::RoutingStatus::ResourceLimitReached,
+       "Quick2 search allowance exhausted before finding a validated route"}};
+  result.engineAttempts = result.attemptFailures;
+  result.engineAttempts.push_back({"Standard", wr::RoutingStatus::Complete, "validated"});
+  const auto report = weather_routing::DescribeRoutingResult(result);
+  EXPECT_TRUE(report.complete);
+  EXPECT_FALSE(report.HasErrors());
+  EXPECT_TRUE(report.Text().Contains("Quick: Search-history limit reached"));
+  EXPECT_TRUE(report.Text().Contains("Quick2: Search allowance reached"));
+  EXPECT_TRUE(report.Text().Contains("Standard: Complete"));
+  EXPECT_TRUE(report.Text().Contains("another engine produced a validated route"));
+}
+TEST(RouteDiagnostics, ActualAllocationFailuresRemainAllocationFailures) {
+  for (const std::string reason : {"memory allocation failed", "Frontier allocation failed",
+       "Atlas search memory allowance",
+       "Quick allocation failed: search budget or process memory limit reached"}) {
+    wr::RoutingResult result;
+    result.status = wr::RoutingStatus::ResourceLimitReached;
+    result.message = reason;
+    const auto report = weather_routing::DescribeRoutingResult(result);
+    EXPECT_EQ(report.Summary(), "Memory allocation failed") << reason;
+    EXPECT_TRUE(report.Text().Contains(wxString::FromUTF8(reason.c_str())));
+  }
+}
+TEST(RouteDiagnostics, DifferentResourceCausesDoNotInventOneSharedCause) {
+  wr::RoutingResult result;
+  result.status = wr::RoutingStatus::ResourceLimitReached;
+  result.message = "retained lineage limit";
+  result.attemptFailures = {
+      {"Quick", result.status, "retained lineage limit"},
+      {"Quick2", result.status, "Frontier allocation failed"}};
+  const auto report = weather_routing::DescribeRoutingResult(result);
+  EXPECT_EQ(report.Summary(), "Calculation resource limit reached");
+  EXPECT_TRUE(report.Text().Contains("Quick: Search-history limit reached"));
+  EXPECT_TRUE(report.Text().Contains("Quick2: Memory allocation failed"));
+}
+TEST(RouteDiagnostics, TimeMemoryAllowancesAndUnknownLimitsStayDistinct) {
+  for (const auto& [reason, title] : std::vector<std::pair<std::string, wxString>>{
+       {"wall-clock limit", "Calculation time allowance reached"},
+       {"geometry memory limit", "Search-memory allowance reached"},
+       {"contour nesting limit", "Search-geometry limit reached"},
+       {"future engine resource reason", "Calculation resource limit reached"}}) {
+    wr::RoutingResult result;
+    result.status = wr::RoutingStatus::ResourceLimitReached;
+    result.message = reason;
+    EXPECT_EQ(weather_routing::DescribeRoutingResult(result).Summary(), title);
+    result.status = wr::RoutingStatus::InternalError;
+    EXPECT_EQ(weather_routing::DescribeRoutingResult(result).Summary(),
+              "Unexpected calculation error");
+  }
+}
 TEST(RouteDiagnostics, DiagnosticsDeduplicateIdenticalFactsButKeepDistinctScopes) {
   RouteDiagnosticReport report;
   const weather_routing::RouteDiagnostic issue{"coverage", DiagnosticSeverity::Warning, "missing", "point A", {}, "Quick"};

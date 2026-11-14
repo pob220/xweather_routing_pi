@@ -14,6 +14,7 @@
 #include "ocpn_plugin.h"
 #include "AreaPreset.h"
 #include "PassageWeatherRequest.h"
+class PlanningTimeCtrl;
 
 class EnvironmentalGribDialog : public wxDialog {
 public:
@@ -112,7 +113,7 @@ private:
   wxTextCtrl* m_south;
   wxTextCtrl* m_east;
   wxTextCtrl* m_north;
-  wxTextCtrl* m_startUtc;
+  PlanningTimeCtrl* m_startUtc;
   wxStaticText* m_startTimeLabel;
   wxSpinCtrl* m_durationHours;
   wxSpinCtrl* m_stepHours;

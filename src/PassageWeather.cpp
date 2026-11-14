@@ -112,6 +112,39 @@ std::unique_ptr<GribRecordSet> PassageWeather::Frame(time_t time) const {
   return frame;
 }
 
+std::optional<double> PassageWeather::Sample(
+    int index, time_t time, double lat, double lon) const {
+  if (index < 0 || index >= Idx_COUNT || !std::isfinite(lat) || !std::isfinite(lon))
+    return {};
+  const auto& series = fields_[index];
+  const auto after = series.lower_bound(time);
+  if (after == series.end()) return {};
+  const auto sample = [&](const GribRecord* record) -> std::optional<double> {
+    const double value = record->getInterpolatedValue(lon, lat);
+    return std::isfinite(value) && value != GRIB_NOTDEF
+        ? std::optional<double>(value) : std::nullopt;
+  };
+  const auto a = sample(after->second);
+  if (after->first == time || !a) return a;
+  if (after == series.begin()) return {};
+  const auto before = std::prev(after);
+  // Different grids need the normal frame/regridding path. Sparse advisory
+  // probes must not invent values across a resolution or footprint change.
+  const auto* x = before->second;
+  const auto* y = after->second;
+  if (x->getNi() != y->getNi() || x->getNj() != y->getNj() ||
+      x->getLonMin() != y->getLonMin() || x->getLonMax() != y->getLonMax() ||
+      x->getLatMin() != y->getLatMin() || x->getLatMax() != y->getLatMax()) return {};
+  const auto b = sample(x);
+  if (!b) return {};
+  const double weight = double(time - before->first) / (after->first - before->first);
+  if (index == Idx_WVDIR) {
+    double delta = std::remainder(*a - *b, 360.);
+    return std::fmod(*b + weight * delta + 360., 360.);
+  }
+  return *b + weight * (*a - *b);
+}
+
 bool PassageWeather::HasWind(time_t time, double lat, double lon) const {
   return HasData(Idx_WIND_VX, time, lat, lon) &&
          HasData(Idx_WIND_VY, time, lat, lon);

@@ -4,6 +4,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <wx/string.h>
 #include "GribReader.h"
 #include "GribRecordSet.h"
@@ -18,6 +19,9 @@ public:
   std::unique_ptr<GribRecordSet> Frame(time_t time) const;
   bool HasWind(time_t time, double lat, double lon) const;
   bool HasData(int index, time_t time, double lat, double lon) const;
+  // Cheap advisory access to already decoded source grids. No copied frame,
+  // file read or host request. Values retain the GRIB field's native units.
+  std::optional<double> Sample(int index, time_t time, double lat, double lon) const;
   bool Loaded() const { return bool(reader_); }
   wxString Summary() const;
   wxString Details() const;

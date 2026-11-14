@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassagePanel.h"
 #include "PlanningHelp.h"
+#include "PlanningTimeCtrl.h"
 #include <wx/aui/auibook.h>
 #include "PassagePresentation.h"
 #include "RouteMapOverlay.h"
@@ -1305,16 +1306,30 @@ void PassagePanel::EditRoute() {
   mode->SetSelection(
       c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME ? 1 : 0);
   grid->Add(mode, 0, wxEXPAND);
-  auto* time =
-      new wxTextCtrl(&dialog, wxID_ANY,
-                     (mode->GetSelection() ? c.PlannedArrivalTime : c.StartTime)
-                         .Format("%Y-%m-%d %H:%M", wxDateTime::UTC));
+  wxDateTime pendingTimes[] = {c.UseCurrentTime ? wxDateTime::Now() : c.StartTime,
+                               c.PlannedArrivalTime};
+  int shownMode = mode->GetSelection();
+  auto* time = new PlanningTimeCtrl(&dialog, pendingTimes[shownMode],
+      _("Passage time"), routing_.m_SettingsDialog.UseLocalTimeZone(),
+      routing_.m_SettingsDialog.DisplayTimeZone());
+  mode->Bind(wxEVT_CHOICE, [&](wxCommandEvent&) {
+    wxString error;
+    const auto instant = time->GetUtc(&error);
+    if (!instant.IsValid()) {
+      mode->SetSelection(shownMode);
+      wxMessageBox(error, _("Check passage time"), wxOK | wxICON_INFORMATION, &dialog);
+      return;
+    }
+    pendingTimes[shownMode] = instant;
+    shownMode = mode->GetSelection();
+    time->SetUtc(pendingTimes[shownMode].IsValid() ? pendingTimes[shownMode]
+                                                 : wxDateTime::Now());
+  });
   grid->Add(time, 1, wxEXPAND);
   top->Add(grid, 1, wxEXPAND | wxALL, 15);
   Text(&dialog, top,
-       _("Time is UTC, in YYYY-MM-DD HH:MM format. For intermediate waypoints, "
-         "right-click an OpenCPN route and choose Create Weather Routing "
-         "Legs."));
+       _("For intermediate waypoints, right-click an OpenCPN route and choose "
+         "Create Weather Routing Legs."));
   if (linked)
     Text(&dialog, top,
          _("These waypoints follow the OpenCPN route. Edit that route on the "
@@ -1327,29 +1342,35 @@ void PassagePanel::EditRoute() {
   auto* ok = dialog.FindWindow(wxID_OK);
   ok->Bind(wxEVT_BUTTON, [&](wxCommandEvent&) {
     double a[2], b[2];
-    wxDateTime date;
-    bool valid = !!date.ParseFormat(time->GetValue(), "%Y-%m-%d %H:%M") &&
-                 date.IsValid();
-    if (linked && valid) {
+    wxString timeError;
+    const auto date = time->GetUtc(&timeError);
+    if (!date.IsValid()) {
+      wxMessageBox(timeError, _("Check passage time"),
+                   wxOK | wxICON_INFORMATION, &dialog);
+      return;
+    }
+    pendingTimes[mode->GetSelection()] = date;
+    const auto applyTiming = [&] {
       c.UseCurrentTime = false;
       c.TimeMode = mode->GetSelection()
                        ? RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
                        : RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME;
-      if (mode->GetSelection())
-        c.PlannedArrivalTime = date.FromUTC();
-      else
-        c.StartTime = date.FromUTC();
+      if (pendingTimes[0].IsValid()) c.StartTime = pendingTimes[0];
+      if (pendingTimes[1].IsValid()) c.PlannedArrivalTime = pendingTimes[1];
+    };
+    if (linked) {
+      applyTiming();
       dialog.EndModal(wxID_OK);
       return;
     }
+    bool valid = true;
     for (int i = 0; i < 2; ++i)
       valid = lat[i]->GetValue().ToDouble(&a[i]) &&
               lon[i]->GetValue().ToDouble(&b[i]) && std::isfinite(a[i]) &&
               std::isfinite(b[i]) && std::abs(a[i]) <= 90 &&
               std::abs(b[i]) <= 180 && !name[i]->GetValue().empty() && valid;
     if (!valid) {
-      wxMessageBox(_("Enter two named positions with valid coordinates and a "
-                     "UTC date and time."),
+      wxMessageBox(_("Enter two named positions with valid coordinates."),
                    _("Check passage"), wxOK | wxICON_INFORMATION, &dialog);
       return;
     }
@@ -1400,14 +1421,7 @@ void PassagePanel::EditRoute() {
                                  : RouteMapConfiguration::END_AT_WAYPOINT;
     c.StartGUID = guids[0];
     c.EndGUID = guids[1];
-    c.UseCurrentTime = false;
-    c.TimeMode = mode->GetSelection()
-                     ? RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
-                     : RouteMapConfiguration::ROUTE_BY_DEPARTURE_TIME;
-    if (mode->GetSelection())
-      c.PlannedArrivalTime = date.FromUTC();
-    else
-      c.StartTime = date.FromUTC();
+    applyTiming();
     dialog.EndModal(wxID_OK);
   });
   if (dialog.ShowModal() == wxID_OK) routing_.ApplyPassageConfiguration(c);
@@ -1838,6 +1852,8 @@ void PassagePanel::GenerateWeather() {
         global ? 180 : wrap(east + margin), std::min(89.0, north + margin),
         start, hours, c.Currents, c.MaxSwellMeters > 0);
   }
+  generator_->SetDisplayTimeZone(routing_.m_SettingsDialog.UseLocalTimeZone(),
+                                  routing_.m_SettingsDialog.DisplayTimeZone());
   generator_->Show();
   generator_->Raise();
 }

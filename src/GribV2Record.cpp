@@ -38,6 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdlib.h>
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -182,6 +183,45 @@ public:
 };
 
 #ifdef JASPER
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 2
+// The integrated reader can be used without an external GRIB plugin. Own the
+// codec lifetime here, including worker-thread calls. The bundled JasPer is
+// built without threading support, so serialize its complete init/decode/
+// cleanup cycle. Declare this before streams/images so they are freed first.
+class JasperDecodeSession {
+ public:
+  JasperDecodeSession() : lock_(Mutex()) {
+#if JAS_VERSION_MAJOR >= 3
+    jas_conf_clear();
+    jas_conf_set_max_mem_usage(GRIB_MAX_READER_BYTES);
+    library_ready_ = jas_init_library() == 0;
+    if (library_ready_) ready_ = jas_init_thread() == 0;
+#else
+    ready_ = jas_init() == 0;
+#endif
+  }
+  ~JasperDecodeSession() {
+#if JAS_VERSION_MAJOR >= 3
+    if (ready_) jas_cleanup_thread();
+    if (library_ready_) jas_cleanup_library();
+#else
+    if (ready_) jas_cleanup();
+#endif
+  }
+  bool Ready() const { return ready_; }
+
+ private:
+  static std::mutex& Mutex() {
+    static std::mutex mutex;
+    return mutex;
+  }
+  std::unique_lock<std::mutex> lock_;
+  bool ready_ = false;
+#if JAS_VERSION_MAJOR >= 3
+  bool library_ready_ = false;
+#endif
+};
+#endif
 static int dec_jpeg2000(char *input, int length, int *output, std::size_t capacity) {
   // GRIB uses a raw JPEG2000 code stream. Validate its mandatory SOC/SIZ
   // geometry before invoking the codec or indexing its output buffer.
@@ -203,14 +243,17 @@ static int dec_jpeg2000(char *input, int length, int *output, std::size_t capaci
   const std::uint64_t tiles = ((std::uint64_t(width) - tileX + tileWidth - 1) / tileWidth) *
       ((std::uint64_t(height) - tileY + tileHeight - 1) / tileHeight);
   if (tiles > maxSamples / 256) return -5;  // same tile budget as modern JasPer
+#if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 2
+  JasperDecodeSession session;
+  if (!session.Ready()) return -2;
+#endif
   std::unique_ptr<jas_stream_t, decltype(&jas_stream_close)> stream(
       jas_stream_memopen(input, length), &jas_stream_close);
   if (!stream) return -2;
   char options[64];
   snprintf(options, sizeof(options), "max_samples=%zu", maxSamples);
 #if defined(JAS_VERSION_MAJOR) && JAS_VERSION_MAJOR >= 2
-  // Current JasPer hides the codec entry point; its public dispatcher requires
-  // normal library/thread initialization by the embedding application.
+  // Current JasPer hides the codec entry point; use its initialized dispatcher.
   jas_image_t* decoded = jas_image_decode(stream.get(), jas_image_strtofmt("jpc"), options);
 #else
   // OpenCPN's older bundled codec did not use the format registry/initializer.

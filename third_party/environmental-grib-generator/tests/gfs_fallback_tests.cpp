@@ -234,7 +234,9 @@ int main(int argc, char** argv) {
     automatic.cycle = "auto";
     automatic.date = std::nullopt;
     automatic.max_auto_cycles = 3;
-    int missing_noaa = 0, missing_host = 0;
+    // The older cycle downloads its remaining forecast hours concurrently.
+    std::atomic<int> missing_noaa{0};
+    int missing_host = 0;
     auto publishing = automatic;
     publishing.max_auto_cycles = 2;
     const auto older = eg::GenerateGfs(

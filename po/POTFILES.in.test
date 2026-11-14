@@ -12,6 +12,7 @@ src/PassageSettings.cpp
 src/PlanningHelp.cpp
 src/RunDiagnosticsJournal.cpp
 src/PassagePanel.cpp
+src/PlanningTimeCtrl.cpp
 src/PassagePresentation.cpp
 src/EnvironmentalGribDialog.cpp
 src/AreaPreset.cpp
@@ -90,6 +91,8 @@ vendor/weather-routing-engine/src/EnvironmentResolver.cpp
 vendor/weather-routing-engine/src/Engine.cpp
 vendor/weather-routing-engine/src/QuickEngine.cpp
 vendor/weather-routing-engine/src/AlternativeEngine.cpp
+src/engine/adaptive/Quick2.cpp
+src/engine/adaptive/StandardRecovery.cpp
 vendor/quick2-routing-engine/src/Engine.cpp
 vendor/atlas-routing-engine/src/Engine.cpp
 vendor/original-routing-engine/src/Engine.cpp
