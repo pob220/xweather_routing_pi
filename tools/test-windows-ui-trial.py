@@ -316,7 +316,10 @@ def test(archive, plugin, output):
     import xml.etree.ElementTree as ET
     for mode, flag in [('automatic', '1'), ('manual', '0')]:
         snapshot = ET.parse(str(adaptive_prefix) + '-' + mode + '.xml')
-        route = next(c for c in snapshot.findall('Configuration') if c.get('Start') == 'A')
+        configurations = snapshot.findall('Configuration')
+        if len(configurations) != 1:
+            raise RuntimeError('Expected one saved GUI contract route')
+        route = configurations[0]
         if not (route.get('AutomaticAdaptiveSettings') == flag and
                 float(route.get('dt')) == 5370 and
                 float(route.get('OriginalHeadingStepDegrees')) == 7.25):
