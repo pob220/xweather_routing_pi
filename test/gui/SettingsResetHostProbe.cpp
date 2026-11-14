@@ -37,7 +37,7 @@ public:
     for (GList* node = windows; node; node = node->next) {
       auto* w = GTK_WINDOW(node->data);
       const char* t = gtk_window_get_title(w);
-      if (t && std::string(t) == "Reset engine to preset" && GTK_IS_DIALOG(w))
+      if (t && std::string(t) == "Reset routing preset" && GTK_IS_DIALOG(w))
         dialog = GTK_WIDGET(w);
     }
     g_list_free(windows);

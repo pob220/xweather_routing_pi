@@ -37,11 +37,11 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
   switch (topic) {
     case PlanningHelpTopic::Search:
       return _(
-          "Auto uses the checked engines in order. Quick2 can supply a "
-          "retained fallback while later engines search independently with "
+          "Auto uses the checked routing methods in order. Quick2 can supply a "
+          "retained fallback while later methods search independently with "
           "fresh allowances. Atlas runs after Quick2, before "
-          "Standard. All compares the checked engines. Select at least one "
-          "engine for each mode. New passages start in Auto with all engines checked in both lists, unless you have saved different choices.\n\n"
+          "Standard. All compares the checked routing methods. Select at least one "
+          "routing method for each mode. New passages start in Auto with all routing methods checked in both lists, unless you have saved different choices.\n\n"
           "Time step and heading separation are nominal search settings. Quick "
           "reduces its step near departure and destination; Standard has a "
           "separate adaptive offshore step. Auto permits Professional up to "
@@ -137,7 +137,7 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
       return _(
           "Plan passage contains Route, Boat and polars, and Weather. Passage "
           "settings groups endpoints, times, boat performance, weather and safety. "
-          "Routing controls opens the engine and search settings. Automatic "
+          "Routing controls opens the routing methods and search settings. Automatic "
           "adaptive settings retain your manual numerical values.\n\n"
           "Routes contains the complete route table and its "
           "existing operations. Analysis tools provides direct access to "

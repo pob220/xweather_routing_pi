@@ -24,6 +24,8 @@ for flag in ("build", "prefix", "host", "xvfb", "output"):
     parser.add_argument("--" + flag, type=Path, required=True)
 parser.add_argument("--forecast", type=Path, default=SOURCE / "ci/testdata/irish-sea-uniform-wind.grb")
 parser.add_argument("--departure", default="2026-09-28T00:00:00")
+parser.add_argument("--probe", choices=("settings-reset", "route-visibility"), default="settings-reset")
+parser.add_argument("--opengl", action="store_true", help="Also exercise route visibility in a private OpenGL canvas")
 args = parser.parse_args()
 build, prefix, host, xvfb, output, forecast = (
     getattr(args, key).resolve() for key in ("build", "prefix", "host", "xvfb", "output", "forecast")
@@ -52,8 +54,9 @@ while i < len(command):
     if word.startswith(("-I", "-D", "-std=")):
         flags.append(word)
     i += 1
+probe = "RouteVisibilityHostProbe.cpp" if args.probe == "route-visibility" else "SettingsResetHostProbe.cpp"
 run([command[0], "-c", "-fPIC", "-O1", "-fno-access-control", *flags,
-     str(SOURCE / "test/gui/SettingsResetHostProbe.cpp"), "-o", str(output / "probe.o")], "compile.log")
+     str(SOURCE / "test/gui" / probe), "-o", str(output / "probe.o")], "compile.log")
 link = shlex.split(subprocess.check_output(
     ["ninja", "-C", str(build), "-t", "commands", "libxweather_routing_pi.so"], text=True).splitlines()[-1])
 assert link[:2] == [":", "&&"] and link[-2:] == ["&&", ":"]
@@ -64,6 +67,8 @@ run(["objcopy", "--redefine-sym", "create_pi=production_create_pi",
 link[link.index(factory)] = str(output / "factory.o")
 link[link.index("-o") + 1] = str(output / "libxweather_routing_pi.so")
 link.append(str(output / "probe.o"))
+if args.probe == "route-visibility":
+    link.extend(shlex.split(subprocess.check_output(["wx-config", "--libs", "gl"], text=True)))
 run(link, "link.log", cwd=build)
 
 profile, data = output / "profile", output / "routing"
@@ -98,6 +103,8 @@ env.update(TZ="UTC", OPENCPN_PLUGIN_DIRS=str(plugins), XDG_DATA_DIRS=str(prefix 
            XDG_CONFIG_HOME=str(profile / "xdg-config"), XDG_DATA_HOME=str(profile / "xdg-data"),
            XDG_CACHE_HOME=str(profile / "xdg-cache"), WR_HEADLESS_DATA_DIR=str(data),
            WR_OPEN_PASSAGE_PLANNER="1", WORKSPACE_QA_DIR=str(output))
+if args.opengl:
+    env.update(WR_VISIBILITY_GL="1", LIBGL_ALWAYS_SOFTWARE="1")
 
 
 def close_host():
@@ -153,7 +160,9 @@ try:
     process.wait(timeout=15)
     assert process.returncode == 0, process.returncode
     assert result["passed"], result
-    print("PASS: reset confirmation race, completed reset/recompute, cancellation, queued edit guards and normal shutdown")
+    print("PASS: " + ("route endpoint visibility before/during/after computation, selection/eye states and normal shutdown"
+                       if args.probe == "route-visibility" else
+                       "reset confirmation race, completed reset/recompute, cancellation, queued edit guards and normal shutdown"))
 finally:
     for child in (process, server):
         if child and child.poll() is None:

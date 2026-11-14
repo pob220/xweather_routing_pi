@@ -1698,11 +1698,11 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cBasicRoutingMode->Append(_("Auto"));
   m_cBasicRoutingMode->Append(_("All (slow)"));
   m_cBasicRoutingMode->SetSelection(0);
-  m_cBasicRoutingMode->SetToolTip(_("Choose engines and individual-engine testing in Routing controls. The Fastest / Comfort selector remains available for retained alternatives."));
+  m_cBasicRoutingMode->SetToolTip(_("Choose routing methods and individual-method testing in Routing controls. The Fastest / Comfort selector remains available for retained alternatives."));
   engineBox->Add(m_cBasicRoutingMode, 0, wxALL | wxEXPAND, 5);
   m_cBasicRoutingMode->Bind(wxEVT_CHOICE, [this](wxCommandEvent& event) { OnUpdate(event); });
   m_tRoutingEngineDescription = new wxStaticText(engineBox->GetStaticBox(), wxID_ANY,
-      _("Auto finds a validated route using the engines selected in Routing controls. Enable alternatives to compare passage time and comfort."));
+      _("Auto finds a validated route using the routing methods selected in Routing controls. Enable alternatives to compare passage time and comfort."));
   m_tRoutingEngineDescription->Wrap(430);
   engineBox->Add(m_tRoutingEngineDescription, 0, wxALL | wxEXPAND, 5);
   m_cbExploreComfortAlternatives = new wxCheckBox(engineBox->GetStaticBox(), wxID_ANY,
@@ -1711,7 +1711,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 #else
       _("Search additional fastest / comfort alternatives"), wxDefaultPosition, wxDefaultSize, wxCHK_3STATE);
 #endif
-  m_cbExploreComfortAlternatives->SetToolTip(_("Find and preserve the normal validated route first, then explore alternatives using the selected engine. Auto can explore its retained Quick2 and Standard candidates. Extra limits never restrict finding the first route."));
+  m_cbExploreComfortAlternatives->SetToolTip(_("Find and preserve the normal validated route first, then explore alternatives using the selected routing method. Auto can explore its retained Quick2 and Standard candidates. Extra limits never restrict finding the first route."));
   engineBox->Add(m_cbExploreComfortAlternatives, 0, wxALL | wxEXPAND, 5);
   fgSizer112->Add(engineBox, 0, wxEXPAND | wxALL, 5);
 
@@ -1898,16 +1898,16 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   auto advancedRight = new wxBoxSizer(wxVERTICAL);
 
   auto engineSettingsBox = new wxStaticBoxSizer(
-      new wxStaticBox(m_pAdvanced, wxID_ANY, _("Engine settings")), wxVERTICAL);
+      new wxStaticBox(m_pAdvanced, wxID_ANY, _("Routing methods")), wxVERTICAL);
   engineSettingsBox->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY,
-      _("Search mode / individual engine")), 0, wxALL, 5);
+      _("Routing method")), 0, wxALL, 5);
   m_cRoutingEngine = new wxChoice(engineSettingsBox->GetStaticBox(), wxID_ANY);
   for (const auto engine : weather_routing::kEngineChoices)
     m_cRoutingEngine->Append(wxGetTranslation(weather_routing::EngineTitle(engine)));
   m_cRoutingEngine->SetSelection(0);
   engineSettingsBox->Add(m_cRoutingEngine, 0, wxALL | wxEXPAND, 5);
   auto membership = new wxFlexGridSizer(0, 3, 4, 12);
-  membership->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY, _("Engine")));
+  membership->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY, _("Routing methods")));
   membership->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY, _("Auto")));
   membership->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY, _("All")));
   for (const auto engine : weather_routing::kRoutingEngineOrder) {
@@ -1926,7 +1926,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   }
   engineSettingsBox->Add(membership, 0, wxALL, 5);
   auto membershipHelp = new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY,
-      _("Unchecked engines are skipped. Auto stops at the first accepted validated complete route. Engines run in the displayed order. All compares every selected engine. Select at least one engine per mode."));
+      _("Unchecked routing methods are skipped. Auto stops at the first accepted validated complete route. Methods run in the displayed order. All compares every selected method. Select at least one method per mode."));
   membershipHelp->Wrap(430);
   engineSettingsBox->Add(membershipHelp, 0, wxALL | wxEXPAND, 5);
   engineSettingsBox->Add(new wxStaticText(engineSettingsBox->GetStaticBox(), wxID_ANY,
@@ -1965,10 +1965,10 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cEnginePreset = new wxChoice(engineSettingsBox->GetStaticBox(), wxID_ANY);
   m_cEnginePreset->Append(_("Balanced"));
   m_cEnginePreset->SetSelection(0);
-  m_cEnginePreset->SetToolTip(_("Choose a preset, then press Reset engine to preset to review and apply it."));
+  m_cEnginePreset->SetToolTip(_("Choose a preset, then press Reset routing preset to review and apply it."));
   presetRow->Add(m_cEnginePreset, 0, wxALL, 5);
   m_bResetAdvanced = new wxButton(engineSettingsBox->GetStaticBox(), wxID_ANY,
-      _("Reset engine to preset"));
+      _("Reset routing preset"));
   presetRow->Add(m_bResetAdvanced, 0, wxALL, 5);
   engineSettingsBox->Add(presetRow, 0, wxEXPAND, 0);
   m_pMainEngine = new wxPanel(engineSettingsBox->GetStaticBox());
@@ -2159,7 +2159,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_sQuickMemoryBudgetMiB = new wxSpinCtrl(m_pQuickEngine, wxID_ANY,
       "256", wxDefaultPosition, wxSize(160, -1), wxSP_ARROW_KEYS, 1,
       sizeof(void*) <= 4 ? 4095 : 4096, 256);
-  m_sQuickMemoryBudgetMiB->SetToolTip(_("Search-storage allowance for the selected engine. Weather, charts and OpenCPN require additional memory. Presets preserve this allowance."));
+  m_sQuickMemoryBudgetMiB->SetToolTip(_("Search-storage allowance for the selected routing method. Weather, charts and OpenCPN require additional memory. Presets preserve this allowance."));
   quickEngineSizer->Add(m_sQuickMemoryBudgetMiB, 0, wxALL, 5);
   m_tFastTimeStep = new wxStaticText(m_pQuickEngine, wxID_ANY,
       _("Nominal time step (minutes)"));
@@ -2622,7 +2622,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cShorelineResolution->SetSelection(2);
   m_cShorelineResolution->SetMinSize(wxSize(
       wxMax(WR_FromDIP(this, 190), m_cShorelineResolution->GetBestSize().x), -1));
-  m_cShorelineResolution->SetToolTip(_("GSHHG shoreline detail for the selected engine; Quick, Standard and Professional remember independent choices. "
+  m_cShorelineResolution->SetToolTip(_("GSHHG shoreline detail for the selected routing method; Quick, Standard and Professional remember independent choices. "
                                        "High and Full can be installed with the button below. "
                                        "Chart geometry and minimum-depth checks are separate."));
   fgSizer11511->Add(m_cShorelineResolution, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
@@ -2923,7 +2923,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   auto* boatPage = section(_("Boat"));
   auto* weatherPage = section(_("Weather"));
   auto* safetyPage = section(_("Safety"));
-  auto* enginePage = section(_("Engine"));
+  auto* enginePage = section(_("Routing methods"));
   m_notebook7->AddPage(m_pAdvanced, _("Sailing"));
 
   const auto moveBox = [](wxSizer* source, wxStaticBoxSizer* box,
@@ -3073,7 +3073,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
     box->GetStaticBox()->Reparent(m_pAdvanced);
     m_pAdvanced->GetSizer()->Add(box, 0, wxEXPAND | wxALL, 8);
   }
-  m_notebook7->AddPage(m_pAdvanced, _("Engine"));
+  m_notebook7->AddPage(m_pAdvanced, _("Routing methods"));
   // Reparent the complete rows, including their labels and units.
   const auto moveRow = [](wxWindow* field, wxStaticBoxSizer* destination) {
     auto* source = dynamic_cast<wxFlexGridSizer*>(field->GetContainingSizer());
@@ -3113,7 +3113,7 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   m_cRoutingEngine->Reparent(engineBox->GetStaticBox());
   for (auto* child : engineSettingsBox->GetStaticBox()->GetChildren())
     if (auto* label = wxDynamicCast(child, wxStaticText))
-      if (label->GetLabel() == _("Search mode / individual engine")) label->SetLabel(_("Engines to use"));
+      if (label->GetLabel() == _("Routing method")) label->SetLabel(_("Methods to use"));
   engineBox->Insert(0, m_cRoutingEngine, 0, wxEXPAND | wxALL, 5);
   auto* weatherOptions = new wxStaticBoxSizer(wxVERTICAL, weatherPage,
                                               _("Weather adjustments"));

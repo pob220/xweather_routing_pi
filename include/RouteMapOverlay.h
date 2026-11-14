@@ -189,6 +189,11 @@ public:
               PlugIn_ViewPort& vp, bool justendroute,
               RoutePoint* positionOnRoute = nullptr);
 
+  /** Draw visible-route endpoints independently of selection/computation state.
+   * Called after route geometry so inspection overlays cannot cover the marks.
+   */
+  void RenderEndpoints(piDC& dc, PlugIn_ViewPort& vp);
+
   /**
    * Gets a color representing a sailing comfort level.
    * @param level Comfort level (1-3).

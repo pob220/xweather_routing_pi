@@ -1121,6 +1121,30 @@ static double GetPlatformScaleFactor() {
   return scale_factor;
 }
 
+void RouteMapOverlay::RenderEndpoints(piDC& dc, PlugIn_ViewPort& vp) {
+  if (!m_bEndRouteVisible || !vp.bValid) return;
+  const auto configuration = GetConfiguration();
+  if (std::isfinite(configuration.StartLat) &&
+      std::isfinite(configuration.StartLon)) {
+    wxPoint r;
+    WR_GetCanvasPixLL(&vp, &r, configuration.StartLat, configuration.StartLon);
+    SetColor(dc, *wxBLUE, true);
+    SetWidth(dc, 3, true);
+    dc.DrawLine(r.x, r.y - 10, r.x + 10, r.y + 7);
+    dc.DrawLine(r.x, r.y - 10, r.x - 10, r.y + 7);
+    dc.DrawLine(r.x - 10, r.y + 7, r.x + 10, r.y + 7);
+  }
+  if (std::isfinite(configuration.EndLat) &&
+      std::isfinite(configuration.EndLon)) {
+    wxPoint r;
+    WR_GetCanvasPixLL(&vp, &r, configuration.EndLat, configuration.EndLon);
+    SetColor(dc, *wxRED, true);
+    SetWidth(dc, 3, true);
+    dc.DrawLine(r.x - 10, r.y - 10, r.x + 10, r.y + 10);
+    dc.DrawLine(r.x - 10, r.y + 10, r.x + 10, r.y - 10);
+  }
+}
+
 void RouteMapOverlay::Render(wxDateTime time, SettingsDialog& settingsdialog,
                              piDC& dc, PlugIn_ViewPort& vp, bool justendroute,
                              RoutePoint* positionOnRoute) {
@@ -1137,26 +1161,6 @@ void RouteMapOverlay::Render(wxDateTime time, SettingsDialog& settingsdialog,
   dc.SetBrush(*wxTRANSPARENT_BRUSH);  // reset brush
   if (!justendroute) {
     RouteMapConfiguration configuration = GetConfiguration();
-
-    if (!std::isnan(configuration.StartLat)) {
-      wxPoint r;
-      WR_GetCanvasPixLL(&vp, &r, configuration.StartLat,
-                        configuration.StartLon);
-      SetColor(dc, *wxBLUE, true);
-      SetWidth(dc, 3, true);
-      dc.DrawLine(r.x, r.y - 10, r.x + 10, r.y + 7);
-      dc.DrawLine(r.x, r.y - 10, r.x - 10, r.y + 7);
-      dc.DrawLine(r.x - 10, r.y + 7, r.x + 10, r.y + 7);
-    }
-
-    if (!std::isnan(configuration.EndLat)) {
-      wxPoint r;
-      WR_GetCanvasPixLL(&vp, &r, configuration.EndLat, configuration.EndLon);
-      SetColor(dc, *wxRED, true);
-      SetWidth(dc, 3, true);
-      dc.DrawLine(r.x - 10, r.y - 10, r.x + 10, r.y + 10);
-      dc.DrawLine(r.x - 10, r.y + 10, r.x + 10, r.y - 10);
-    }
 
     if (!Running() && HasSelectedPartial()) {
       RenderPartialRoute(dc, vp);

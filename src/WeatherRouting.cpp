@@ -2489,6 +2489,14 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
 
   m_ConfigurationBatchDialog.Render(dc, vp);
 
+  // The eye owns endpoint visibility, including before calculation and while
+  // another routing is selected. Draw once, above geometry/inspection overlays.
+  for (int i = 0; i < m_panel->m_lWeatherRoutes->GetItemCount(); ++i) {
+    auto* route = reinterpret_cast<WeatherRoute*>(
+        wxUIntToPtr(m_panel->m_lWeatherRoutes->GetItemData(i)));
+    route->routemapoverlay->RenderEndpoints(dc, vp);
+  }
+
 #ifndef __OCPN__ANDROID__
   if (!dc.GetDC()) glPopAttrib();
 #endif

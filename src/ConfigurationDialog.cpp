@@ -294,7 +294,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
       wxCHK_3STATE);
   m_cbAutomaticAdaptiveSettings->SetToolTip(
       _("Choose numerical routing settings automatically. Manual values are kept "
-        "when enabled and restored when switched off. Each engine keeps its own "
+        "when enabled and restored when switched off. Each routing method keeps its own "
         "local adaptation; Auto stops at the first validated route."));
   adaptiveSizer->Add(m_cbAutomaticAdaptiveSettings, 0, wxEXPAND | wxALL, 4);
   m_cbAutomaticAdaptiveSettings->Bind(wxEVT_CHECKBOX,
@@ -885,17 +885,17 @@ void ConfigurationDialog::UpdateRoutingTimeModeControls() {
   m_sDepartureTimeOptimizationRangeHours->SetToolTip(
       arrival
           ? _("Maximum number of hours before the planned arrival time in "
-              "which the engine may search for a departure.")
+              "which the routing method may search for a departure.")
           : _("Hours before and after the nominal departure time to test."));
   m_sDepartureTimeOptimizationStepHours->SetToolTip(
       arrival
           ? _("Initial interval between arrival-planning departure probes. "
-              "The engine refines promising times automatically.")
+              "The routing method refines promising times automatically.")
           : _("Hours between alternative departure time calculations."));
   m_sDepartureTimeOptimizationStepMinutes->SetToolTip(
       arrival
           ? _("Initial interval between arrival-planning departure probes. "
-              "The engine refines promising times automatically.")
+              "The routing method refines promising times automatically.")
           : _("Minutes between alternative departure time calculations."));
   m_staticTextArrivalSafetyMargin->Show(arrival);
   m_sArrivalSafetyMarginMinutes->Show(arrival);
@@ -1693,7 +1693,7 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_cShorelineResolution->Enable(!running);
   m_cShorelineResolution->SetToolTip(chartAuthoritative
       ? _("Chart geometry and depth checks are authoritative. This separately saved shoreline choice controls preliminary scouting. It starts at Crude; increase it for finer coastal detail.")
-      : _("Shoreline detail for the selected engine. Quick, Standard and Professional remember independent choices. High and Full require installation from Shoreline data under Routing controls. Lower resolutions omit smaller coastal features."));
+      : _("Shoreline detail for the selected routing method. Quick, Standard and Professional remember independent choices. High and Full require installation from Shoreline data under Routing controls. Lower resolutions omit smaller coastal features."));
   m_pMainEngine->Enable(!running);
   const bool managedStep = automatic && nativeSettings && (combined ||
       engine == weather_routing::RoutingEngine::Original ||
@@ -1721,20 +1721,20 @@ void ConfigurationDialog::UpdateEngineControls() {
   if (m_sailingReset) m_sailingReset->Enable(!running);
   if (m_weatherReset) m_weatherReset->Enable(!running);
   m_tRoutingEngineDescription->SetLabel(engine == weather_routing::RoutingEngine::Auto
-      ? _("Auto: finds a validated route using the engines selected in Routing controls. Enable alternatives to compare passage time and comfort.")
+      ? _("Auto: finds a validated route using the routing methods selected in Routing controls. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::All
-      ? _("All (slow): compares every engine selected in Routing controls and keeps the earliest validated arrival. Enable alternatives to compare passage time and comfort.")
+      ? _("All (slow): compares every routing method selected in Routing controls and keeps the earliest validated arrival. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::Quick2
-      ? _("Engine selection: Quick2 CPU frontier. Bounded search may miss routes or return detours. Auto stops when it supplies the first validated route.")
+      ? _("Routing method: Quick2 CPU frontier. Bounded search may miss routes or return detours. Auto stops when it supplies the first validated route.")
       : engine == weather_routing::RoutingEngine::Alternative
-      ? _("Engine selection: Alternative search. Uses the shared route, vessel, weather and safety settings.")
+      ? _("Routing method: Alternative search. Uses the shared route, vessel, weather and safety settings.")
       : engine == weather_routing::RoutingEngine::Atlas
       ? _("Atlas: adaptive spatial search with explicit arrival and waiting choices. Uses the shared vessel, weather and safety checks. Global optimality and completeness are not established.")
       : engine == weather_routing::RoutingEngine::Main
-      ? _("Engine selection: Professional keeps a validated Quick candidate, then searches for a faster route with broader recovery. The Quick controls below tune its integrated candidate.")
-      : engine == weather_routing::RoutingEngine::Quick ? _("Engine selection: Standard bounded adaptive search with recovery.")
-      : engine == weather_routing::RoutingEngine::Original ? _("Engine selection: Quick fast contour search with independently validated arrival; may miss a feasible route.")
-      : _("Mixed or unsupported engines. Select Auto, Quick, Standard, Professional or All (slow)."));
+      ? _("Routing method: Professional keeps a validated Quick candidate, then searches for a faster route with broader recovery. The Quick controls below tune its integrated candidate.")
+      : engine == weather_routing::RoutingEngine::Quick ? _("Routing method: Standard bounded adaptive search with recovery.")
+      : engine == weather_routing::RoutingEngine::Original ? _("Routing method: Quick fast contour search with independently validated arrival; may miss a feasible route.")
+      : _("Mixed or unsupported routing methods. Select Auto, Quick, Standard, Professional or All (slow)."));
   if (combined) {
     int count = -1;
     for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
@@ -1745,8 +1745,8 @@ void ConfigurationDialog::UpdateEngineControls() {
       else if (count != value) { count = -2; break; }
     }
     if (count >= 0) m_tRoutingEngineDescription->SetLabel(m_tRoutingEngineDescription->GetLabel() +
-        wxString::Format(_(" Selected engines: %d."), count) +
-        (count == 0 ? _(" Select at least one engine in Routing controls before computing.") : wxString()));
+        wxString::Format(_(" Selected routing methods: %d."), count) +
+        (count == 0 ? _(" Select at least one routing method in Routing controls before computing.") : wxString()));
   }
   // These legacy controls do not tune either native engine. Preserve their
   // saved values for compatibility without suggesting that they affect search.
@@ -1876,7 +1876,7 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent&) {
       : _("Standard - Balanced\nOffshore time step: 3 hours (adaptive)\nHeading separation: 10 degrees (adaptive)\nMaximum search angle: 120 degrees");
   WR_MessageDialog preview(this, values +
       _("\n\nApplies to all selected routes. Memory and GRIB cache budgets, vessel, weather and safety settings are preserved. Computed results will be cleared so you can calculate again."),
-      _("Reset engine to preset"), wxOK | wxCANCEL);
+      _("Reset routing preset"), wxOK | wxCANCEL);
   preview.SetOKLabel(_("Apply preset"));
   if (preview.ShowModal() != wxID_OK) return;
   // Modal confirmation dispatches timers: a queued route may have started,
@@ -2617,7 +2617,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
     auto* box = wxDynamicCast(owner, wxStaticBox);
     auto topic = PlanningHelpTopic::Safety;
     if (note == m_tRoutingEngineDescription ||
-        (box && box->GetLabel() == _("Engine settings"))) topic = PlanningHelpTopic::Search;
+        (box && box->GetLabel() == _("Routing methods"))) topic = PlanningHelpTopic::Search;
     else if (note == m_tArrivalPlanningHint) topic = PlanningHelpTopic::Timing;
     else if (box && box->GetLabel() == _("Resources")) topic = PlanningHelpTopic::Resources;
     auto* containing = note->GetContainingSizer();
@@ -2642,9 +2642,9 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   m_pAdvanced->SetScrollRate(12, 12);
   if (auto* checks = dynamic_cast<wxFlexGridSizer*>(m_cbDetectLand->GetContainingSizer()))
     checks->SetCols(1);
-  SetPlanningHelp(m_cRoutingEngine, PlanningHelpTopic::Search, _("Choose a search mode; Help explains engine order and applicable controls."));
-  SetPlanningHelp(m_cBasicRoutingMode, PlanningHelpTopic::Search, _("Auto finds a validated route; All compares selected engines."));
-  SetPlanningHelp(m_sTimeStepHours, PlanningHelpTopic::Search, _("Nominal time step; engines may adapt it. Press F1 for details."));
+  SetPlanningHelp(m_cRoutingEngine, PlanningHelpTopic::Search, _("Choose a search mode; Help explains routing-method order and applicable controls."));
+  SetPlanningHelp(m_cBasicRoutingMode, PlanningHelpTopic::Search, _("Auto finds a validated route; All compares selected routing methods."));
+  SetPlanningHelp(m_sTimeStepHours, PlanningHelpTopic::Search, _("Nominal time step; routing methods may adapt it. Press F1 for details."));
   SetPlanningHelp(m_sTimeStepMinutes, PlanningHelpTopic::Search, m_sTimeStepHours->GetToolTipText());
   SetPlanningHelp(m_sMaxSearchAngle, PlanningHelpTopic::Search, _("Heading search around the target bearing; separate from diverted-course limits."));
   SetPlanningHelp(m_cRoutingEffortPercent, PlanningHelpTopic::Search, _("Professional search allowance; Auto sets its own effort."));
@@ -2657,7 +2657,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   SetPlanningHelp(m_cbEnforceExperimentalChartSafety, PlanningHelpTopic::Safety, _("Require loaded-chart land and depth validation."));
   SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Optional custom exclusions from OpenCPN Draw. Leave unchecked for ordinary routing; land avoidance is separate."));
   SetPlanningHelp(m_sDepartureTimeOptimizationConcurrentRoutes, PlanningHelpTopic::Resources, _("0 = Auto. Available RAM also limits concurrent departures."));
-  SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this engine; High and Full need installed data."));
+  SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this routing method; High and Full need installed data."));
 #ifndef __OCPN__ANDROID__
   auto* reset = new wxButton(this, wxID_ANY, _("Reset wind/wave limits..."));
   m_weatherReset = reset;
@@ -2718,19 +2718,19 @@ void ConfigurationDialog::RefreshCompactPlanningStatus() {
       if (count == -1) count = selected;
       else if (count != selected) { count = -2; break; }
     }
-    if (count >= 0) label += wxString::Format(_(L" · %d engines selected"), count);
+    if (count >= 0) label += wxString::Format(_(L" · %d routing methods selected"), count);
     else label += _(L" · mixed selection");
-    if (count == 0) label += _(L" · select at least one engine");
+    if (count == 0) label += _(L" · select at least one routing method");
   } else if (engine == weather_routing::RoutingEngine::Atlas ||
              engine == weather_routing::RoutingEngine::Quick2)
-    label += _(L" · engine-managed search controls");
+    label += _(L" · method-managed search controls");
   if (m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_CHECKED)
     label += _(" · automatic numerical settings; manual values retained");
   else if (m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_UNDETERMINED)
     label += _(" · mixed automatic/manual settings");
   m_compactEngineStatus->SetLabel(label);
   weather_routing::SetPlanningHelp(m_cShorelineResolution, weather_routing::PlanningHelpTopic::Shoreline,
-      _("Shoreline detail for this engine; High and Full need installed data."));
+      _("Shoreline detail for this routing method; High and Full need installed data."));
   if (m_cbDetectLand->Get3StateValue() == wxCHK_UNDETERMINED ||
       m_cbUseExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED ||
       m_cbEnforceExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED) {
@@ -2831,7 +2831,7 @@ void ConfigurationDialog::RefreshValidationFooter() {
     error = weather_routing::CheckSailingAngleRange(c.FromDegree, c.ToDegree);
     if (!error.empty()) { m_validationCode = "passage.search.angles"; break; }
     if (weather_routing::IsCombinedEngine(c.EngineSettings.engine) && !c.EngineSettings.SelectedEngines()) {
-      error = _("Select at least one engine for this Auto or All search.");
+      error = _("Select at least one routing method for this Auto or All search.");
       m_validationCode = "passage.search.engines"; break;
     }
     if (c.MinimumDepthMeters > 0 && (!c.DetectLand ||
@@ -2901,7 +2901,7 @@ void ConfigurationDialog::ResetSailingAngles() {
   if (routes.empty()) return;
   if (!CanResetRoutes(routes)) return;
   WR_MessageDialog preview(this,
-      _("Reset the selected passages' sailing-angle range to 40 through 160 degrees?\n\nHeading separation, time steps, Automatic adaptive settings, engine selections, resource limits, vessel and safety settings are preserved. Computed results will be cleared so you can calculate again."),
+      _("Reset the selected passages' sailing-angle range to 40 through 160 degrees?\n\nHeading separation, time steps, Automatic adaptive settings, routing method selections, resource limits, vessel and safety settings are preserved. Computed results will be cleared so you can calculate again."),
       _("Reset sailing-angle range"), wxOK | wxCANCEL);
   preview.SetOKLabel(_("Reset range"));
   if (preview.ShowModal() != wxID_OK) return;
