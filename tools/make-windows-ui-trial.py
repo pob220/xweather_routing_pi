@@ -14,7 +14,18 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '2.2.3'
+def plugin_version():
+    cmake = (ROOT / 'CMakeLists.txt').read_text(encoding='utf-8')
+    parts = []
+    for component in ('MAJOR', 'MINOR', 'PATCH'):
+        match = re.search(r'set\(VERSION_' + component + r'\s+"(\d+)"\)', cmake)
+        if not match:
+            raise ValueError('Missing plugin version component: ' + component)
+        parts.append(match.group(1))
+    return '.'.join(parts)
+
+
+VERSION = plugin_version()
 NAME = 'xWeatherRouting-' + VERSION + '-Windows-UI-Trial'
 
 LAUNCHER = r'''@echo off
@@ -39,7 +50,7 @@ if errorlevel 1 (
 endlocal
 '''
 
-README = '''xWeatherRouting 2.2.3 - Windows UI trial
+README = '''xWeatherRouting PLUGIN_VERSION - Windows UI trial
 
 Please try the new passage-planning interface and tell Paul what feels clear,
 confusing or missing. You do not need to compile or install anything.
@@ -72,10 +83,10 @@ this extracted folder. Always use Start-Weather-Routing.cmd. Close the test
 windows when finished; delete this extracted folder to remove the trial.
 It does not install into or replace your normal OpenCPN or its plugins.
 
-Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting 2.2.3.
+Included: OpenCPN 5.15.0 (e41f0de), wxWidgets 3.3.4, xWeatherRouting PLUGIN_VERSION.
 This host is for the UI trial; custom chart-aware hosts are a separate test.
 Source and build instructions:
-https://github.com/pob220/xweather_routing_pi/blob/feature/xweather-2.2.0/docs/v2/WINDOWS.md
+https://github.com/pob220/xweather_routing_pi/blob/SOURCE_COMMIT/docs/v2/WINDOWS.md
 Native binary qualification:
 https://github.com/pob220/xweather_routing_pi/actions/runs/QUALIFICATION_RUN
 OpenCPN and plugin licences are retained with their files. Provenance and
@@ -159,7 +170,7 @@ def make(plugin, output, source, run, installer=None):
             '[Plugins/xWeatherRouting2]\nConfigVersion=201\n'
             '[PlugIns/xWeatherRouting2]\nConfigVersion=201\n', encoding='ascii')
         (trial / 'Start-Weather-Routing.cmd').write_bytes(LAUNCHER.replace('\n', '\r\n').encode('ascii'))
-        (trial / 'READ-ME-FIRST.txt').write_text(README.replace('QUALIFICATION_RUN', str(run)), encoding='utf-8')
+        (trial / 'READ-ME-FIRST.txt').write_text(README.replace('PLUGIN_VERSION', VERSION).replace('SOURCE_COMMIT', source).replace('QUALIFICATION_RUN', str(run)), encoding='utf-8')
         for image in host.rglob('*'):
             if image.suffix.lower() in ('.exe', '.dll'):
                 check_amd64(image)
