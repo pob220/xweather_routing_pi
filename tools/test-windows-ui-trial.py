@@ -299,8 +299,28 @@ def test(archive, plugin, output):
     if not (profile / 'boats/Example-40ft-monohull.xml').is_file():
         raise RuntimeError('The portable first launch did not populate its own boat library')
     # A copy extracted from the delivered archive also calculates real routes.
+    # Exercise the packaged GUI's real adaptive checkbox, mouse handlers,
+    # tab refreshes and queued edits on a native Windows host. Product binaries
+    # are exactly those from the qualified source; this only adds acceptance.
+    adaptive_prefix = (output / 'adaptive-controls').resolve()
+    route_environment = dict(os.environ,
+        WR_HEADLESS_ADAPTIVE_CONFIGURATION_CONTRACT='1',
+        WR_HEADLESS_ADAPTIVE_XML_PREFIX=str(adaptive_prefix))
     subprocess.run([sys.executable, str(ROOT / 'ci/test-windows-host.py'), str(host),
-                    str(plugin), str(output / 'routes'), '--host-version', '5.15.0'], check=True)
+                    str(plugin), str(output / 'routes'), '--host-version', '5.15.0'],
+                   env=route_environment, check=True)
+    marker = ('WR_ADAPTIVE_CONFIGURATION_CONTRACT passed=1 '
+              'modes=Quick,Quick2,Auto,All mouse_policy=1')
+    if marker not in (output / 'routes/opencpn.log').read_text(encoding='utf-8', errors='replace'):
+        raise RuntimeError('Packaged adaptive GUI control contract did not pass')
+    import xml.etree.ElementTree as ET
+    for mode, flag in [('automatic', '1'), ('manual', '0')]:
+        snapshot = ET.parse(str(adaptive_prefix) + '-' + mode + '.xml')
+        route = next(c for c in snapshot.findall('Configuration') if c.get('Start') == 'A')
+        if not (route.get('AutomaticAdaptiveSettings') == flag and
+                float(route.get('dt')) == 5370 and
+                float(route.get('OriginalHeadingStepDegrees')) == 7.25):
+            raise RuntimeError('Adaptive GUI failed to preserve exact manual values')
     for path, expected in before.items():
         if sha(path) != expected:
             raise RuntimeError('Trial changed the normal profile: ' + str(path))
@@ -315,6 +335,8 @@ def test(archive, plugin, output):
         'first_use_example_passage_complete_without_other_plugins': True,
         'unavailable_draw_blocks_and_direct_recovery_enables_calculation': True,
         'forecast_climatology_and_fallback_routes': 'complete',
+        'adaptive_controls_locked_through_mouse_and_tab_events': True,
+        'adaptive_off_restores_exact_manual_values': True,
         'visible_labels': sorted(labels), 'zip_sha256': sha(archive),
     }, indent=2) + '\n', encoding='utf-8')
 
