@@ -1084,6 +1084,7 @@ void ConfigurationDialog::SetConfigurations(
     std::list<RouteMapConfiguration> configurations) {
   m_compactReady = true;
   m_pendingAngleError.clear();
+  m_resetNotice.clear();
   m_bBlockUpdate = true;
 
   m_edited_controls.clear();
@@ -1474,6 +1475,7 @@ bool ConfigurationDialog::HandleEngineEdit(wxObject* control) {
       control != m_cShorelineResolution)
     return false;
   if (m_bBlockUpdate) return true;
+  if (BlockActiveSettingsEdit()) return true;
   // A text/spin event queued before a mode change must not overwrite saved
   // manual inputs after the control has become policy-managed or disabled.
   if (auto* window = wxDynamicCast(control, wxWindow);
@@ -1584,6 +1586,7 @@ bool ConfigurationDialog::HandleEngineEdit(wxObject* control) {
 void ConfigurationDialog::OnAdaptiveSettings(wxCommandEvent&) {
   if (m_bBlockUpdate || !m_cbAutomaticAdaptiveSettings ||
       m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_UNDETERMINED) return;
+  if (BlockActiveSettingsEdit()) return;
   const bool enabled = m_cbAutomaticAdaptiveSettings->IsChecked();
   bool changed = false;
   for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
@@ -1639,7 +1642,11 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_cEnginePreset->Enable(engine != weather_routing::RoutingEngine::Unsupported && !atlas);
   if (atlas) m_bResetAdvanced->Enable(false);
   bool running = false;
-  for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) running |= route->Running();
+  for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) running |= m_WeatherRouting.RouteComputationActive(route);
+  // Keep section navigation and Close available while the settings themselves
+  // are read-only. A stale native event is also rejected by the edit handlers.
+  for (size_t i = 0; i < m_notebook7->GetPageCount(); ++i)
+    m_notebook7->GetPage(i)->Enable(!running);
   m_cRoutingEngine->Enable(!running);
   m_cBasicRoutingMode->Enable(!running);
   for (unsigned i = 0; i < m_cbAutoEngines.size(); ++i) {
@@ -1707,7 +1714,12 @@ void ConfigurationDialog::UpdateEngineControls() {
       !managedStep);
   m_sQuickHeadingStepDegrees->Enable(!running &&
       !managedStep);
-  if (running) m_bResetAdvanced->Enable(false);
+  if (running) {
+    m_bResetAdvanced->Enable(false);
+    m_cEnginePreset->Enable(false);
+  }
+  if (m_sailingReset) m_sailingReset->Enable(!running);
+  if (m_weatherReset) m_weatherReset->Enable(!running);
   m_tRoutingEngineDescription->SetLabel(engine == weather_routing::RoutingEngine::Auto
       ? _("Auto: finds a validated route using the engines selected in Routing controls. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::All
@@ -1792,6 +1804,54 @@ void ConfigurationDialog::RefreshEnginePresetStatus() {
 #endif
 }
 
+bool ConfigurationDialog::BlockActiveSettingsEdit() {
+  for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
+    if (!m_WeatherRouting.RouteComputationActive(route)) continue;
+    m_edited_controls.clear();
+    m_resetNotice = _("Settings are read-only while routing is active. Wait for completion or stop it in Routing progress.");
+    wxLogMessage("WR_SETTINGS_EDIT_BLOCKED %s", m_resetNotice);
+    RefreshValidationFooter();
+    return true;
+  }
+  return false;
+}
+
+bool ConfigurationDialog::CanResetRoutes(const std::list<RouteMapOverlay*>& routes) {
+  if (routes.empty()) return false;
+  m_resetNotice.clear();
+  if (routes != m_WeatherRouting.CurrentRouteMaps(false))
+    m_resetNotice = _("Settings not reset: the selection changed. Review the selected passages and try again.");
+  for (auto* route : routes) {
+    // Compare ownership before dereferencing a pointer captured by a modal.
+    if (!m_WeatherRouting.RouteMapIsManaged(route)) {
+      m_resetNotice = _("Settings not reset: a selected passage was removed. Select a passage and try again.");
+      break;
+    }
+    if (m_WeatherRouting.RouteComputationActive(route)) {
+      m_resetNotice = _("Settings not reset: routing is active. Wait for completion or stop it in Routing progress.");
+      break;
+    }
+  }
+  if (m_resetNotice.empty()) return true;
+  wxLogMessage("WR_SETTINGS_RESET_BLOCKED %s", m_resetNotice);
+  UpdateEngineControls();
+  RefreshValidationFooter();
+  return false;
+}
+
+bool ConfigurationDialog::PrepareSettingsReset(const std::list<RouteMapOverlay*>& routes) {
+  if (!CanResetRoutes(routes)) return false;
+  bool hasResults = false;
+  for (auto* route : routes) hasResults |= route->HasComputedResults();
+  if (hasResults && !m_WeatherRouting.ClearComputedResults(routes)) {
+    m_resetNotice = _("Settings not reset: route preparation is active. Wait for completion or stop it in Routing progress.");
+    wxLogMessage("WR_SETTINGS_RESET_BLOCKED %s", m_resetNotice);
+    RefreshValidationFooter();
+    return false;
+  }
+  return true;
+}
+
 void ConfigurationDialog::OnResetAdvanced(wxCommandEvent&) {
   const auto engine = weather_routing::EngineFromSelection(m_cRoutingEngine->GetSelection());
   const bool combined = weather_routing::IsCombinedEngine(engine);
@@ -1799,8 +1859,7 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent&) {
       engine == weather_routing::RoutingEngine::Atlas || m_cEnginePreset->GetSelection() != 0)
     return;
   const auto routes = m_WeatherRouting.CurrentRouteMaps(false);
-  if (routes.empty()) return;
-  for (auto* route : routes) if (route->Running()) return;
+  if (!CanResetRoutes(routes)) return;
   // The configuration editor applies changes immediately. Previewing the
   // explicit reset gives it an Apply/Cancel boundary without changing that
   // established workflow or modifying routes before the user accepts.
@@ -1816,10 +1875,13 @@ void ConfigurationDialog::OnResetAdvanced(wxCommandEvent&) {
       ? _("Quick - Balanced\nNominal time step: 1 hour (reduced near departure and destination)\nHeading separation: 10 degrees\nMaximum search angle: 120 degrees")
       : _("Standard - Balanced\nOffshore time step: 3 hours (adaptive)\nHeading separation: 10 degrees (adaptive)\nMaximum search angle: 120 degrees");
   WR_MessageDialog preview(this, values +
-      _("\n\nApplies to all selected routes. Memory and GRIB cache budgets, vessel, weather and safety settings are preserved."),
+      _("\n\nApplies to all selected routes. Memory and GRIB cache budgets, vessel, weather and safety settings are preserved. Computed results will be cleared so you can calculate again."),
       _("Reset engine to preset"), wxOK | wxCANCEL);
   preview.SetOKLabel(_("Apply preset"));
   if (preview.ShowModal() != wxID_OK) return;
+  // Modal confirmation dispatches timers: a queued route may have started,
+  // finished, changed selection or been removed while this dialog was open.
+  if (!PrepareSettingsReset(routes)) return;
   std::list<RouteMapConfiguration> configurations;
   for (auto* route : routes) {
     auto config = route->GetConfiguration();
@@ -1905,6 +1967,7 @@ void ConfigurationDialog::SetStartDateTime(wxDateTime datetime) {
 
 void ConfigurationDialog::OnChartSafetyChanged(wxCommandEvent&) {
   if (m_bBlockUpdate || !m_WeatherRouting.HasEnhancedChartSafety()) return;
+  if (BlockActiveSettingsEdit()) return;
   m_WeatherRouting.ApplyChartSafetySettings(
       m_cbUseExperimentalChartSafety->GetValue(),
       m_cbEnforceExperimentalChartSafety->GetValue());
@@ -1913,6 +1976,7 @@ void ConfigurationDialog::OnChartSafetyChanged(wxCommandEvent&) {
 
 void ConfigurationDialog::Update() {
   if (m_bBlockUpdate) return;
+  if (BlockActiveSettingsEdit()) return;
   // Validate the editors before RouteMap's legacy normalisation can silently
   // clamp a reversed range. Keep the last valid saved values until corrected.
   m_pendingAngleError = weather_routing::CheckSailingAngleRange(
@@ -2596,6 +2660,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this engine; High and Full need installed data."));
 #ifndef __OCPN__ANDROID__
   auto* reset = new wxButton(this, wxID_ANY, _("Reset wind/wave limits..."));
+  m_weatherReset = reset;
   reset->SetName("Reset wind and wave limits");
   reset->SetToolTip(_("Review factory wind and wave limits; keep route, vessel, weather sources and safety settings."));
   reset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ResetWeatherLimits(); });
@@ -2701,13 +2766,13 @@ void ConfigurationDialog::SaveWindowGeometry() {
 
 void ConfigurationDialog::ResetWeatherLimits() {
   const auto routes = m_WeatherRouting.CurrentRouteMaps(false);
-  if (routes.empty()) return;
-  for (auto* route : routes) if (route->Running()) return;
+  if (!CanResetRoutes(routes)) return;
   WR_MessageDialog preview(this,
-      _("Apply factory limits to the selected routes?\n\nMaximum true wind: 30 kn\nMaximum apparent wind: 40 kn\nMaximum wave height: 3 m\n\nRoute, boat, weather sources, chart safety and search settings are preserved."),
+      _("Apply factory limits to the selected routes?\n\nMaximum true wind: 30 kn\nMaximum apparent wind: 40 kn\nMaximum wave height: 3 m\n\nRoute, boat, weather sources, chart safety and search settings are preserved. Computed results will be cleared so you can calculate again."),
       _("Reset wind and wave limits"), wxOK | wxCANCEL);
   preview.SetOKLabel(_("Apply limits"));
   if (preview.ShowModal() != wxID_OK) return;
+  if (!PrepareSettingsReset(routes)) return;
   std::list<RouteMapConfiguration> configs;
   for (auto* route : routes) {
     auto config = route->GetConfiguration();
@@ -2731,6 +2796,7 @@ void ConfigurationDialog::BuildValidationFooter() {
   m_cbUseOptimalAngles->GetContainingSizer()->Add(m_angleValidation, 0, wxEXPAND | wxALL, 5);
   m_angleValidation->Hide();
   auto* anglesReset = new wxButton(m_sFromDegree->GetParent(), wxID_ANY, _("Reset sailing-angle range..."));
+  m_sailingReset = anglesReset;
   m_cbUseOptimalAngles->GetContainingSizer()->Add(anglesReset, 0, wxALL, 5);
   anglesReset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ResetSailingAngles(); });
 #ifdef __OCPN__ANDROID__
@@ -2786,8 +2852,15 @@ void ConfigurationDialog::RefreshValidationFooter() {
   }
   m_bOK->Enable(m_pendingAngleError.empty());
   if (!m_pendingAngleError.empty()) error += _(" Changes have not been saved.");
+  if (error.empty() && !m_resetNotice.empty()) error = m_resetNotice;
+  if (error.empty()) for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
+    if (m_WeatherRouting.RouteComputationActive(route)) {
+      error = _("Settings are read-only while routing is active. Wait for completion or stop it in Routing progress.");
+      break;
+    }
+  }
   m_validationStatus->SetLabel(error.empty() ? _("Changes are saved as you edit. Readiness checks cover the complete passage.") : error);
-  m_validationStatus->SetForegroundColour(error.empty() ? GetForegroundColour() : wxColour(170, 35, 30));
+  m_validationStatus->SetForegroundColour(m_validationCode.empty() ? GetForegroundColour() : wxColour(170, 35, 30));
   m_validationStatus->Wrap(std::max(220, GetClientSize().x - 230));
   m_validationStatus->SetMinSize(wxSize(1, -1));
   m_validationAction->Show(!m_validationCode.empty());
@@ -2826,12 +2899,15 @@ void ConfigurationDialog::ShowProblem(const std::string& code) {
 void ConfigurationDialog::ResetSailingAngles() {
   const auto routes = m_WeatherRouting.CurrentRouteMaps(false);
   if (routes.empty()) return;
-  for (auto* route : routes) if (m_WeatherRouting.RouteComputationActive(route)) return;
+  if (!CanResetRoutes(routes)) return;
   WR_MessageDialog preview(this,
-      _("Reset the selected passages' sailing-angle range to 40 through 160 degrees?\n\nHeading separation, time steps, Automatic adaptive settings, engine selections, resource limits, vessel and safety settings are preserved."),
+      _("Reset the selected passages' sailing-angle range to 40 through 160 degrees?\n\nHeading separation, time steps, Automatic adaptive settings, engine selections, resource limits, vessel and safety settings are preserved. Computed results will be cleared so you can calculate again."),
       _("Reset sailing-angle range"), wxOK | wxCANCEL);
   preview.SetOKLabel(_("Reset range"));
   if (preview.ShowModal() != wxID_OK) return;
+  // Modal confirmation dispatches timers: a queued route may have started,
+  // finished, changed selection or been removed while this dialog was open.
+  if (!PrepareSettingsReset(routes)) return;
   std::list<RouteMapConfiguration> configurations;
   for (auto* route : routes) {
     auto c = route->GetConfiguration();

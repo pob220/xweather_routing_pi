@@ -233,6 +233,7 @@ private:
   friend class RoutingTablePanel;
   friend class RouteComparisonDialog;
   friend class PassagePanel;
+  friend class ConfigurationDialog;
   friend class ResultsWorkspace;
   ResultsWorkspace* m_ResultsWorkspace{nullptr};
   wxWindow* m_RoutesMultiLegTools{nullptr};

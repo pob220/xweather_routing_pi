@@ -25,3 +25,18 @@ The new explicit host check is enabled only with `WR_HEADLESS_WORKSPACE_CONTRACT
 The arm64 binary builds against the existing qualified wxQt/Qt/NDK dependencies. TLS isolation and 16 KiB ELF alignment pass. All imported wx symbols resolve against both the actual tablet's 5.15 host and the pinned stock 5.14 host. The import package retains metadata, bundled Climatology, shoreline assets, CA material and dependency licences.
 
 This pass does **not** claim a new physical-tablet test of 2.3.0 or a native Windows/macOS runtime test. The tablet remains on its qualified 2.2.6 installation. Prior 2.2.6 qualifications are background evidence, not substitutes for these outstanding platform tests. Production 1.36.3 and the working laptop installation remain separate.
+
+## Engine-reset freeze regression
+
+A disposable real-GRIB GUI test reproduced an unsafe reset against the initial 2.3 UI commit (`5956a4c`): confirmation opened with a start queued, computation began inside the modal loop, and Apply changed the live time step from 600 to 3,600 seconds. The interface blocked for 90,239 ms; the worker then reported unusable wind data and the route failed. An operating-system crash was not reproduced.
+
+The settings guard covers queued starts, preparation, workers, alternative exploration and owned multi-leg work. It rejects stale edit events and checks captured reset targets again after confirmation. It does not stop a worker or apply a reset while routing is active. Completed-route resets clear UI references and obsolete results before applying the new settings.
+
+The reusable GTK/X11 host test covers the confirmation/start race, successful completion without changing live settings, completed-result reset followed by recalculation, Cancel preserving results, queued resets and stale edits being rejected, restored controls after completion, and selection/deletion of captured targets. Run it against a built and installed development prefix:
+
+```sh
+python3 tools/test-settings-reset-linux.py --build BUILD --prefix PREFIX \
+  --host /path/to/opencpn --xvfb /path/to/Xvfb --output NEW_OUTPUT_DIRECTORY
+```
+
+The default is the bundled deterministic real GRIB. `--forecast` and `--departure` permit a separate real-forecast replay. Test objects and profiles are private to the new output directory; the instrumented library is never installed or packaged.

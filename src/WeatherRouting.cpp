@@ -3739,6 +3739,7 @@ void WeatherRouting::ScheduleDeferredRoutingStart(int mode,
   m_DeferredRoutingStartMode = mode;
   m_DeferredRoutingStartGroupId = groupId;
   m_DeferredRoutingStartPending = true;
+  m_ConfigurationDialog.RefreshActivityState();
   wxLogMessage(
       "WeatherRouting deferred routing start scheduled: mode=%d "
       "group=%s",
@@ -8843,6 +8844,9 @@ bool WeatherRouting::ClearComputedResults(
     const std::list<RouteMapOverlay*>& routes) {
   if (!CanClearComputedResults(routes)) return false;
   // Discard every UI reference to result data before freeing its geometry.
+#ifndef __OCPN__ANDROID__
+  if (m_ResultsWorkspace) m_ResultsWorkspace->ClearRouteReferences();
+#endif
   m_positionOnRoute = nullptr;
   if (m_RoutingTablePanel &&
       std::find(routes.begin(), routes.end(),
@@ -10441,6 +10445,7 @@ void WeatherRouting::SaveXML(wxString filename) {
 }
 
 void WeatherRouting::SetEnableConfigurationMenu() {
+  m_ConfigurationDialog.RefreshActivityState();
   bool current = FirstCurrentRouteMap() != NULL;
   const bool clearSelected = CanClearComputedResults(CurrentRouteMaps());
   m_mClearResults->Enable(clearSelected);

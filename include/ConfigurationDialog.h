@@ -26,8 +26,10 @@
 #include "WeatherRoutingUI.h"
 
 #include <vector>
+#include <list>
 
 class WeatherRouting;
+class RouteMapOverlay;
 class weather_routing_pi;
 
 /**
@@ -57,6 +59,7 @@ public:
   void EditBoat();
   void ShowProblem(const std::string& code);
   bool RunWorkspaceHostContract();
+  void RefreshActivityState() { UpdateEngineControls(); }
   wxString PendingSailingAngleError() const { return m_pendingAngleError; }
   void ShowSettingsSection(size_t section) {
 #ifdef __OCPN__ANDROID__
@@ -172,6 +175,9 @@ protected:
 
 private:
   wxString m_pendingAngleError;
+  wxString m_resetNotice;
+  wxButton* m_sailingReset = nullptr;
+  wxButton* m_weatherReset = nullptr;
 #ifdef __OCPN__ANDROID__
   wxStaticText* m_androidMemoryStatus{nullptr};
   wxStaticText* m_androidBoatName{nullptr};
@@ -189,6 +195,9 @@ private:
   void SaveWindowGeometry();
   void ResetWeatherLimits();
   void ResetSailingAngles();
+  bool BlockActiveSettingsEdit();
+  bool CanResetRoutes(const std::list<RouteMapOverlay*>& routes);
+  bool PrepareSettingsReset(const std::list<RouteMapOverlay*>& routes);
   void BuildValidationFooter();
   void RefreshValidationFooter();
   wxStaticText* m_validationStatus = nullptr;

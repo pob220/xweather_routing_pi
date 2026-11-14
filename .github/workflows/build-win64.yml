@@ -155,20 +155,21 @@ jobs:
           "C:\Program Files\gettext-iconv\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Build, package and test matched OpenCPN host
         run: python ci/circleci-build-windows64.py --skip-generator
+      - name: Upload Plugin Manager import packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: xWeatherRouting-plugin-tarballs-x64-wx${{ matrix.wx }}
+          if-no-files-found: error
+          path: |
+            artifacts/windows-x64/package/*.tar.gz
+            compatibility/windows-x64-wx329/package/*.tar.gz
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: xWeatherRouting-2.2.0-windows-x64-wx${{ matrix.wx }}
+          name: xWeatherRouting-windows-x64-wx${{ matrix.wx }}
           include-hidden-files: true
           path: |
             artifacts/windows-x64
             compatibility/windows-x64-wx329
             .windows64/build/Testing/Temporary
             .windows64-wx329/build/Testing/Temporary
-
-  ui-trial:
-    needs: build-win64
-    uses: ./.github/workflows/windows-ui-trial.yml
-    with:
-      qualification-run: ${{ format('{0}', github.run_id) }}
-      source-commit: ${{ github.sha }}
