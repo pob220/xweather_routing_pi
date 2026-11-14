@@ -1,81 +1,33 @@
-# Try xWeatherRouting 2.2.6 on Windows
+# Try xWeatherRouting 2.3.0 on Windows
 
-Please try the new passage-planning screen and tell Paul what feels clear,
-confusing or missing. **You do not need to compile anything for this first look.**
+This developer test is a **Plugin Manager import tarball** for Windows 64-bit
+OpenCPN using wxWidgets 3.3.4, matching Rick’s OpenCPN 5.15 build.
 
-## Download and open
+1. [Download the 2.3.0 Windows 64-bit plugin](https://github.com/pob220/xweather_routing_pi/releases/download/windows-plugin-test-2.3.0-20261114/xweather_routing_pi-2.3.0-msvc-64-x86_64-10.0-MSVC-x64-wx334.tar.gz).
+2. In OpenCPN, open **Options → Plugins → Import plugin** and select the downloaded
+   `.tar.gz` file. Keep the archive intact.
+3. Enable xWeatherRouting and restart OpenCPN if requested.
 
-1. [Download the Windows 64-bit trial ZIP (about 82 MiB)](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.2.6-20261114/xWeatherRouting-2.2.6-Windows-UI-Trial.zip).
-2. Right-click the ZIP and choose **Extract All** into a new folder on your
-   Desktop, then open that extracted folder.
-3. Double-click **Start-Weather-Routing.cmd**. Allow a few seconds for the
-   Weather Routing window to open in the included OpenCPN test copy.
+See [the 2.3.0 changes](RELEASE-NOTES-2.3.0.md) and
+[qualification and remaining platform limits](QUALIFICATION-2.3.0.md).
+This is a developer test, not an alpha or catalogue publication. Version 2
+retains separate preferences and user data from the production version 1 line.
 
-The ZIP includes a matching 64-bit OpenCPN and the plugin, already enabled.
-It keeps its settings and test files in the extracted folder. Your normal
-OpenCPN, plugins, charts and routes are left alone. Use the supplied launcher
-each time. To remove the trial, close its windows and delete that extracted folder.
+Plan passage and Routes remain. Desktop settings are grouped into Route, Boat,
+Weather, Safety and Engine; detailed results have coordinated views. Existing
+routing engines, automatic adaptive settings, forecasts, polars, reports,
+exports, multi-leg passages and optional chart safety are preserved.
 
-## First calculation — no weather download needed
+Settings for an active passage are read-only. Wait for completion or stop the
+computation explicitly in Routing progress before changing them. Reset
+confirmations recheck the selected passages after the prompt closes. An accepted
+reset clears obsolete computed results so the passage can be calculated again.
 
-1. On **Plan passage**, click **Try example passage** (also available under **Passage actions**).
-2. Close the planning-help note and click **Calculate route**.
-3. Look at the result, then try **Edit route**, **Boat and polar library** and
-   **Passage settings**. Change something and calculate again.
+To see the departure triangle and destination cross, select the route and enable
+its eye in Routes. A visible, unselected route shows its track without those
+endpoint symbols. Bring both endpoints into view and move any covering windows.
 
-The example selects the illustrative 40 ft monohull and bundled Climatology.
-Climatology describes typical seasonal conditions, not today's forecast.
-No separate Climatology or Polars plugin is needed for this exercise.
-
-If you want to try one of your own OpenCPN routes, add test charts and a copy
-of the route to this test copy first. Then try **Use OpenCPN route**, or its
-right-click routing action. The trial starts without your personal charts/routes.
-
-## Latest improvements
-
-- **GRIB Time** works with a restored passage forecast after restarting, even
-  when the optional viewer is absent or unopened.
-- Forecast loading and generation work independently. An enabled **xGRIB 0.4.5**
-  can display the same GRIB on the chart.
-- **Automatic adaptive settings** chooses routing inputs for the passage.
-  Managed controls are greyed out; turning it off restores saved manual values.
-- Date/time controls avoid entering a Zulu timestamp string. Search-limit
-  messages distinguish calculation allowances from a system RAM failure.
-
-- Calculation blockers name the problem and offer a direct fix beside it.
-- Missing Draw has a passage-only **Turn off Draw exclusions** action; land
-  avoidance and saved defaults stay unchanged. Draw is optional and off on a
-  fresh installation.
-- Warnings are separate from blockers, and the first-use example is easier to find.
-
-## Other improvements in 2.2
-
-- New passages default to **Auto**, with all six engines checked for **Auto**
-  and **All**. Saved mode and checkbox choices are remembered for the next
-  route and after restarting. Existing routes retain their own settings.
-- Shorter settings pages, with tooltips, Help buttons and F1 help.
-- Scrollable settings that remember window size and position.
-- Clear, separate wind/wave and search-preset resets.
-- Direct access to Routes and analysis, reports, statistics and plots.
-- Session run records with inputs, outcomes and observed timings, ready to copy
-  or save. Existing engines are preserved; the automatic controller selects
-  inputs and bounded search allowances around them.
-
-## What feedback would help?
-
-- Is it obvious what to do in **Route, Boat and Weather** to get a calculation?
-- Are the boat/weather choices and readiness messages understandable?
-- What feels awkward, takes too many clicks, or is difficult to read?
-
-Screenshots and the steps that confused you are useful. Please mention your
-Windows display scaling if anything is clipped or too small. The aim of this
-first look is feedback on using the interface; a build-system review is optional.
-
-The trial contains OpenCPN 5.15.0 / wxWidgets 3.3.4 and xWeatherRouting 2.2.6.
-It is separate from the stable 1.x catalogue version. Custom chart-aware hosts
-can be tested separately. For source builds, see [Windows developer instructions](WINDOWS.md).
-
-The review ZIP has passed native Windows checks of both matching host
-builds, the delivered launcher, relocated-profile calculations and preservation
-of a normal OpenCPN profile. See [the 2.2.6 qualification record](https://github.com/pob220/xweather_routing_pi/releases/download/windows-ui-trial-2.2.6-20261114/qualification-2.2.6.json).
-This is a developer test download; alpha and catalogue publication await further testing.
+For feedback, **View → Routing progress → Run record** has **Copy record** and
+**Save record**. Include the route, settings, weather inputs and steps that led
+to the result. Review records before sharing because they contain positions
+and filenames.

@@ -24,7 +24,21 @@ The new explicit host check is enabled only with `WR_HEADLESS_WORKSPACE_CONTRACT
 
 The arm64 binary builds against the existing qualified wxQt/Qt/NDK dependencies. TLS isolation and 16 KiB ELF alignment pass. All imported wx symbols resolve against both the actual tablet's 5.15 host and the pinned stock 5.14 host. The import package retains metadata, bundled Climatology, shoreline assets, CA material and dependency licences.
 
-This pass does **not** claim a new physical-tablet test of 2.3.0 or a native Windows/macOS runtime test. The tablet remains on its qualified 2.2.6 installation. Prior 2.2.6 qualifications are background evidence, not substitutes for these outstanding platform tests. Production 1.36.3 and the working laptop installation remain separate.
+This pass does **not** claim a new physical-tablet test of 2.3.0 or a native macOS runtime test. The tablet remains on its qualified 2.2.6 installation. Prior 2.2.6 qualifications are background evidence, not substitutes for these outstanding platform tests. Production 1.36.3 and the working laptop installation remain separate.
+
+## Windows and test installation
+
+[Native Windows run 43645279088](https://github.com/pob220/xweather_routing_pi/actions/runs/43645279088) passed for both wxWidgets 3.3.4 and 3.2.9 at source `2211053be91dc9ff48d0f16ace3e5f663eb723b9`. Each build passed all **708 enabled tests**, matched-host routing checks, and normal-profile Plugin Manager installation and reinstallation. The unchanged scientific helper was reused only after an exact build-input/provenance comparison with qualified 2.2.6; the new plugin and packaged runtime were validated again.
+
+Rick's download is only the wxWidgets 3.3.4 Windows x64 Plugin Manager tarball, with embedded metadata for version 2.3.0, `msvc-64`, `x86_64`, target version 10 and API 1.21. The PE machine is AMD64 (`0x8664`). Its SHA256 is `a3398dff88c42a86d6fc1ad4d2ae6c6de1bdf2aaee5739f2091de103b7d994c1`. See [Windows import instructions](TRY-WINDOWS.md).
+
+The earlier Linux 2.x test profile and its existing desktop shortcut now launch 2.3.0. The actual launcher was checked in an isolated display: it mapped the release library and closed normally. All 732 boat, polar and forecast files and the navigation-table counts were preserved; database integrity passed. The working OpenCPN wrapper, host, production Weather Routing and xGRIB libraries were checked unchanged. This is a local test installation and a developer-test download, not an alpha or catalogue publication.
+
+## Endpoint display report
+
+A disposable OpenCPN GUI test rendered a real-GRIB route during calculation and after completion. With the route selected and its visibility eye enabled, both the blue departure triangle and red destination cross appeared at the projected endpoint coordinates. Turning the eye off produced no route overlay. With a completed route visible but unselected, its track remained visible and the endpoint symbols were omitted, matching the existing selection behaviour.
+
+No endpoint rendering fault was reproduced, and no rendering code was changed. The report's cropped screenshot alone does not establish whether selection, visibility, windows covering the endpoints or chart extent explains the missing marks. First select the route, enable its eye and bring both endpoints into view.
 
 ## Engine-reset freeze regression
 

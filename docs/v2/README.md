@@ -1,18 +1,17 @@
-# xWeatherRouting 2.2.1
+# xWeatherRouting 2.3.0 development
 
-Version 2.2 is developed on `feature/xweather-2.2.0`, following 2.1.3. Version 1
-remains the stable catalogue and maintenance line. Version 2 uses separate
-preferences and user data.
+Version 2.3 builds on 2.2.6 on `feature/xweather-2.3.0`. Version 1 remains the
+stable catalogue and maintenance line; version 2 retains separate preferences
+and user data.
 
-See [2.2 changes](CHANGES-2.2.md) and [the issue triage](ISSUE-TRIAGE-2.2.md).
-This pass refines the interface and retains run diagnostics. The production
-engine implementations and solver policies remain unchanged; performance experiments
-are separate standalone executables. New passages default to Auto with every
-engine checked for Auto and All; saved mode and membership choices take precedence. The coincident-waypoint checks from
-[2.1.3](CHANGES-2.1.3.md), Unicode correction and GRIB timestamp fix remain.
+See [2.3.0 changes](RELEASE-NOTES-2.3.0.md) and [qualification](QUALIFICATION-2.3.0.md).
+The existing engines, adaptive policies and search allowances are preserved.
+New passages default to Auto, all engines selected for Auto and All, and
+Automatic adaptive settings enabled; remembered user choices take precedence.
+Settings for an active passage are read-only until completion or an explicit stop.
 
-For Windows UI review, use the [portable trial](TRY-WINDOWS.md), which includes
-its matching OpenCPN host.
+For Windows testing, [import the Windows 64-bit plugin tarball](TRY-WINDOWS.md)
+using OpenCPN’s built-in Plugin Manager.
 
 The desktop workspace groups passage, boat and weather preparation, without
 experience levels. Its settings areas are labelled Passage settings and Routing
