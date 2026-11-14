@@ -253,3 +253,20 @@ TEST(PassageReadiness, SavedLegOverlapIsCheckedIndependentlyOfParentRoute) {
   input.routeSequenceValid = false;
   EXPECT_FALSE(wr::EvaluatePassage(input).CanCalculate());
 }
+
+TEST(PassageReadiness, InvalidSearchSettingsBlockWithEngineRecoveryWithoutChangingSafety) {
+  auto input = Ready();
+  input.sailingAngleError = wr::CheckSailingAngleRange(160, 40);
+  auto result = wr::EvaluatePassage(input);
+  ASSERT_FALSE(result.CanCalculate());
+  EXPECT_EQ(result.FirstBlocker()->code, "passage.search.angles");
+  EXPECT_EQ(wr::RecoveryAction(result.FirstBlocker()->code), wr::PassageAction::Engine);
+  input.sailingAngleError.clear();
+  input.selectedEnginesValid = false;
+  result = wr::EvaluatePassage(input);
+  ASSERT_FALSE(result.CanCalculate());
+  EXPECT_EQ(result.FirstBlocker()->code, "passage.search.engines");
+  input.selectedEnginesValid = true;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  EXPECT_TRUE(input.avoidLand);
+}

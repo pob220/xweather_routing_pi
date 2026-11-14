@@ -44,6 +44,7 @@ wxString PassageSectionStatus(const RouteDiagnosticReport& report) {
   return _("Ready");
 }
 PassageAction RecoveryAction(const std::string& code) {
+  if (code.find("passage.search.") == 0) return PassageAction::Engine;
   if (code.find("passage.route.") == 0) return PassageAction::Route;
   if (code.find("passage.boat.") == 0) return PassageAction::Boat;
   if (code.find("passage.limits.") == 0) return PassageAction::Limits;
@@ -59,6 +60,15 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
   };
   const auto error = DiagnosticSeverity::Error;
   const auto warning = DiagnosticSeverity::Warning;
+  if (!in.sailingAngleError.empty())
+    add(PassageSection::Limits, "passage.search.angles", error,
+        _("Correct the sailing-angle range"), in.sailingAngleError,
+        _("Edit sailing angles"));
+  if (!in.selectedEnginesValid)
+    add(PassageSection::Limits, "passage.search.engines", error,
+        _("No engines selected for this search mode"),
+        _("Select at least one engine in the Auto or All column on the Engine page."),
+        _("Choose engines"));
   if (!in.positionsValid)
     add(PassageSection::Route, "passage.route.positions", error,
         _("Define the start and destination"),

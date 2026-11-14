@@ -385,6 +385,12 @@ int PlotDialog::GetType(int var) {
 }
 
 void PlotDialog::GetScale() {
+  if (m_PlotData.empty()) {
+    m_StartTime = wxDateTime();
+    m_mintime = m_maxtime = 0;
+    for (int i = 0; i < 3; ++i) m_minvalue[i] = m_maxvalue[i] = 0;
+    return;
+  }
   wxChoice* cVariable[3] = {m_cVariable1, m_cVariable2, m_cVariable3};
   for (int i = 0; i < 3; i++) {
     bool first = true;
@@ -460,14 +466,12 @@ void PlotDialog::OnPaintPlot(wxPaintEvent& event) {
   dc.SetFont(axisFont);
 #endif
   dc.Clear();
-#ifdef __OCPN__ANDROID__
   if (m_PlotData.empty()) {
     dc.DrawText(m_rbCursorRoute->GetValue()
         ? _("Choose a point on the chart route to display its cursor plot.")
         : _("Select a computed routing to display a plot."), 20, 20);
     return;
   }
-#endif
   dc.SetBackgroundMode(wxTRANSPARENT);
 
   int w, h;

@@ -36,3 +36,10 @@ TEST(PassageSettings, AutoWorkersAndFiniteMultipliersHaveNoInventedCaps) {
   EXPECT_FALSE(wr::CheckPassageSetting(S::TrueWind, std::numeric_limits<double>::infinity()).empty());
   EXPECT_FALSE(wr::CheckPassageSetting(S::NightFactor, std::numeric_limits<double>::quiet_NaN()).empty());
 }
+
+TEST(PassageSettings, ReversedSailingRangeHasAnActionableCorrection) {
+  EXPECT_FALSE(weather_routing::CheckSailingAngleRange(160, 40).empty());
+  EXPECT_TRUE(weather_routing::CheckSailingAngleRange(40, 160).empty());
+  EXPECT_TRUE(weather_routing::CheckSailingAngleRange(0, 180).empty());
+  EXPECT_FALSE(weather_routing::CheckSailingAngleRange(-1, 160).empty());
+}

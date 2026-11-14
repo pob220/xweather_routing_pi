@@ -1,0 +1,14 @@
+# Weather Routing 2.3.0 development
+
+This UI pass builds on 2.2.6. It adopts selected ideas from [Rick's issue 36](https://github.com/pob220/xweather_routing_pi/issues/36) while retaining both main desktop tabs and the existing capabilities.
+
+- **Plan passage and Routes remain.** Cards have shorter headings; navigation and contextual route/multi-leg actions are easier to reach. Actions wrap in narrower desktop windows.
+- **Focused desktop settings:** Route, Boat, Weather, Safety and Engine. Existing controls and bindings are retained, including chart/depth enforcement, land clearance, optional Draw exclusions, arrival/departure planning, motoring, manoeuvres and performance adjustments.
+- **Automatic adaptive settings remain prominent.** Automatic stays on by default, Auto and All retain their separate engine selections, and managed numerical controls remain disabled. Turning Automatic off restores the remembered manual settings. The routing engines, adaptive policies and search allowances are unchanged.
+- **Grouped desktop results:** Table, Plot, Statistics, Report, Compare and Safety, with shared passage navigation. Multi-selection statistics/reports, explicit fastest/comfort selection, partial routes, CSV/GPX exports and the existing menus/shortcuts remain available. Empty plots show an explanation. The desktop table summary now includes the accepted final approach and arrival, as Android already did.
+- **Actionable validation:** reversed sailing-angle entries are shown beside the fields and in readiness checks before the legacy normaliser can clamp them. Invalid edits do not replace the last valid settings. Recovery opens the relevant page. A separate, confirmed reset restores only the sailing-angle range; existing weather-limit and search-preset resets retain their scopes.
+- **Resources tab in progress:** reports available RAM, active forecast-cache estimates and cache allowances, with a clear distinction between search allowances and physical memory. It does not invent a completion percentage or time estimate.
+
+The existing Android Plan / Routes / Results / Tools and seven-page touch setup are retained. Shared validation and resource information are available there; the five-page desktop arrangement is not imposed on Android. Standalone GRIB loading/generation, optional xGRIB display and timeline integration, polars, Climatology, multi-leg passages and optional enhanced chart safety are preserved.
+
+This is a development branch for review and testing, not an alpha or catalogue publication. Installed production and tablet versions are not changed by these source changes. See [qualification](QUALIFICATION-2.3.0.md) for the checks performed and their limits.

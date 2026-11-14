@@ -9,7 +9,7 @@
 
 namespace weather_routing {
 enum class PassageSection { Route, Boat, Weather, Limits };
-enum class PassageAction { Route, Boat, Weather, Limits };
+enum class PassageAction { Route, Boat, Weather, Limits, Engine };
 enum class PassageWindPolicy {
   Forecast,
   Climatology,
@@ -26,6 +26,8 @@ struct PassageInputs {
   std::optional<RouteDiagnostic> savedLegPositionIssue;
   bool boatValid{false}, exampleBoat{false};
   wxString boatError, boatWarnings;
+  wxString sailingAngleError;
+  bool selectedEnginesValid{true};
   PassageWindPolicy policy{PassageWindPolicy::Forecast};
   bool forecastLoaded{false}, departureWind{false}, destinationWind{false};
   bool coverageChecked{true};

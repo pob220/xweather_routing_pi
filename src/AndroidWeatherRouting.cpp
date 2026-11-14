@@ -730,6 +730,7 @@ void WeatherRouting::ReviewAndroidReadiness() {
     case weather_routing::PassageAction::Route: section = code == "passage.route.time" ? 1 : 0; break;
     case weather_routing::PassageAction::Boat: section = 2; break;
     case weather_routing::PassageAction::Limits: section = 4; break;
+    case weather_routing::PassageAction::Engine: m_ConfigurationDialog.ShowProblem(code); return;
     default: break;
   }
   OnEditConfiguration();

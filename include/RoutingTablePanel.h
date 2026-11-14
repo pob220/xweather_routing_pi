@@ -171,6 +171,7 @@ private:
   wxGrid* m_gridWeatherTable;
   wxSizer* m_mainSizer;
   wxStaticText* m_summaryText;
+  wxString m_summaryFullText;
   wxButton* m_columnsButton;
   wxButton* m_exportCsvButton;
   std::array<bool, COL_COUNT> m_columnVisible;

@@ -68,4 +68,9 @@ wxString CheckMotorSettings(bool enabled, double threshold, double speed) {
   if (auto e = CheckPassageSetting(PassageSetting::MotorSpeed, speed); !e.empty()) return e;
   return speed > 0 ? wxString() : _("Set a motor speed through water greater than zero, or switch motoring off.");
 }
+wxString CheckSailingAngleRange(double from, double to) {
+  if (auto error = CheckPassageSetting(PassageSetting::SailingFrom, from); !error.empty()) return error;
+  if (auto error = CheckPassageSetting(PassageSetting::SailingTo, to); !error.empty()) return error;
+  return from <= to ? wxString() : _("Minimum sailing angle exceeds maximum. Set From less than or equal to To.");
+}
 }  // namespace weather_routing

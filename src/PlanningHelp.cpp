@@ -136,10 +136,10 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
     case PlanningHelpTopic::Navigation:
       return _(
           "Plan passage contains Route, Boat and polars, and Weather. Passage "
-          "settings contains endpoints, times, limits and weather policy. "
-          "Routing controls contains engine selection, search settings, safety "
-          "and resource controls.\n\n"
-          "Routes and analysis contains the complete route table and its "
+          "settings groups endpoints, times, boat performance, weather and safety. "
+          "Routing controls opens the engine and search settings. Automatic "
+          "adaptive settings retain your manual numerical values.\n\n"
+          "Routes contains the complete route table and its "
           "existing operations. Analysis tools provides direct access to "
           "reports, statistics, plots and run diagnostics. Context-menu "
           "multi-leg creation and sequence optimisation remain available.\n\n"

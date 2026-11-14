@@ -450,6 +450,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
     // must not apply all hidden controls (including rounded/clamped values)
     // and invalidate an already computed departure candidate.
     if (typedSpinValue || !m_edited_controls.empty()) Update();
+    if (!m_pendingAngleError.empty()) { ShowProblem("passage.search.angles"); return; }
     Hide();
   });
   auto* navigation = new wxPanel(this, wxID_ANY);
@@ -615,6 +616,7 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
   SetMinSize(FromDIP(wxSize(620, 440)));
   weather_routing::KeepPlanningDialogVisible(this);
 #endif
+  BuildValidationFooter();
   Bind(wxEVT_SHOW, [this](wxShowEvent& event) {
     if (!event.IsShown()) SaveWindowGeometry();
     event.Skip();
@@ -1081,6 +1083,7 @@ static void SetConfigurationChoiceValue(wxComboBox* combo,
 void ConfigurationDialog::SetConfigurations(
     std::list<RouteMapConfiguration> configurations) {
   m_compactReady = true;
+  m_pendingAngleError.clear();
   m_bBlockUpdate = true;
 
   m_edited_controls.clear();
@@ -1910,6 +1913,14 @@ void ConfigurationDialog::OnChartSafetyChanged(wxCommandEvent&) {
 
 void ConfigurationDialog::Update() {
   if (m_bBlockUpdate) return;
+  // Validate the editors before RouteMap's legacy normalisation can silently
+  // clamp a reversed range. Keep the last valid saved values until corrected.
+  m_pendingAngleError = weather_routing::CheckSailingAngleRange(
+      m_sFromDegree->GetValue(), m_sToDegree->GetValue());
+  if (!m_pendingAngleError.empty()) {
+    RefreshValidationFooter();
+    return;
+  }
 
   if (std::find(m_edited_controls.begin(), m_edited_controls.end(),
                 (wxObject*)m_sChartSafetyRamCacheMiB) !=
@@ -2524,24 +2535,6 @@ bool ConfigurationDialog::RunComfortHostContract() {
 
 void ConfigurationDialog::BuildCompactPlanningControls() {
   using namespace weather_routing;
-#ifndef __OCPN__ANDROID__
-  // The old desktop Basic page is a fixed panel. Preserve its complete
-  // controls/bindings but give the page the same scrolling capability as the
-  // Android page, without changing the generated base class.
-  auto* previous = m_pBasic;
-  auto* scroll = new wxScrolledWindow(m_notebook7, wxID_ANY, wxDefaultPosition,
-      wxDefaultSize, wxVSCROLL | wxHSCROLL | wxTAB_TRAVERSAL);
-  auto* contents = previous->GetSizer();
-  previous->SetSizer(nullptr, false);
-  std::vector<wxWindow*> children;
-  for (auto* child : previous->GetChildren()) children.push_back(child);
-  for (auto* child : children) child->Reparent(scroll);
-  scroll->SetSizer(contents);
-  m_notebook7->RemovePage(0);
-  m_pBasic = scroll;
-  m_notebook7->InsertPage(0, scroll, _("Passage settings"), true);
-  previous->Hide(); previous->Destroy();
-#endif
   // Keep generated controls and all their bindings. Only presentation changes;
   // the hidden notes can still be reflowed by the legacy platform handlers.
   std::vector<wxStaticText*> notes;
@@ -2611,7 +2604,17 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   auto* footer = new wxBoxSizer(wxHORIZONTAL);
   auto* outer = m_bOK->GetContainingSizer();
   outer->Detach(m_bOK);
-  footer->Add(reset, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+  auto* safetyPage = m_notebook7->GetPage(3);
+  reset->Reparent(safetyPage);
+  safetyPage->GetSizer()->Add(reset, 0, wxALL, 8);
+  auto* help = new wxButton(this, wxID_HELP, _("Help"));
+  help->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+    using weather_routing::PlanningHelpTopic;
+    const PlanningHelpTopic topics[] = {PlanningHelpTopic::Timing, PlanningHelpTopic::Performance,
+        PlanningHelpTopic::Weather, PlanningHelpTopic::Safety, PlanningHelpTopic::Search};
+    weather_routing::ShowFocusedPlanningHelp(this, topics[std::min(4, m_notebook7->GetSelection())]);
+  });
+  footer->Add(help, 0, wxALL, 5);
   footer->AddStretchSpacer();
   footer->Add(m_bOK, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
   outer->Add(footer, 0, wxEXPAND);
@@ -2625,8 +2628,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
         columns->SetCols(2); columns->AddGrowableCol(1);
       }
     }
-    if (auto* columns = dynamic_cast<wxBoxSizer*>(m_pAdvanced->GetSizer()))
-      columns->SetOrientation(narrow ? wxVERTICAL : wxHORIZONTAL);
+    // Focused Engine content remains vertical at every desktop width.
     m_pBasic->Layout(); m_pBasic->FitInside();
     m_pAdvanced->Layout(); m_pAdvanced->FitInside();
     event.Skip();
@@ -2639,6 +2641,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
 void ConfigurationDialog::RefreshCompactPlanningStatus() {
   if (!m_compactReady || !m_compactEngineStatus || !m_compactSafetyStatus) return;
   m_tArrivalPlanningHint->Hide();
+  RefreshValidationFooter();
   const auto engine = weather_routing::EngineFromSelection(m_cRoutingEngine->GetSelection());
   wxString label = wxGetTranslation(weather_routing::EngineTitle(engine));
   if (weather_routing::IsCombinedEngine(engine)) {
@@ -2656,6 +2659,10 @@ void ConfigurationDialog::RefreshCompactPlanningStatus() {
   } else if (engine == weather_routing::RoutingEngine::Atlas ||
              engine == weather_routing::RoutingEngine::Quick2)
     label += _(L" · engine-managed search controls");
+  if (m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_CHECKED)
+    label += _(" · automatic numerical settings; manual values retained");
+  else if (m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_UNDETERMINED)
+    label += _(" · mixed automatic/manual settings");
   m_compactEngineStatus->SetLabel(label);
   weather_routing::SetPlanningHelp(m_cShorelineResolution, weather_routing::PlanningHelpTopic::Shoreline,
       _("Shoreline detail for this engine; High and Full need installed data."));
@@ -2714,4 +2721,200 @@ void ConfigurationDialog::ResetWeatherLimits() {
   SetConfigurations(configs);
   m_WeatherRouting.UpdateCurrentConfigurations();
   m_WeatherRouting.ScheduleAutoSave();
+}
+
+
+void ConfigurationDialog::BuildValidationFooter() {
+  m_angleValidation = new wxStaticText(m_sFromDegree->GetParent(), wxID_ANY, wxEmptyString);
+  m_angleValidation->SetName("Sailing-angle range error");
+  m_angleValidation->SetForegroundColour(wxColour(170, 35, 30));
+  m_cbUseOptimalAngles->GetContainingSizer()->Add(m_angleValidation, 0, wxEXPAND | wxALL, 5);
+  m_angleValidation->Hide();
+  auto* anglesReset = new wxButton(m_sFromDegree->GetParent(), wxID_ANY, _("Reset sailing-angle range..."));
+  m_cbUseOptimalAngles->GetContainingSizer()->Add(anglesReset, 0, wxALL, 5);
+  anglesReset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ResetSailingAngles(); });
+#ifdef __OCPN__ANDROID__
+  anglesReset->SetMinSize(wxSize(360, 72));
+  WR_EnableAndroidButton(anglesReset);
+#endif
+  auto* row = new wxBoxSizer(wxHORIZONTAL);
+  m_validationStatus = new wxStaticText(this, wxID_ANY, wxEmptyString);
+  m_validationStatus->SetName("Route setup validation");
+  row->Add(m_validationStatus, 1, wxALL | wxALIGN_CENTER_VERTICAL, 6);
+  m_validationAction = new wxButton(this, wxID_ANY, _("Show problem"));
+  m_validationAction->SetName("Show invalid setting");
+  row->Add(m_validationAction, 0, wxALL | wxALIGN_CENTER_VERTICAL, 6);
+  m_validationAction->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { ShowProblem(m_validationCode); });
+  m_validationAction->Hide();
+  GetSizer()->Add(row, 0, wxEXPAND);
+#ifdef __OCPN__ANDROID__
+  m_validationStatus->SetFont(wxFont(14, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
+  m_validationAction->SetMinSize(wxSize(200, 64));
+  WR_EnableAndroidButton(m_validationAction);
+#endif
+}
+
+void ConfigurationDialog::RefreshValidationFooter() {
+  if (!m_validationStatus) return;
+  m_validationCode.clear();
+  wxString error = m_pendingAngleError;
+  if (!error.empty()) m_validationCode = "passage.search.angles";
+  for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
+    if (!error.empty()) break;
+    const auto c = route->GetConfiguration();
+    error = weather_routing::CheckSailingAngleRange(c.FromDegree, c.ToDegree);
+    if (!error.empty()) { m_validationCode = "passage.search.angles"; break; }
+    if (weather_routing::IsCombinedEngine(c.EngineSettings.engine) && !c.EngineSettings.SelectedEngines()) {
+      error = _("Select at least one engine for this Auto or All search.");
+      m_validationCode = "passage.search.engines"; break;
+    }
+    if (c.MinimumDepthMeters > 0 && (!c.DetectLand ||
+        !m_WeatherRouting.HasEnhancedChartSafety() ||
+        !m_cbUseExperimentalChartSafety->GetValue() || !m_cbEnforceExperimentalChartSafety->GetValue())) {
+      error = _("A positive depth limit requires land avoidance and required chart/depth checks.");
+      m_validationCode = "passage.limits.depth"; break;
+    }
+  }
+  if (m_angleValidation) {
+    m_angleValidation->SetLabel(m_validationCode == "passage.search.angles" ? error : wxString());
+    m_angleValidation->Wrap(std::max(220, m_notebook7->GetClientSize().x - 60));
+    m_angleValidation->SetMinSize(wxSize(1, -1));
+    m_angleValidation->Show(m_validationCode == "passage.search.angles");
+    if (auto* page = wxDynamicCast(m_sFromDegree->GetParent()->GetParent(), wxScrolledWindow)) {
+      page->Layout(); page->FitInside();
+    }
+  }
+  m_bOK->Enable(m_pendingAngleError.empty());
+  if (!m_pendingAngleError.empty()) error += _(" Changes have not been saved.");
+  m_validationStatus->SetLabel(error.empty() ? _("Changes are saved as you edit. Readiness checks cover the complete passage.") : error);
+  m_validationStatus->SetForegroundColour(error.empty() ? GetForegroundColour() : wxColour(170, 35, 30));
+  m_validationStatus->Wrap(std::max(220, GetClientSize().x - 230));
+  m_validationStatus->SetMinSize(wxSize(1, -1));
+  m_validationAction->Show(!m_validationCode.empty());
+  Layout();
+}
+
+void ConfigurationDialog::ShowProblem(const std::string& code) {
+  wxWindow* field = m_sFromDegree;
+  if (code == "passage.search.engines") field = m_cRoutingEngine;
+  else if (code.find("depth") != std::string::npos) field = m_sMinimumDepthMeters;
+  else if (code.find("boundary") != std::string::npos) field = m_cbDetectBoundary;
+  else if (code.find("wave") != std::string::npos) field = m_sMaxSwellMeters;
+  else if (code.find("wind") != std::string::npos) field = m_sMaxTrueWindKnots;
+  else if (code.find("limits") != std::string::npos) field = m_cbDetectLand;
+  size_t section = 0;
+  for (size_t i = 0; i < m_notebook7->GetPageCount(); ++i)
+    for (auto* parent = field; parent; parent = parent->GetParent())
+      if (parent == m_notebook7->GetPage(i)) section = i;
+#ifdef __OCPN__ANDROID__
+  ShowAndroidSection(section);
+#else
+  m_notebook7->SetSelection(section);
+  Show(); Raise();
+  weather_routing::KeepPlanningDialogVisible(this);
+#endif
+  field->SetFocus();
+  if (auto* page = wxDynamicCast(m_notebook7->GetPage(section), wxScrolledWindow)) {
+    int x = 0, y = 0; page->GetScrollPixelsPerUnit(&x, &y);
+    auto position = page->ScreenToClient(field->ClientToScreen(wxPoint(0, 0)));
+    const int top = page->GetViewStart().y;
+    if (y > 0) page->Scroll(-1, std::max(0, top + position.y / y - 2));
+  }
+}
+
+
+void ConfigurationDialog::ResetSailingAngles() {
+  const auto routes = m_WeatherRouting.CurrentRouteMaps(false);
+  if (routes.empty()) return;
+  for (auto* route : routes) if (m_WeatherRouting.RouteComputationActive(route)) return;
+  WR_MessageDialog preview(this,
+      _("Reset the selected passages' sailing-angle range to 40 through 160 degrees?\n\nHeading separation, time steps, Automatic adaptive settings, engine selections, resource limits, vessel and safety settings are preserved."),
+      _("Reset sailing-angle range"), wxOK | wxCANCEL);
+  preview.SetOKLabel(_("Reset range"));
+  if (preview.ShowModal() != wxID_OK) return;
+  std::list<RouteMapConfiguration> configurations;
+  for (auto* route : routes) {
+    auto c = route->GetConfiguration();
+    c.FromDegree = weather_routing::kDefaultFromDegree;
+    c.ToDegree = weather_routing::kDefaultToDegree;
+    route->SetConfiguration(c);
+    m_WeatherRouting.SaveLastUsedConfigurationDefaults(c);
+    configurations.push_back(c);
+  }
+  SetConfigurations(configurations);
+  m_WeatherRouting.UpdateCurrentConfigurations();
+  m_WeatherRouting.ScheduleAutoSave();
+}
+
+
+bool ConfigurationDialog::RunWorkspaceHostContract() {
+  auto routes = m_WeatherRouting.CurrentRouteMaps(false);
+  if (routes.empty()) return false;
+  auto* route = routes.front();
+  const auto saved = route->GetConfiguration();
+  SetConfigurations({saved});
+#ifdef __OCPN__ANDROID__
+  const size_t routePage = 0, timePage = 1, boatPage = 2, weatherPage = 3, safetyPage = 4, enginePage = 5;
+  bool passed = m_notebook7->GetPageCount() == 7;
+#else
+  const size_t routePage = 0, timePage = 0, boatPage = 1, weatherPage = 2, safetyPage = 3, enginePage = 4;
+  bool passed = m_notebook7->GetPageCount() == 5;
+#endif
+  const auto under = [this](wxWindow* control, size_t page) {
+    for (auto* parent = control; parent; parent = parent->GetParent())
+      if (parent == m_notebook7->GetPage(page)) return true;
+    wxLogMessage("WR_WORKSPACE_ORPHAN control=%s page=%zu", control->GetName(), page);
+    return false;
+  };
+  for (auto* control : std::vector<wxWindow*>{m_cStart, m_cEnd}) passed &= under(control, routePage);
+  for (auto* control : std::vector<wxWindow*>{m_dpStartDate, m_tpTime}) passed &= under(control, timePage);
+  for (auto* control : std::vector<wxWindow*>{m_tBoat}) passed &= under(control, boatPage);
+#ifndef __OCPN__ANDROID__
+  for (auto* control : std::vector<wxWindow*>{m_sUpwindEfficiency, m_sTackingTime, m_sJibingTime, m_sSailPlanChangeTime}) passed &= under(control, boatPage);
+  for (auto* control : std::vector<wxWindow*>{m_cbCurrents, m_sWindStrength}) passed &= under(control, weatherPage);
+#endif
+  for (auto* control : std::vector<wxWindow*>{m_cbUseGrib, m_cClimatologyType}) passed &= under(control, weatherPage);
+  for (auto* control : std::vector<wxWindow*>{m_cbDetectLand, m_cbDetectBoundary,
+      m_cbUseExperimentalChartSafety, m_cbEnforceExperimentalChartSafety,
+      m_sSafetyMarginLand, m_sMinimumDepthMeters, m_cbRequireWaveCoverage}) passed &= under(control, safetyPage);
+  for (auto* control : std::vector<wxWindow*>{m_cRoutingEngine, m_cbAutomaticAdaptiveSettings,
+      m_sTimeStepHours, m_sTimeStepMinutes, m_sByDegrees,
+      m_sMainGribTimelineCacheMiB, m_sQuickGribTimelineCacheMiB, m_sQuickMemoryBudgetMiB}) passed &= under(control, enginePage);
+  for (size_t i = 0; i < m_notebook7->GetPageCount(); ++i) {
+    m_notebook7->SetSelection(i); Layout();
+    const auto c = route->GetConfiguration();
+    passed &= c.EngineSettings == saved.EngineSettings && c.DeltaTime == saved.DeltaTime &&
+        c.ByDegrees == saved.ByDegrees && c.AutomaticAdaptiveSettings == saved.AutomaticAdaptiveSettings &&
+        c.StartTime == saved.StartTime && c.PlannedArrivalTime == saved.PlannedArrivalTime &&
+        c.boatFileName == saved.boatFileName && c.MinimumDepthMeters == saved.MinimumDepthMeters &&
+        c.SafetyMarginLand == saved.SafetyMarginLand && c.ClimatologyType == saved.ClimatologyType &&
+        c.RequireWaveCoverage == saved.RequireWaveCoverage && c.UseGrib == saved.UseGrib;
+  }
+  wxLogMessage("WR_WORKSPACE_STAGE layout_preserved=%d", passed ? 1 : 0);
+  m_bBlockUpdate = true;
+  m_sFromDegree->SetValue(160); m_sToDegree->SetValue(40);
+  m_bBlockUpdate = false;
+  wxSpinEvent invalidEvent(wxEVT_SPINCTRL, m_sFromDegree->GetId());
+  invalidEvent.SetEventObject(m_sFromDegree); OnUpdateSpin(invalidEvent);
+  passed &= route->GetConfiguration().FromDegree == saved.FromDegree &&
+      route->GetConfiguration().ToDegree == saved.ToDegree;
+  wxLogMessage("WR_WORKSPACE_STAGE angle_code=%s action=%d", wxString::FromUTF8(m_validationCode.c_str()), m_validationAction->IsShown());
+  passed &= m_validationCode == "passage.search.angles" && m_validationAction->IsShown();
+  ShowProblem("passage.search.angles");
+#ifndef __OCPN__ANDROID__
+  wxLogMessage("WR_WORKSPACE_STAGE recovery_page=%d", m_notebook7->GetSelection());
+  passed &= m_notebook7->GetSelection() == 4;
+#endif
+  auto empty = saved;
+  empty.EngineSettings.engine = weather_routing::RoutingEngine::Auto;
+  empty.EngineSettings.autoEngines = 0;
+  route->SetConfiguration(empty); SetConfigurations({empty});
+  wxLogMessage("WR_WORKSPACE_STAGE engine_code=%s", wxString::FromUTF8(m_validationCode.c_str()));
+  passed &= m_validationCode == "passage.search.engines";
+  route->SetConfiguration(saved); SetConfigurations({saved});
+  wxLogMessage("WR_WORKSPACE_STAGE restored_code=%s", wxString::FromUTF8(m_validationCode.c_str()));
+  passed &= m_validationCode.empty();
+  Hide();
+  wxLogMessage("WR_WORKSPACE_CONFIGURATION_CONTRACT passed=%d pages=%zu", passed ? 1 : 0, m_notebook7->GetPageCount());
+  return passed;
 }

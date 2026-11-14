@@ -12,6 +12,8 @@ src/PassageSettings.cpp
 src/PlanningHelp.cpp
 src/RunDiagnosticsJournal.cpp
 src/PassagePanel.cpp
+src/PlanningWorkspace.cpp
+src/ResultsWorkspace.cpp
 src/PlanningTimeCtrl.cpp
 src/PassagePresentation.cpp
 src/EnvironmentalGribDialog.cpp

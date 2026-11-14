@@ -55,8 +55,15 @@ public:
   ~ConfigurationDialog();
 
   void EditBoat();
+  void ShowProblem(const std::string& code);
+  bool RunWorkspaceHostContract();
+  wxString PendingSailingAngleError() const { return m_pendingAngleError; }
   void ShowSettingsSection(size_t section) {
+#ifdef __OCPN__ANDROID__
     if (section < m_notebook7->GetPageCount()) m_notebook7->SetSelection(section);
+#else
+    m_notebook7->SetSelection(section == 1 ? 4 : 0);
+#endif
   }
 #ifdef __OCPN__ANDROID__
   void ShowAndroidSection(size_t section);
@@ -164,6 +171,7 @@ protected:
   void OnClose(wxCommandEvent& event) { SaveWindowGeometry(); Hide(); }
 
 private:
+  wxString m_pendingAngleError;
 #ifdef __OCPN__ANDROID__
   wxStaticText* m_androidMemoryStatus{nullptr};
   wxStaticText* m_androidBoatName{nullptr};
@@ -180,6 +188,13 @@ private:
   void RefreshCompactPlanningStatus();
   void SaveWindowGeometry();
   void ResetWeatherLimits();
+  void ResetSailingAngles();
+  void BuildValidationFooter();
+  void RefreshValidationFooter();
+  wxStaticText* m_validationStatus = nullptr;
+  wxStaticText* m_angleValidation = nullptr;
+  wxButton* m_validationAction = nullptr;
+  std::string m_validationCode;
   wxStaticText* m_compactEngineStatus = nullptr;
   wxStaticText* m_compactSafetyStatus = nullptr;
   bool m_compactReady = false;

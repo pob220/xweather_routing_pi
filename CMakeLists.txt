@@ -89,11 +89,11 @@ set(PACKAGE_CONTACT "Sean d'Epagnier; Weather Routing Plugin Team")
 set(SHORT_DESCRIPTION
     "Integrated passage planning: route, boat, polars and weather.")
 set(LONG_DESCRIPTION
-    "${COMMON_NAME} 2.2.6 adds optional automatic adaptive routing settings and brings route setup, a searchable polar library, boat and polar editing, independent GRIB loading and generation, with optional xGRIB chart display into one passage-planning workflow. Includes an illustrative 40 ft monohull and the complete Climatology 2026.2 dataset. A compatible installed Climatology provider with newer data takes precedence. The existing routing engines, reports, OpenCPN route analysis, multi-leg passages and optional chart-aware safety remain available. Ordinary routing and GSHHG land avoidance work on stock OpenCPN; chart-backed checks require a compatible enhanced host. Uses separate version 2 preferences and user data. Version 1 remains the stable catalogue line while this separate development branch is qualified.")
+    "${COMMON_NAME} 2.3.0 improves navigation, focused settings, validation, results and resource reporting while preserving optional automatic adaptive routing settings. It brings route setup, a searchable polar library, boat and polar editing, independent GRIB loading and generation, with optional xGRIB chart display into one passage-planning workflow. Includes an illustrative 40 ft monohull and the complete Climatology 2026.2 dataset. A compatible installed Climatology provider with newer data takes precedence. The existing routing engines, reports, OpenCPN route analysis, multi-leg passages and optional chart-aware safety remain available. Ordinary routing and GSHHG land avoidance work on stock OpenCPN; chart-backed checks require a compatible enhanced host. Uses separate version 2 preferences and user data. Version 1 remains the stable catalogue line while this separate development branch is qualified.")
 
 set(VERSION_MAJOR "2")
-set(VERSION_MINOR "2")
-set(VERSION_PATCH "6")
+set(VERSION_MINOR "3")
+set(VERSION_PATCH "0")
 set(VERSION_TWEAK "0")
 # Keep all five approved source archives for verification and regression tests.
 # Packages ship only Crude, Low and Intermediate; High and Full are optional
@@ -273,6 +273,8 @@ SET(SRCS
             src/PlanningHelp.cpp
             src/RunDiagnosticsJournal.cpp
             src/PassagePanel.cpp
+            src/PlanningWorkspace.cpp
+            src/ResultsWorkspace.cpp
             src/PlanningTimeCtrl.cpp
             src/PassagePresentation.cpp
             src/EnvironmentalGribDialog.cpp

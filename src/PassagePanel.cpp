@@ -1,3 +1,6 @@
+#ifndef __OCPN__ANDROID__
+#include <wx/wrapsizer.h>
+#endif
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassagePanel.h"
 #include "PlanningHelp.h"
@@ -61,7 +64,11 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   // Keep them reachable by scrolling and keyboard focus in compact windows.
   content_->SetScrollRate(12, 14);
   auto* page = new wxBoxSizer(wxVERTICAL);
+#ifdef __OCPN__ANDROID__
   auto* plans = new wxBoxSizer(wxHORIZONTAL);
+#else
+  auto* plans = new wxWrapSizer(wxHORIZONTAL);
+#endif
   passages_ = new wxChoice(content_, wxID_ANY);
   passages_->SetMinSize(wxSize(160, -1));
   passages_->SetName(_("Selected passage"));
@@ -75,6 +82,9 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                        [this](wxCommandEvent&) { NewPassage(true); });
   auto* more = new wxButton(content_, wxID_ANY, _("Passage actions"));
   plans->Add(more, 0, wxALL, 5);
+  auto* routes = new wxButton(content_, wxID_ANY, _("Routes"));
+  plans->Add(routes, 0, wxALL, 5);
+  routes->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { routing_.ShowPlanningPage(true); });
   more->Bind(wxEVT_BUTTON, [this, more](wxCommandEvent&) {
     wxMenu menu;
     const int example = wxWindow::NewControlId(),
@@ -104,10 +114,14 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                           [this] { ReviewFailure(); });
   failureButton_->Show(false);
   resultsBox_->Show(false);
-  auto* route = card(_("1. Route"));
+  auto* route = card(_("Route"));
   route_ = Text(content_, route, "");
   route_->SetName(_("Route status"));
+#ifdef __OCPN__ANDROID__
   auto* routeActions = new wxBoxSizer(wxHORIZONTAL);
+#else
+  auto* routeActions = new wxWrapSizer(wxHORIZONTAL);
+#endif
   mutableControls_.push_back(
       Button(content_, routeActions, _("Edit route"), [this] { EditRoute(); }));
   mutableControls_.push_back(Button(content_, routeActions,
@@ -120,10 +134,14 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                               [this] { EditRouteWaypoints(); });
   waypointFixButton_->Show(false);
   mutableControls_.push_back(waypointFixButton_);
-  auto* boat = card(_("2. Boat and polars"));
+  auto* boat = card(_("Boat and polars"));
   boat_ = Text(content_, boat, "");
   boat_->SetName(_("Boat status"));
+#ifdef __OCPN__ANDROID__
   auto* boatActions = new wxBoxSizer(wxHORIZONTAL);
+#else
+  auto* boatActions = new wxWrapSizer(wxHORIZONTAL);
+#endif
   mutableControls_.push_back(Button(content_, boatActions,
                                     _("Boat and polar library"),
                                     [this] { ShowLibrary(); }));
@@ -138,7 +156,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
   mutableControls_.push_back(Button(content_, boatActions, _("Boat details"),
                                     [this] { EditBoatDetails(); }));
   boat->Add(boatActions, 0, wxEXPAND);
-  auto* weather = card(_("3. Weather"));
+  auto* weather = card(_("Weather"));
   weather_routing::SetPlanningHelp(route->GetStaticBox(), weather_routing::PlanningHelpTopic::Timing, _("Route definition and passage times."));
   weather_routing::SetPlanningHelp(boat->GetStaticBox(), weather_routing::PlanningHelpTopic::Performance, _("Boat profile, polars and vessel performance."));
   weather_routing::SetPlanningHelp(weather->GetStaticBox(), weather_routing::PlanningHelpTopic::Weather, _("Forecast and Climatology source policy."));
@@ -181,7 +199,11 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                     _("Download / generate GRIB"),
                                     [this] { GenerateWeather(); }));
   weather->Add(weatherActions, 0, wxEXPAND);
+#ifdef __OCPN__ANDROID__
   auto* settings = new wxBoxSizer(wxHORIZONTAL);
+#else
+  auto* settings = new wxWrapSizer(wxHORIZONTAL);
+#endif
   mutableControls_.push_back(Button(content_, settings, _("Passage settings"),
                                     [this] { OpenSettings(0); }));
   mutableControls_.push_back(Button(content_, settings, _("Routing controls"),
@@ -194,7 +216,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
       menu.Bind(wxEVT_MENU, [function](wxCommandEvent&) { function(); }, id);
       return id;
     };
-    action(_("Routes and analysis"), [this] {
+    action(_("Routes"), [this] {
       if (routing_.m_PassageNotebook) routing_.m_PassageNotebook->SetSelection(1);
     });
     menu.AppendSeparator();
@@ -900,7 +922,9 @@ void PassagePanel::ResolveReadinessIssue(const std::string& code) {
       case weather_routing::PassageAction::Route: EditRoute(); break;
       case weather_routing::PassageAction::Boat: ShowLibrary(); break;
       case weather_routing::PassageAction::Weather: windPolicy_->SetFocus(); break;
-      case weather_routing::PassageAction::Limits: OpenSettings(0); break;
+      case weather_routing::PassageAction::Limits:
+      case weather_routing::PassageAction::Engine:
+        routing_.m_ConfigurationDialog.ShowProblem(code); break;
     }
 }
 void PassagePanel::ShowHelp() {

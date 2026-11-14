@@ -38,6 +38,7 @@
 #include <wx/wx.h>
 #include "WeatherRoutingFileDialog.h"
 #include "WeatherRoutingProgressDialog.h"
+#include "ResultsWorkspace.h"
 #include <wx/aui/aui.h>
 #include <wx/imaglist.h>
 #include <wx/progdlg.h>
@@ -1703,11 +1704,17 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   auto* notebook = new wxAuiNotebook(this, wxID_ANY, wxDefaultPosition,
       wxDefaultSize, wxAUI_NB_TOP | wxAUI_NB_SCROLL_BUTTONS);
   m_PassageNotebook=notebook;
+  notebook->SetName("Primary planning pages");
   wxWindow* previous = m_colpane ? static_cast<wxWindow*>(m_colpane) : static_cast<wxWindow*>(m_panel);
   bSizer->Detach(previous);
   previous->Reparent(notebook);
   previous->SetMinSize(wxSize(0,0));
-  notebook->AddPage(previous, _("Routes and analysis"));
+  auto* routesPage = new wxPanel(notebook);
+  routesPage->SetSizer(new wxBoxSizer(wxVERTICAL));
+  BuildRoutesWorkspaceTools(routesPage);
+  previous->Reparent(routesPage);
+  routesPage->GetSizer()->Add(previous, 1, wxEXPAND);
+  notebook->AddPage(routesPage, _("Routes"));
   m_PassagePanel = new PassagePanel(notebook, *this);
   notebook->InsertPage(0, m_PassagePanel, _("Plan passage"), true);
   bSizer->Add(notebook, 1, wxEXPAND);
@@ -1741,6 +1748,10 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 }
 
 WeatherRouting::~WeatherRouting() {
+#ifndef __OCPN__ANDROID__
+  delete m_ResultsWorkspace;
+  m_ResultsWorkspace = nullptr;
+#endif
   // Stop the planning timer and child generator before route ownership ends.
   if (m_PassagePanel) m_PassagePanel->PrepareForShutdown();
 #ifdef __OCPN__ANDROID__
@@ -1943,6 +1954,11 @@ weather_routing::PassageInputs WeatherRouting::InspectPassageInputs(
   const bool running = !m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() ||
       m_RoutePreparationDepth || m_DeferredRoutingStartPending;
   weather_routing::PassageInputs input;
+  input.sailingAngleError = m_ConfigurationDialog.PendingSailingAngleError();
+  if (input.sailingAngleError.empty())
+    input.sailingAngleError = weather_routing::CheckSailingAngleRange(c.FromDegree, c.ToDegree);
+  input.selectedEnginesValid = !weather_routing::IsCombinedEngine(c.EngineSettings.engine) ||
+      c.EngineSettings.SelectedEngines() != 0;
   input.positionsValid = !c.Start.empty() && !c.End.empty() &&
                          std::isfinite(c.StartLat) &&
                          std::isfinite(c.StartLon) && std::isfinite(c.EndLat) &&
@@ -2428,6 +2444,9 @@ void WeatherRouting::Render(piDC& dc, PlugIn_ViewPort& vp) {
 
   // A hidden table does not need timeline repaint work. In particular, do not
   // let a retained AUI pane dereference route data while routes are replaced.
+#ifndef __OCPN__ANDROID__
+  if (m_ResultsWorkspace && m_ResultsWorkspace->IsShown()) m_ResultsWorkspace->UpdateTimeHighlight(time);
+#endif
   if (m_RoutingTablePanel) {
     wxAuiManager* pauimgr = ::GetFrameAuiManager();
     if (pauimgr) {
@@ -3044,6 +3063,15 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title, bool newRun) {
     });
     record->SetSizer(recordSizer);
     pages->AddPage(record, _("Run record"));
+    auto* resources = new wxPanel(pages);
+    auto* resourcesSizer = new wxBoxSizer(wxVERTICAL);
+    m_RoutingProgressResources = new wxTextCtrl(resources, wxID_ANY, wxEmptyString,
+        wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY);
+    m_RoutingProgressResources->SetName("Routing resource status");
+    resourcesSizer->Add(m_RoutingProgressResources, 1, wxEXPAND | wxALL, 8);
+    resources->SetSizer(resourcesSizer);
+    pages->AddPage(resources, _("Resources"));
+
     pages->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& event) {
       RefreshRunDiagnosticsRecord(); event.Skip();
     });
@@ -3113,6 +3141,8 @@ void WeatherRouting::ShowRoutingProgress(const wxString& title, bool newRun) {
     pages->GetHandle()->setStyleSheet(
         "QTabBar::tab { font-size: 16pt; min-height: 64px; min-width: 150px; }");
     m_RoutingProgressHistory->GetHandle()->setStyleSheet(
+        "QTextEdit { font-size: 16pt; padding: 8px; }");
+    m_RoutingProgressResources->GetHandle()->setStyleSheet(
         "QTextEdit { font-size: 16pt; padding: 8px; }");
     for (auto* button : {copy, save}) {
       button->SetMinSize(wxSize(220, 72));
@@ -3316,6 +3346,28 @@ void WeatherRouting::RefreshRoutingProgressTiming() {
         m_RoutingProgressPreviousStageDuration.Format(_T("%H:%M:%S")));
   }
   m_RoutingProgressTiming->SetLabel(timing);
+  if (m_RoutingProgressResources) {
+    const auto available = weather_routing::AvailablePhysicalMemoryMiB();
+    wxString resources = available
+        ? wxString::Format(_("Available system RAM: %llu MiB\n"),
+                           static_cast<unsigned long long>(available))
+        : _("Available system RAM: unavailable\n");
+    resources += wxString::Format(_("Routes running: %zu; waiting: %zu\n"),
+        m_RunningRouteMaps.size(), m_WaitingRouteMaps.size());
+    if (m_GribTimelineFrameCache && m_GribTimelineFrameCache->IsConfigured())
+      resources += wxString::Format(_("Shared forecast cache: %.1f MiB retained (estimate)\nBatch cache admission allowance: %d MiB; requested: %d MiB\n"),
+          double(m_GribTimelineFrameCache->TotalWeight()) / (1024.0 * 1024.0),
+          m_GribTimelineFrameCache->EffectiveMiB(), m_GribTimelineFrameCache->RequestedMiB());
+    else resources += _("Shared forecast cache: inactive\n");
+    if (HasEnhancedChartSafety())
+      resources += wxString::Format(_("Chart-safety cache allowance: %d MiB\n"),
+                                   EffectiveChartSafetyRamCacheMiB());
+    else resources += _("Chart-safety host service: unavailable\n");
+    resources += _("\nCache allowances are limits, not allocated memory. The forecast cache is shared by the computation batch; runtime memory pressure can reduce retention further.\n\nSearch allowances bound states and geometry work. Reaching a search allowance does not mean that system RAM is exhausted.\n\nSearch activity and elapsed time do not predict time remaining. Resource and search controls are available in route setup; chart-cache limits apply to all passages.");
+    if (m_RoutingProgressResources->GetValue() != resources)
+      m_RoutingProgressResources->ChangeValue(resources);
+  }
+
 #ifdef __OCPN__ANDROID__
   WR_WrapAndroidText(m_RoutingProgressTiming, timing,
                     m_RoutingProgressDialog->GetClientSize().x - 40);
@@ -5023,13 +5075,18 @@ void WeatherRouting::CompleteHeadlessSingleRouteTest(bool timed_out,
   if (!timed_out && complete > 0 &&
       (EnvString("WR_HEADLESS_COMFORT_CONFIGURATION_CONTRACT") == "1" ||
        EnvString("WR_HEADLESS_ENGINE_CONFIGURATION_CONTRACT") == "1" ||
-       EnvString("WR_HEADLESS_ADAPTIVE_CONFIGURATION_CONTRACT") == "1") &&
+       EnvString("WR_HEADLESS_ADAPTIVE_CONFIGURATION_CONTRACT") == "1" ||
+       EnvString("WR_HEADLESS_WORKSPACE_CONTRACT") == "1") &&
       !EnvString("WR_HEADLESS_SCENARIO").empty()) {
     auto* list = m_panel->m_lWeatherRoutes;
     for (long row = 0; row < list->GetItemCount(); ++row) {
       auto* route = reinterpret_cast<WeatherRoute*>(wxUIntToPtr(list->GetItemData(row)));
       list->SetItemState(row, route->routemapoverlay == selected_route ? wxLIST_STATE_SELECTED : 0,
                          wxLIST_STATE_SELECTED);
+    }
+    if (EnvString("WR_HEADLESS_WORKSPACE_CONTRACT") == "1" && !RunWorkspaceHostContract()) {
+      FinishHeadlessRouteTestProcess(4);
+      return;
     }
     if (EnvString("WR_HEADLESS_ENGINE_CONFIGURATION_CONTRACT") == "1")
       m_ConfigurationDialog.RunEngineHostContract();
@@ -6544,6 +6601,7 @@ void WeatherRouting::OnWeatherRouteSelected() {
         currentroutemaps.empty() ? nullptr : currentroutemaps.front());
   }
 
+  RefreshRoutesWorkspaceTools();
   SetEnableConfigurationMenu();
 }
 
@@ -9323,18 +9381,30 @@ void WeatherRouting::OnSettings(wxCommandEvent& event) {
 }
 
 void WeatherRouting::OnStatistics(wxCommandEvent& event) {
+#ifndef __OCPN__ANDROID__
+  ShowResults(2);
+#else
   m_StatisticsDialog.SetRouteMapOverlays(CurrentRouteMaps());
   m_StatisticsDialog.Show();
+#endif
 }
 
 void WeatherRouting::OnReport(wxCommandEvent& event) {
+#ifndef __OCPN__ANDROID__
+  ShowResults(3);
+#else
   m_ReportDialog.SetRouteMapOverlays(CurrentRouteMaps());
   m_ReportDialog.Show();
+#endif
 }
 
 void WeatherRouting::OnPlot(wxCommandEvent& event) {
+#ifndef __OCPN__ANDROID__
+  ShowResults(1);
+#else
   m_PlotDialog.SetRouteMapOverlay(FirstCurrentRouteMap());
   m_PlotDialog.Show();
+#endif
 }
 
 void WeatherRouting::OnCursorPosition(wxCommandEvent& event) {
@@ -10427,6 +10497,9 @@ void WeatherRouting::UpdateConfigurations() {
 }
 
 void WeatherRouting::UpdateDialogs() {
+#ifndef __OCPN__ANDROID__
+  if (m_ResultsWorkspace && m_ResultsWorkspace->IsShown()) m_ResultsWorkspace->RefreshSelection();
+#endif
   std::list<RouteMapOverlay*> routemapoverlays = CurrentRouteMaps();
   if (m_StatisticsDialog.IsShown())
     m_StatisticsDialog.SetRouteMapOverlays(routemapoverlays);
@@ -13914,6 +13987,9 @@ void WeatherRouting::Reset() {
 
 void WeatherRouting::DeleteRouteMaps(
     std::list<RouteMapOverlay*> routemapoverlays) {
+#ifndef __OCPN__ANDROID__
+  if (m_ResultsWorkspace) m_ResultsWorkspace->ClearRouteReferences();
+#endif
   const bool previouslyUpdating = m_UpdatingDepartureSelection;
   m_UpdatingDepartureSelection = true;
   // RoutingTablePanel is retained when its AUI pane is hidden. Detach it from

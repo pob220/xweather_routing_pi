@@ -227,11 +227,19 @@ public:
  * @see RouteMapOverlay For the route calculation engine and display
  * @see RouteMapConfiguration For the routing parameters
  */
+class ResultsWorkspace;
 class WeatherRouting : public WeatherRoutingBase {
 private:
   friend class RoutingTablePanel;
   friend class RouteComparisonDialog;
   friend class PassagePanel;
+  friend class ResultsWorkspace;
+  ResultsWorkspace* m_ResultsWorkspace{nullptr};
+  wxWindow* m_RoutesMultiLegTools{nullptr};
+  wxWindow* m_RoutesSelectionTools{nullptr};
+  wxStaticText* m_RoutesSelectionLabel{nullptr};
+  void BuildRoutesWorkspaceTools(wxWindow* page);
+  void RefreshRoutesWorkspaceTools();
   std::shared_ptr<weather_routing::PassageWeather> m_PassageWeather;
   PassagePanel* m_PassagePanel{nullptr};
   wxAuiNotebook* m_PassageNotebook{nullptr};
@@ -597,6 +605,9 @@ private:
   void OnChartAwarenessSettings(wxCommandEvent& event);
   void OnShorelineData(wxCommandEvent& event);
   void OnSettings(wxCommandEvent& event);
+  void ShowPlanningPage(bool routes);
+  void ShowResults(size_t page = 0);
+  bool RunWorkspaceHostContract();
   void OnStatistics(wxCommandEvent& event);
   void OnReport(wxCommandEvent& event);
   void OnPlot(wxCommandEvent& event);
@@ -989,6 +1000,7 @@ private:
   wxTextCtrl* m_RoutingProgressDetail;
   wxStaticText* m_RoutingProgressTiming;
   wxTextCtrl* m_RoutingProgressHistory = nullptr;
+  wxTextCtrl* m_RoutingProgressResources = nullptr;
   weather_routing::RunDiagnosticsJournal m_RunDiagnostics;
   wxDateTime m_RoutingProgressFinishedAt;
   wxGauge* m_RoutingProgressGauge;

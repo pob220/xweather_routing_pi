@@ -10,6 +10,9 @@
 #include "RoutingEngineSettings.h"
 #include "WeatherRoutingWxCompat.h"
 #include <vector>
+#ifndef __OCPN__ANDROID__
+#include <wx/wrapsizer.h>
+#endif
 #include "AndroidDialogHeader.h"
 
 ///////////////////////////////////////////////////////////////////////////
@@ -625,11 +628,14 @@ WeatherRoutingPanel::WeatherRoutingPanel(wxWindow* parent, wxWindowID id,
       wxLC_HRULES | wxLC_NO_SORT_HEADER | wxLC_REPORT | wxHSCROLL | wxVSCROLL);
   fgSizer17->Add(m_lWeatherRoutes, 0, wxALL | wxEXPAND, 5);
 
-  wxFlexGridSizer* fgSizer116;
-  fgSizer116 = new wxFlexGridSizer(1, 0, 0, 0);
+#ifdef __OCPN__ANDROID__
+  auto* fgSizer116 = new wxFlexGridSizer(1, 0, 0, 0);
   fgSizer116->AddGrowableCol(3);
   fgSizer116->SetFlexibleDirection(wxBOTH);
   fgSizer116->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
+#else
+  auto* fgSizer116 = new wxWrapSizer(wxHORIZONTAL);
+#endif
 
   m_bCompute = new wxButton(sbSizer29->GetStaticBox(), wxID_ANY, _("&Compute"),
                             wxDefaultPosition, wxDefaultSize, 0);
@@ -1205,15 +1211,9 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
 
   m_notebook7 =
       new wxNotebook(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0);
-#ifdef __OCPN__ANDROID__
   m_pBasic = new wxScrolledWindow(m_notebook7, wxID_ANY, wxDefaultPosition,
-                                  wxDefaultSize,
-                                  wxVSCROLL | wxTAB_TRAVERSAL);
+                                  wxDefaultSize, wxVSCROLL | wxTAB_TRAVERSAL);
   static_cast<wxScrolledWindow*>(m_pBasic)->SetScrollRate(0, 20);
-#else
-  m_pBasic = new wxPanel(m_notebook7, wxID_ANY, wxDefaultPosition,
-                         wxDefaultSize, wxTAB_TRAVERSAL);
-#endif
   wxFlexGridSizer* fgSizer106;
   fgSizer106 = new wxFlexGridSizer(0, 2, 0, 0);
   fgSizer106->AddGrowableCol(0);
@@ -2901,14 +2901,6 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
     m_pAdvanced->FitInside();
   };
 #ifndef __OCPN__ANDROID__
-  m_pAdvanced->Bind(wxEVT_SIZE, [=, lastWidth = 0](wxSizeEvent& event) mutable {
-    const int paneWidth = event.GetSize().x;
-    if (paneWidth != lastWidth) {
-      reflowAdvancedHelp(paneWidth);
-      lastWidth = paneWidth;
-    }
-    event.Skip();
-  });
   m_pAdvanced->Layout();
   reflowAdvancedHelp(m_pAdvanced->GetClientSize().x);
   m_pAdvanced->FitInside();
@@ -3038,6 +3030,125 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
     event.Skip();
   });
   m_notebook7->SetSelection(0);
+#else
+  // 2.3 desktop pages reuse every original control and binding. Nothing is
+  // reconstructed from defaults when a page changes.
+  m_notebook7->RemovePage(1);
+  m_notebook7->SetPageText(0, _("Route"));
+  const auto section = [this](const wxString& name) {
+    auto* page = new wxScrolledWindow(m_notebook7, wxID_ANY);
+    page->SetScrollRate(12, 14);
+    page->SetSizer(new wxBoxSizer(wxVERTICAL));
+    page->SetMinSize(wxSize(0, 0));
+    m_notebook7->AddPage(page, name);
+    return page;
+  };
+  auto* boatPage = section(_("Boat"));
+  auto* weatherPage = section(_("Weather"));
+  auto* safetyPage = section(_("Safety"));
+  const auto moveBox = [](wxSizer* source, wxStaticBoxSizer* box, wxWindow* page) {
+    source->Detach(box);
+    box->GetStaticBox()->Reparent(page);
+    page->GetSizer()->Add(box, 0, wxEXPAND | wxALL, 8);
+  };
+  fgSizer83->Detach(sbStart);
+  fgSizer112->Detach(sbEnd);
+  m_pBasic->SetSizer(new wxBoxSizer(wxVERTICAL), false);
+  m_pBasic->GetSizer()->Add(sbStart, 0, wxEXPAND | wxALL, 8);
+  m_pBasic->GetSizer()->Add(sbEnd, 0, wxEXPAND | wxALL, 8);
+  moveBox(fgSizer83, sbBoat, boatPage);
+  moveBox(fgSizer83, sbConstraints, safetyPage);
+  moveBox(fgSizer112, sbData_Source, weatherPage);
+  moveBox(fgSizer112, sbOptions, safetyPage);
+  fgSizer112->Detach(engineBox);
+  advancedLeft->Detach(engineSettingsBox);
+  moveBox(advancedLeft, sbConstraints1, safetyPage);
+  moveBox(advancedLeft, cycloneBox, safetyPage);
+  moveBox(advancedRight, sbOptions1, safetyPage);
+  moveBox(advancedLeft, sbMotor, boatPage);
+  moveBox(advancedRight, sbEfficiency, boatPage);
+  advancedLeft->Detach(sbCourses);
+  m_pAdvanced->SetSizer(new wxBoxSizer(wxVERTICAL), false);
+  for (auto* box : {engineBox, engineSettingsBox, sbCourses}) {
+    box->GetStaticBox()->Reparent(m_pAdvanced);
+    m_pAdvanced->GetSizer()->Add(box, 0, wxEXPAND | wxALL, 8);
+  }
+  m_notebook7->AddPage(m_pAdvanced, _("Engine"));
+  // Reparent the complete rows, including their labels and units.
+  const auto moveRow = [](wxWindow* field, wxStaticBoxSizer* destination) {
+    auto* source = dynamic_cast<wxFlexGridSizer*>(field->GetContainingSizer());
+    if (!source) return;
+    size_t index = 0;
+    while (index < source->GetItemCount() &&
+           (!source->GetItem(index)->IsWindow() || source->GetItem(index)->GetWindow() != field)) ++index;
+    if (index == source->GetItemCount()) return;
+    const size_t count = source->GetCols() > 0 ? source->GetCols()
+        : (source->GetItemCount() + std::max(1, source->GetRows()) - 1) / std::max(1, source->GetRows());
+    const size_t first = index / count * count;
+    auto* row = new wxBoxSizer(wxHORIZONTAL);
+    for (size_t col = 0; col < count && first < source->GetItemCount(); ++col) {
+      auto* item = source->GetItem(first);
+      if (item->IsWindow()) {
+        auto* window = item->GetWindow(); source->Detach(window);
+        window->Reparent(destination->GetStaticBox());
+        window->Show();
+        row->Add(window, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+      } else if (item->IsSpacer()) {
+        auto size = item->GetSpacer(); source->Remove(first);
+        row->AddSpacer(size.x);
+      } else break;
+    }
+    destination->Add(row, 0, wxEXPAND);
+  };
+  auto* resources = new wxStaticBoxSizer(wxVERTICAL, m_pAdvanced,
+                                           _("Shared resources and integration"));
+  m_pAdvanced->GetSizer()->Add(resources, 0, wxEXPAND | wxALL, 8);
+  moveRow(m_sDepartureTimeOptimizationConcurrentRoutes, resources);
+  moveRow(m_sChartSafetyRamCacheMiB, resources);
+  moveRow(m_cIntegrator, resources);
+  // One visible search-mode selector; the retained compact selector still
+  // participates in existing data bindings and compatibility checks.
+  m_cBasicRoutingMode->Hide();
+  if (auto* source = m_cRoutingEngine->GetContainingSizer()) source->Detach(m_cRoutingEngine);
+  m_cRoutingEngine->Reparent(engineBox->GetStaticBox());
+  for (auto* child : engineSettingsBox->GetStaticBox()->GetChildren())
+    if (auto* label = wxDynamicCast(child, wxStaticText))
+      if (label->GetLabel() == _("Search mode / individual engine")) label->SetLabel(_("Engines to use"));
+  engineBox->Insert(0, m_cRoutingEngine, 0, wxEXPAND | wxALL, 5);
+  auto* weatherOptions = new wxStaticBoxSizer(wxVERTICAL, weatherPage,
+                                              _("Weather adjustments"));
+  weatherPage->GetSizer()->Add(weatherOptions, 0, wxEXPAND | wxALL, 8);
+  moveRow(m_sWindStrength, weatherOptions);
+  moveRow(m_sWindVSCurrent, weatherOptions);
+  auto* vesselOptions = new wxStaticBoxSizer(wxVERTICAL, boatPage,
+                                             _("Manoeuvre allowances"));
+  boatPage->GetSizer()->Add(vesselOptions, 0, wxEXPAND | wxALL, 8);
+  moveRow(m_sTackingTime, vesselOptions);
+  moveRow(m_sJibingTime, vesselOptions);
+  moveRow(m_sSailPlanChangeTime, vesselOptions);
+  for (auto entry : {std::make_pair(m_cbCurrents, weatherOptions),
+                     std::make_pair(m_cbOptimizeTacking, vesselOptions)}) {
+    entry.first->GetContainingSizer()->Detach(entry.first);
+    entry.first->Reparent(entry.second->GetStaticBox());
+    entry.second->Add(entry.first, 0, wxALL, 5);
+  }
+  sbOptions1->GetStaticBox()->SetLabel(_("Chart safety and additional options"));
+  auto* hostNote = new wxStaticText(sbOptions1->GetStaticBox(), wxID_ANY,
+      _("Chart-check switches and chart-cache limits apply to all passages. "
+        "Depth and land clearance belong to this passage."));
+  hostNote->Wrap(500);
+  sbOptions1->Insert(0, hostNote, 0, wxEXPAND | wxALL, 5);
+  delete fgSizer106;
+  delete bSizer8;
+  // Desktop help reflow must not retain the retired two-column layout.
+  for (size_t i = 0; i < m_notebook7->GetPageCount(); ++i) {
+    auto* page = m_notebook7->GetPage(i);
+    page->Bind(wxEVT_SIZE, [page](wxSizeEvent& event) {
+      page->Layout();
+      if (auto* scroll = wxDynamicCast(page, wxScrolledWindow)) scroll->FitInside();
+      event.Skip();
+    });
+  }
 #endif
 
   fgSizer95->Add(m_notebook7, 1, wxEXPAND | wxALL, 5);

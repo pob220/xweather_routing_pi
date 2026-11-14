@@ -33,4 +33,5 @@ wxString PassageSettingValue(PassageSetting setting, double value);
 // Validation uses stored units; an empty string means valid.
 wxString CheckPassageSetting(PassageSetting setting, double value);
 wxString CheckMotorSettings(bool enabled, double threshold, double speed);
+wxString CheckSailingAngleRange(double from, double to);
 }  // namespace weather_routing

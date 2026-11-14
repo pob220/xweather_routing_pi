@@ -502,6 +502,7 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   m_mainSizer = new wxBoxSizer(wxVERTICAL);
 
   m_summaryText = new wxStaticText(this, wxID_ANY, wxEmptyString);
+  m_summaryText->SetName("Route table summary");
   m_columnsButton = new wxButton(this, wxID_ANY, _("Columns..."));
   m_exportCsvButton = new wxButton(this, wxID_ANY, _("Export CSV..."));
 #ifdef __OCPN__ANDROID__
@@ -541,11 +542,19 @@ RoutingTablePanel::RoutingTablePanel(wxWindow* parent,
   });
   WR_InstallAndroidBack(this, closeTable);
 #else
-  wxBoxSizer* summarySizer = new wxBoxSizer(wxHORIZONTAL);
-  summarySizer->Add(m_summaryText, 1, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-  summarySizer->Add(m_columnsButton, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-  summarySizer->Add(m_exportCsvButton, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-  m_mainSizer->Add(summarySizer, 0, wxEXPAND);
+  m_summaryText->SetMinSize(wxSize(1, -1));
+  m_mainSizer->Add(m_summaryText, 0, wxEXPAND | wxALL, 5);
+  auto* actions = new wxBoxSizer(wxHORIZONTAL);
+  actions->AddStretchSpacer();
+  actions->Add(m_columnsButton, 0, wxALL, 5);
+  actions->Add(m_exportCsvButton, 0, wxALL, 5);
+  m_mainSizer->Add(actions, 0, wxEXPAND);
+  Bind(wxEVT_SIZE, [this](wxSizeEvent& event) {
+    m_summaryText->SetLabel(m_summaryFullText);
+    m_summaryText->Wrap(wxMax(200, GetClientSize().x - 20));
+    m_summaryText->SetMinSize(wxSize(1, -1));
+    Layout(); event.Skip();
+  });
 #endif
   m_columnsButton->Bind(wxEVT_BUTTON, &RoutingTablePanel::OnChooseColumns,
                         this);
@@ -789,7 +798,8 @@ void RoutingTablePanel::OnChooseColumns(wxCommandEvent& event) {
 
 void RoutingTablePanel::UpdateSummary(const std::list<PlotData>& plotData) {
   if (plotData.empty()) {
-    m_summaryText->SetLabel(_("No route data"));
+    m_summaryFullText = _("No route data");
+    m_summaryText->SetLabel(m_summaryFullText);
     return;
   }
 
@@ -815,20 +825,14 @@ void RoutingTablePanel::UpdateSummary(const std::list<PlotData>& plotData) {
   const PlotData& first = plotData.front();
   const PlotData& last = plotData.back();
   wxDateTime arrival = last.time;
-#ifdef __OCPN__ANDROID__
   if (m_RouteMap->ReachedDestination() && m_RouteMap->GetDestination()) {
     const auto* destination = m_RouteMap->GetDestination();
     distance += DistGreatCircle_Plugin(last.lat, last.lon,
                                       destination->lat, destination->lon);
     arrival = m_RouteMap->EndTime();
   }
-#endif
   const wxTimeSpan duration = arrival.Subtract(first.time);
-#ifdef __OCPN__ANDROID__
   const long totalMinutes = wxRound(duration.GetSeconds().ToDouble() / 60.0);
-#else
-  const long totalMinutes = duration.GetMinutes();
-#endif
   const long motorMinutes = static_cast<long>(motorSeconds / 60.0 + 0.5);
   m_summaryText->SetLabel(wxString::Format(
       _("Depart %s   Arrive %s   Duration %ldd %02ld:%02ld   Distance %s   "
@@ -841,11 +845,14 @@ void RoutingTablePanel::UpdateSummary(const std::list<PlotData>& plotData) {
       (totalMinutes / 60) % 24, totalMinutes % 60, FormatDistance(distance),
       motorMinutes / 60, motorMinutes % 60, FormatSpeed(maxWind),
       hasWave ? wxString::Format("%.1f m", maxWave) : _("Unavailable")));
+  m_summaryFullText = m_summaryText->GetLabel();
+#ifndef __OCPN__ANDROID__
+  m_summaryText->Wrap(wxMax(200, GetClientSize().x - 20));
+  m_summaryText->SetMinSize(wxSize(1, -1));
+#endif
 #ifdef __OCPN__ANDROID__
   WR_WrapAndroidText(m_summaryText, m_summaryText->GetLabel(),
                     wxMax(200, GetClientSize().x - 32));
-#else
-  m_summaryText->Wrap(1100);
 #endif
 }
 
