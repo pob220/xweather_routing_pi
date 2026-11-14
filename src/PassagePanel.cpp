@@ -19,6 +19,8 @@
 #include <wx/notebook.h>
 #include <wx/scrolwin.h>
 #include <wx/menu.h>
+#include <wx/jsonval.h>
+#include <wx/jsonwriter.h>
 #include <wx/textdlg.h>
 #include "RouteWaypointExtractor.h"
 #include <wx/srchctrl.h>
@@ -1776,6 +1778,20 @@ void PassagePanel::EditBoatDetails() {
   ApplyBoat(path);
 }
 
+bool PassagePanel::OpenWeather(const wxString& path, wxString& error) {
+  if (!routing_.OpenPassageForecast(path, error)) return false;
+  // An optional viewer receives the same file used by routing. The message
+  // is harmless when no GRIB viewer is enabled; routing remains independent.
+  wxJSONValue request;
+  request["grib_file"] = path;
+  request["show"] = true;
+  wxString body;
+  wxJSONWriter writer;
+  writer.Write(request, body);
+  SendPluginMessage("GRIB_APPLY_JSON_CONFIG", body);
+  return true;
+}
+
 void PassagePanel::LoadWeather() {
   wxFileDialog dialog(
       this, _("Load passage weather"), wxEmptyString, wxEmptyString,
@@ -1783,7 +1799,7 @@ void PassagePanel::LoadWeather() {
       wxFD_OPEN | wxFD_FILE_MUST_EXIST);
   if (dialog.ShowModal() != wxID_OK) return;
   wxString error;
-  if (!routing_.OpenPassageForecast(dialog.GetPath(), error))
+  if (!OpenWeather(dialog.GetPath(), error))
     wxMessageBox(error, _("Cannot load weather"), wxOK | wxICON_INFORMATION,
                  this);
   RefreshPassage();
@@ -1796,7 +1812,7 @@ void PassagePanel::GenerateWeather() {
     generator_ =
         new EnvironmentalGribDialog(this, [this](const wxString& path) {
           wxString error;
-          if (!routing_.OpenPassageForecast(path, error))
+          if (!OpenWeather(path, error))
             wxMessageBox(error, _("Generated weather"), wxOK, this);
           RefreshPassage();
         });

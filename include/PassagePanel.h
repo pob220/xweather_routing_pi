@@ -41,6 +41,7 @@ private:
       const RouteMapConfiguration& selected) const;
   void ChooseBoat();
   void ShowLibrary();
+  bool OpenWeather(const wxString& path, wxString& error);
   void LoadWeather();
   void GenerateWeather();
   void ApplyBoat(const wxString& path);
