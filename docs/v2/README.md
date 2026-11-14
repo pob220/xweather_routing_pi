@@ -13,6 +13,8 @@ Settings for an active passage are read-only until completion or an explicit sto
 For Windows testing, [import the Windows 64-bit plugin tarball](TRY-WINDOWS.md)
 using OpenCPN’s built-in Plugin Manager.
 
+An [Android arm64 Plugin Manager tarball](TRY-ANDROID.md) is also available for developer testing.
+
 The desktop workspace groups passage, boat and weather preparation, without
 experience levels. Its settings areas are labelled Passage settings and Routing
 controls. The redundant name/version heading below the workspace tabs is removed.

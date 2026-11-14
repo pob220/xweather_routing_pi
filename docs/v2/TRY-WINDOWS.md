@@ -3,7 +3,7 @@
 This developer test is a **Plugin Manager import tarball** for Windows 64-bit
 OpenCPN using wxWidgets 3.3.4, matching Rick’s OpenCPN 5.15 build.
 
-1. [Download the 2.3.1 Windows 64-bit plugin](https://github.com/pob220/xweather_routing_pi/releases/download/windows-plugin-test-2.3.1-20261114/xweather_routing_pi-2.3.1-msvc-64-x86_64-10.0-MSVC-x64-wx334.tar.gz).
+1. [Download the 2.3.1 Windows 64-bit plugin](https://github.com/pob220/xweather_routing_pi/releases/download/developer-test-2.3.1-20261114/xweather_routing_pi-2.3.1-msvc-64-x86_64-10.0-MSVC-x64-wx334.tar.gz).
 2. In OpenCPN, open **Options → Plugins → Import plugin** and select the downloaded
    `.tar.gz` file. Keep the archive intact.
 3. Enable xWeatherRouting and restart OpenCPN if requested.
