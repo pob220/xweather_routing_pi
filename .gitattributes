@@ -6,6 +6,7 @@ data/climatology/** -text
 vendor/** -text
 third_party/** -text
 src/engine/** -text
+include/engine/adaptive/** -text
 src/headless/** -text
 src/RouteMap.cpp -text
 include/RoutingEngineSettings.h -text

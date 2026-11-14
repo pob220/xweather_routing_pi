@@ -990,6 +990,7 @@ private:
         overlay_.CancellationFlag()->load(std::memory_order_relaxed)) return out;
     auto c = configuration_;
     c.time = ToWx(t); c.grib = nullptr; c.output_grib_point_queries = false;
+    c.grib_is_data_deficient = false;
     if (c.UseGrib && source_ && source_->Loaded()) {
       const auto at = [&](int index) { return source_->Sample(index,
           t.time_since_epoch().count(), p.latitude, p.longitude); };
