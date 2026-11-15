@@ -17,8 +17,14 @@ wxString PassageDisplayName(const wxString& name, const wxString& guid,
   return _("Unnamed passage");
 }
 wxString PassageLegLabel(const wxString& name, int leg, int count) {
+#ifdef __APPLE__
+  // Cocoa's printf bridge cannot encode a non-ASCII format in the C locale.
+  // Keep the marker out of the numeric formatter, as for PassageDirection.
+  return name + L" • " + wxString::Format(_("leg %d/%d"), leg, count);
+#else
   // Wide literals bypass the Windows ANSI code page, including for gettext.
   return name + wxString::Format(_(L" • leg %d/%d"), leg, count);
+#endif
 }
 wxString WaypointCoordinateText(double value) {
 #ifdef __APPLE__
