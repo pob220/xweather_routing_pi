@@ -19,6 +19,15 @@ apt-get install -y --no-install-recommends \
   xvfb \
   tzdata \
   libbz2-dev \
+  libeccodes-dev \
+  libjsoncpp-dev \
+  libnetcdf-dev \
+  libqhull-dev \
+  libblosc-dev \
+  libzip-dev \
+  libsodium-dev \
+  libzstd-dev \
+  libproj-dev \
   libcurl4-openssl-dev \
   libgl1-mesa-dev \
   libglu1-mesa-dev \

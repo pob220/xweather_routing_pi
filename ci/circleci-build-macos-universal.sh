@@ -138,6 +138,10 @@ if [[ ! "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
+python3 ci/test-unix-generator.py \
+  "$stage/OpenCPN.app/Contents/SharedSupport/plugins/$package_name" \
+  "$artifact/helper-runtime"
+
 python3 ci/test-macos-installed-host.py 2>&1 | tee "$log_dir/normal-installed-host.log"
 
 jq -n \

@@ -9,6 +9,8 @@ if(NOT OCPN_FLATPAK_CONFIG)
   target_link_libraries(${PACKAGE_NAME} PRIVATE ${XGRIB_JASPER_TARGET})
   if(WIN32)
     set(_weather_runtime "plugins/${PACKAGE_NAME}/runtime")
+  elseif(APPLE)
+    set(_weather_runtime "OpenCPN.app/Contents/SharedSupport/plugins/${PACKAGE_NAME}/runtime")
   else()
     set(_weather_runtime "share/opencpn/plugins/${PACKAGE_NAME}/runtime")
   endif()
@@ -85,5 +87,23 @@ if(NOT OCPN_FLATPAK_CONFIG)
   elseif(APPLE)
     install(TARGETS environmental-grib RUNTIME DESTINATION
       "OpenCPN.app/Contents/SharedSupport/plugins/${PACKAGE_NAME}/bin")
+    set(_mac_runtime "OpenCPN.app/Contents/SharedSupport/plugins/${PACKAGE_NAME}/runtime")
+    find_path(ECCODES_DEFINITIONS_DIR NAMES grib1/boot.def
+      HINTS ${CMAKE_PREFIX_PATH} PATHS /opt/homebrew /usr/local
+      PATH_SUFFIXES share/eccodes/definitions REQUIRED)
+    find_path(ECCODES_SAMPLES_DIR NAMES regular_ll_sfc_grib1.tmpl
+      HINTS ${CMAKE_PREFIX_PATH} PATHS /opt/homebrew /usr/local
+      PATH_SUFFIXES share/eccodes/samples REQUIRED)
+    find_path(PROJ_DATA_DIR NAMES proj.db HINTS ${CMAKE_PREFIX_PATH}
+      PATHS /opt/homebrew /usr/local PATH_SUFFIXES share/proj REQUIRED)
+    install(DIRECTORY "${ECCODES_DEFINITIONS_DIR}" "${ECCODES_SAMPLES_DIR}"
+      DESTINATION "${_mac_runtime}/share/eccodes"
+      PATTERN "bufr" EXCLUDE PATTERN "metar" EXCLUDE PATTERN "taf" EXCLUDE PATTERN "grib3" EXCLUDE)
+    install(DIRECTORY "${PROJ_DATA_DIR}" DESTINATION "${_mac_runtime}/share")
+    install(FILES third_party/environmental-grib-generator/LICENSE
+      third_party/INTEGRATED_WEATHER_SOURCES.md DESTINATION "${_mac_runtime}/licenses")
+    configure_file(cmake/BundleMacGeneratorRuntime.cmake.in
+      "${CMAKE_CURRENT_BINARY_DIR}/BundleMacGeneratorRuntime.cmake" @ONLY)
+    install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/BundleMacGeneratorRuntime.cmake")
   endif()
 endif()

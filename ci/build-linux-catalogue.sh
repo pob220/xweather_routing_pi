@@ -50,6 +50,12 @@ DESTDIR="$stage_dir" cmake --install "$package_build" --prefix /usr \
 cmake --build "$package_build" --target package \
   2>&1 | tee "$log_dir/package.log"
 
+for plugin_root in "$stage_dir"/usr/share/opencpn/plugins/*weather_routing_pi; do
+  if [[ -x "$plugin_root/bin/environmental-grib" ]]; then
+    python3 "$source_dir/ci/test-unix-generator.py" "$plugin_root" "$artifact_dir/helper-runtime"
+  fi
+done
+
 "$source_dir/ci/embed-built-metadata.sh" "$package_build"
 "$source_dir/ci/test-catalogue-archive.sh" "$package_build" "$stage_dir" \
   2>&1 | tee "$log_dir/archive-validation.log"

@@ -6,5 +6,15 @@ python
 wget
 openssl@3
 bzip2
+c-blosc
+curl
+eccodes
+jsoncpp
 jq
+libzip
+libsodium
+netcdf
+proj
+qhull
 wxwidgets@3.2
+zstd

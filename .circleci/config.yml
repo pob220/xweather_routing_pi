@@ -63,6 +63,7 @@ jobs:
       image: {type: string}
       dockerfile: {type: string, default: ci/Dockerfile.linux}
       resource_class: {type: string, default: medium}
+      xweather: {type: boolean, default: << pipeline.parameters.build_xweather_identity >>}
     machine:
       image: ubuntu-2404:current
     resource_class: << parameters.resource_class >>
@@ -74,7 +75,7 @@ jobs:
       BUILD_GTK3: "true"
       WX_VER: "32"
       CMAKE_BUILD_PARALLEL_LEVEL: "3"
-      WEATHER_ROUTING_CI_XWEATHER: << pipeline.parameters.build_xweather_identity >>
+      WEATHER_ROUTING_CI_XWEATHER: << parameters.xweather >>
     steps:
       - checkout
       - restore_cache:
@@ -125,6 +126,7 @@ jobs:
   macos-universal:
     parameters:
       api_headers: {type: string, default: "1.21"}
+      xweather: {type: boolean, default: << pipeline.parameters.build_xweather_identity >>}
     macos:
       xcode: "16.4.0"
     resource_class: m4pro.medium
@@ -134,7 +136,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: "3"
       HOMEBREW_NO_AUTO_UPDATE: "1"
       WX_VER: "32"
-      WEATHER_ROUTING_CI_XWEATHER: << pipeline.parameters.build_xweather_identity >>
+      WEATHER_ROUTING_CI_XWEATHER: << parameters.xweather >>
     steps:
       - checkout
       - run: chmod a+x ci/*.sh cmake/*.sh
@@ -335,11 +337,36 @@ validation-filters: &validation-filters
     ignore: /.*/
 
 workflows:
+  unix-plugin-packages:
+    when:
+      and:
+        - not: << pipeline.parameters.run_workflow_deploy >>
+        - matches:
+            pattern: "^packaging/unix-.*"
+            value: << pipeline.git.branch >>
+    jobs:
+      - publication-contracts
+      - linux-catalogue:
+          name: debian12-x86_64
+          target: bookworm
+          image: debian:bookworm
+          xweather: true
+      - linux-catalogue:
+          name: debian13-x86_64
+          target: trixie
+          image: debian:trixie
+          xweather: true
+      - macos-universal:
+          xweather: true
   validate:
     when:
       and:
         - not: << pipeline.parameters.run_workflow_deploy >>
         - not: << pipeline.parameters.run_windows_only >>
+        - not:
+            matches:
+              pattern: "^packaging/unix-.*"
+              value: << pipeline.git.branch >>
     jobs:
       - publication-contracts
       - linux-catalogue: &trixie
