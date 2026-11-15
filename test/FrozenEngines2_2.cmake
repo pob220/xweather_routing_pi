@@ -12,6 +12,22 @@ foreach(entry IN LISTS entries)
       message(FATAL_ERROR "Frozen production engine input was removed: ${name}")
     endif()
     file(SHA256 "${SOURCE_ROOT}/${name}" actual)
+    if(name STREQUAL "src/engine/native/OpenCpnAdapter.cpp")
+      # 2.3.2's sole adapter exception preserves reporting metadata when a stop
+      # clears the delivered route. Invert that exact change before hashing;
+      # every other byte must still match the qualified calculation adapter.
+      file(READ "${SOURCE_ROOT}/${name}" adapter)
+      string(REGEX MATCHALL "weather_routing::CancelRoutingResultKeepingDiagnostics\\(result\\)" reporting_calls "${adapter}")
+      list(LENGTH reporting_calls reporting_call_count)
+      if(NOT reporting_call_count EQUAL 1)
+        message(FATAL_ERROR "Expected exactly one qualified cancellation-reporting exception")
+      endif()
+      string(REPLACE
+        "    weather_routing::CancelRoutingResultKeepingDiagnostics(result);"
+        "    result = {};\n    result.status = wr::RoutingStatus::Cancelled;\n    result.message = \"Routing cancelled\";"
+        adapter "${adapter}")
+      string(SHA256 actual "${adapter}")
+    endif()
     if(NOT actual STREQUAL expected)
       message(FATAL_ERROR "2.2 must preserve the existing engines: ${name}")
     endif()
@@ -27,4 +43,4 @@ foreach(scope vendor third_party src/engine src/headless)
   endforeach()
 endforeach()
 list(LENGTH expected_names count)
-message(STATUS "All ${count} frozen production engine/model inputs are unchanged")
+message(STATUS "All ${count} qualified calculation inputs match; exact adapter reporting exception verified")

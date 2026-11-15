@@ -116,6 +116,8 @@
 #include <set>
 #include <vector>
 
+wxDEFINE_EVENT(wxEVT_WR_GRIB_REQUEST, wxThreadEvent);
+
 static const int MAX_DEPARTURE_OPTIMIZATION_CANDIDATES = 73;
 static const int DEFERRED_ROUTING_MULTILEG_SEQUENCE = 1;
 static const int DEFERRED_ROUTING_MULTILEG_OPTIMIZATION = 2;
@@ -1592,6 +1594,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
   m_tCompute.Connect(wxEVT_TIMER,
                      wxTimerEventHandler(WeatherRouting::OnComputationTimer),
                      NULL, this);
+  Bind(wxEVT_WR_GRIB_REQUEST, &WeatherRouting::OnGribRequestWakeup, this);
 
   m_tHideConfiguration.Connect(
       wxEVT_TIMER,
@@ -1844,6 +1847,8 @@ WeatherRouting::~WeatherRouting() {
       NULL, this);
 
   StopAll();
+  if (m_GribTimelineFrameCache) m_GribTimelineFrameCache->SetRequestWakeup({});
+  Unbind(wxEVT_WR_GRIB_REQUEST, &WeatherRouting::OnGribRequestWakeup, this);
   weather_routing::chart_safety_host::SetInteractivePrewarmCancellationFlag(
       nullptr);
   if (m_RoutingProgressDialog) {
@@ -2178,10 +2183,19 @@ void WeatherRouting::DisablePassageDrawExclusions() {
   ScheduleAutoSave();
 }
 
+void WeatherRouting::OnGribRequestWakeup(wxThreadEvent&) {
+  // Events carry no route pointer. StopAll joins workers before this dialog
+  // dies, and a late event after a batch finishes has nothing to service.
+  if (!m_RunningRouteMaps.empty()) m_tCompute.Start(1, true);
+}
+
 void WeatherRouting::RequestGribTimelineFrame(
     RouteMapOverlay* routeMapOverlay, const wxDateTime& time) {
   if (!routeMapOverlay || !time.IsValid()) return;
   if (m_PassageWeather->Loaded()) {
+    // Acknowledge before publishing: the reply may immediately wake a worker
+    // which requests the next time. Clearing afterwards would lose that request.
+    routeMapOverlay->RequestedGrib();
     auto frame = m_PassageWeather->Frame(time.GetTicks());
     routeMapOverlay->Lock();
     routeMapOverlay->SetNewGrib(frame.get(), static_cast<std::int64_t>(time.GetTicks()));
@@ -9945,7 +9959,9 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     // idle cadence when no request was present so ordinary GUI work is not
     // needlessly churned.
     const int nextIntervalMs =
-        gribRequests > 0 || chartSafetyRequestsServiced > 0
+        gribRequests > 0 || chartSafetyRequestsServiced > 0 ||
+        std::any_of(m_RunningRouteMaps.begin(), m_RunningRouteMaps.end(),
+            [](RouteMapOverlay* route) { return route->NeedsGrib(); })
             ? UI_TIMING_ACTIVE_SERVICE_INTERVAL_MS
             : 25;
     m_tCompute.Start(nextIntervalMs, true);
@@ -13311,6 +13327,9 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
             configuration.WindStrength * 100.0, configuration.UpwindEfficiency * 100.0,
             configuration.DownwindEfficiency * 100.0, configuration.NightCumulativeEfficiency * 100.0),
         _("Review these effective assumptions in Configuration."), {}, true});
+  setupDiagnostics.context += wxString::Format(
+      _("\nAutomatic adaptive settings: %s. Time step and heading step above are configured inputs; effective automatic choices are calculation-local."),
+      configuration.AutomaticAdaptiveSettings ? _("on") : _("off"));
   if (!m_RunDiagnostics.Active())
     m_RunDiagnostics.Begin(wxDateTime::Now().ToUTC().FormatISOCombined());
   m_RunDiagnostics.Inputs(setupDiagnostics.context + wxString::Format(
@@ -13762,6 +13781,9 @@ void WeatherRouting::BeginGribTimelineCacheBatch(
   if (!m_GribTimelineFrameCache)
     m_GribTimelineFrameCache =
         std::make_shared<weather_routing::GribTimelineFrameCache>();
+  m_GribTimelineFrameCache->SetRequestWakeup([this]() {
+    wxQueueEvent(this, new wxThreadEvent(wxEVT_WR_GRIB_REQUEST));
+  });
   m_GribTimelineFrameCache->Clear();
   const std::uint64_t availableMiB =
       weather_routing::AvailablePhysicalMemoryMiB();
