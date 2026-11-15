@@ -3,6 +3,7 @@
 #include "PassagePresentation.h"
 #include <clocale>
 #include <string>
+#include "CoordinateText.h"
 
 namespace wr = weather_routing;
 TEST(PassagePresentation, NamedRoutesKeepTheirUnicodeName) {
@@ -36,5 +37,21 @@ TEST(PassagePresentation, EditableCoordinatesAreReadableAndPreserveExactValues) 
     double parsed = 0;
     ASSERT_TRUE(wr::WaypointCoordinateText(value).ToDouble(&parsed));
     EXPECT_DOUBLE_EQ(parsed, value);
+  }
+}
+
+TEST(PassagePresentation, PortableMacCoordinatesPreserveExactBitsAndReadableValues) {
+  using weather_routing::detail::PortableCoordinateText;
+  EXPECT_EQ(PortableCoordinateText(53.4), "53.4");
+  EXPECT_EQ(PortableCoordinateText(-5.3), "-5.3");
+  EXPECT_EQ(PortableCoordinateText(50), "50");
+  for (double value : {0.0, -0.0, 53.4, -5.3, 53.400000000001, 1e-9,
+                       -179.99999999999997, 1e-19, 1e-100, 1e-300}) {
+    std::istringstream input(PortableCoordinateText(value));
+    input.imbue(std::locale::classic());
+    double parsed{};
+    ASSERT_TRUE(static_cast<bool>(input >> parsed));
+    EXPECT_EQ(parsed, value);
+    EXPECT_EQ(std::signbit(parsed), std::signbit(value));
   }
 }

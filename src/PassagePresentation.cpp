@@ -3,6 +3,7 @@
 #include <wx/intl.h>
 #include <charconv>
 #include <clocale>
+#include "CoordinateText.h"
 
 namespace weather_routing {
 wxString PassageDisplayName(const wxString& name, const wxString& guid,
@@ -20,10 +21,14 @@ wxString PassageLegLabel(const wxString& name, int leg, int count) {
   return name + wxString::Format(_(L" • leg %d/%d"), leg, count);
 }
 wxString WaypointCoordinateText(double value) {
+#ifdef __APPLE__
+  wxString text = wxString::FromUTF8(detail::PortableCoordinateText(value));
+#else
   char buffer[64];
   const auto converted = std::to_chars(buffer, buffer + sizeof(buffer), value);
   if (converted.ec != std::errc()) return {};
   wxString text = wxString::FromUTF8(buffer, converted.ptr - buffer);
+#endif
   // ToDouble uses the current numeric locale for the editable fields.
   text.Replace(".", wxString::FromUTF8(std::localeconv()->decimal_point));
   return text;
