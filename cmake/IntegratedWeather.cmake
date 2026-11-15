@@ -99,7 +99,10 @@ if(NOT OCPN_FLATPAK_CONFIG)
     install(DIRECTORY "${ECCODES_DEFINITIONS_DIR}" "${ECCODES_SAMPLES_DIR}"
       DESTINATION "${_mac_runtime}/share/eccodes"
       PATTERN "bufr" EXCLUDE PATTERN "metar" EXCLUDE PATTERN "taf" EXCLUDE PATTERN "grib3" EXCLUDE)
-    install(DIRECTORY "${PROJ_DATA_DIR}" DESTINATION "${_mac_runtime}/share")
+    # Homebrew's top-level share/proj is a Cellar symlink. Materialise its
+    # contents so relocation never retains a build-machine-relative link.
+    file(REAL_PATH "${PROJ_DATA_DIR}" _mac_proj_data)
+    install(DIRECTORY "${_mac_proj_data}/" DESTINATION "${_mac_runtime}/share/proj")
     install(FILES third_party/environmental-grib-generator/LICENSE
       third_party/INTEGRATED_WEATHER_SOURCES.md DESTINATION "${_mac_runtime}/licenses")
     configure_file(cmake/BundleMacGeneratorRuntime.cmake.in
