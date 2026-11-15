@@ -63,7 +63,7 @@ jobs:
       image: {type: string}
       dockerfile: {type: string, default: ci/Dockerfile.linux}
       resource_class: {type: string, default: medium}
-      xweather: {type: boolean, default: << pipeline.parameters.build_xweather_identity >>}
+      xweather: {type: boolean, default: false}
     machine:
       image: ubuntu-2404:current
     resource_class: << parameters.resource_class >>
@@ -75,9 +75,15 @@ jobs:
       BUILD_GTK3: "true"
       WX_VER: "32"
       CMAKE_BUILD_PARALLEL_LEVEL: "3"
-      WEATHER_ROUTING_CI_XWEATHER: << parameters.xweather >>
+      WEATHER_ROUTING_CI_XWEATHER: << pipeline.parameters.build_xweather_identity >>
     steps:
       - checkout
+      - when:
+          condition: << parameters.xweather >>
+          steps:
+            - run:
+                name: Select xWeatherRouting package identity
+                command: echo 'export WEATHER_ROUTING_CI_XWEATHER=true' >> "$BASH_ENV"
       - restore_cache:
           keys:
             - stock-host-ccache-v1-<< parameters.target >>-{{ checksum "ci/stock-hosts.json" }}-{{ checksum "ci/test-linux-installed-host.sh" }}-{{ checksum "ci/install-debian-build-deps.sh" }}-
@@ -126,7 +132,7 @@ jobs:
   macos-universal:
     parameters:
       api_headers: {type: string, default: "1.21"}
-      xweather: {type: boolean, default: << pipeline.parameters.build_xweather_identity >>}
+      xweather: {type: boolean, default: false}
     macos:
       xcode: "16.4.0"
     resource_class: m4pro.medium
@@ -136,9 +142,15 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: "3"
       HOMEBREW_NO_AUTO_UPDATE: "1"
       WX_VER: "32"
-      WEATHER_ROUTING_CI_XWEATHER: << parameters.xweather >>
+      WEATHER_ROUTING_CI_XWEATHER: << pipeline.parameters.build_xweather_identity >>
     steps:
       - checkout
+      - when:
+          condition: << parameters.xweather >>
+          steps:
+            - run:
+                name: Select xWeatherRouting package identity
+                command: echo 'export WEATHER_ROUTING_CI_XWEATHER=true' >> "$BASH_ENV"
       - run: chmod a+x ci/*.sh cmake/*.sh
       - run:
           name: Native Apple-Silicon stock-API build, tests and package
