@@ -22,7 +22,7 @@ done <build-deps/macos-deps
 brew_prefix=$(brew --prefix)
 wx_prefix=$(brew --prefix wxwidgets@3.2)
 export PATH="${wx_prefix}/bin:${brew_prefix}/opt/gettext/bin:${brew_prefix}/bin:${PATH}"
-export PKG_CONFIG_PATH="${wx_prefix}/lib/pkgconfig:${brew_prefix}/lib/pkgconfig:${brew_prefix}/opt/openssl@3/lib/pkgconfig"
+export PKG_CONFIG_PATH="${wx_prefix}/lib/pkgconfig:${brew_prefix}/lib/pkgconfig:${brew_prefix}/opt/curl/lib/pkgconfig:${brew_prefix}/opt/openssl@3/lib/pkgconfig"
 export CMAKE_PREFIX_PATH="${wx_prefix};${brew_prefix}"
 export WX_CONFIG="${wx_prefix}/bin/wx-config-3.2"
 export OCPN_TARGET=macos-arm64

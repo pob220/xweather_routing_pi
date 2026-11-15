@@ -363,11 +363,17 @@ workflows:
           target: bookworm
           image: debian:bookworm
           xweather: true
+          filters:
+            branches:
+              ignore: /^packaging\/unix-macos-.*/
       - linux-catalogue:
           name: debian13-x86_64
           target: trixie
           image: debian:trixie
           xweather: true
+          filters:
+            branches:
+              ignore: /^packaging\/unix-macos-.*/
       - macos-universal:
           xweather: true
   validate:
