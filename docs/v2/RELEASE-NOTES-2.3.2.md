@@ -55,5 +55,18 @@ controls. Wall times from concurrent qualification runs are not benchmarks.
 
 The Android arm64 plugin cross-build also passes. This does not claim new tablet
 runtime qualification. No working host, test installation, tablet or catalogue
-has been updated by this maintenance pass. Native Windows results will be
-recorded separately when available.
+has been updated by this maintenance pass.
+
+[Native Windows run 43748134444](https://github.com/pob220/xweather_routing_pi/actions/runs/43748134444)
+passed for wxWidgets 3.3.4 and 3.2.9 at source
+`0c4bc1ff59ced7d5a19ab27664e716125c9ffabe`. Each configuration passed 716 enabled
+tests, matched-host imports, normal-profile Plugin Manager installation and
+reinstallation, shoreline routes and packaged Climatology/fallback routing checks.
+
+The Windows x64 wxWidgets 3.3.4 Plugin Manager tarball is published as a
+[developer test](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.3.2-20261115),
+not an alpha or catalogue update. Its SHA256 is
+`61f58170b992dc02191eae6af4250e4e792d536a12a9161ec2482326f2359463`.
+The reset/queued-edit and route-visibility GUI probes also pass on Linux,
+including normal shutdown. Both production and development hosts additionally
+closed cleanly during an active calculation.
