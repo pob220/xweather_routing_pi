@@ -354,3 +354,16 @@ add_executable(planning_time_gui_tests EXCLUDE_FROM_ALL
 target_include_directories(planning_time_gui_tests PRIVATE
     ${WEATHER_ROUTING_SOURCE_DIR}/include)
 target_link_libraries(planning_time_gui_tests PRIVATE ${wxWidgets_LIBRARIES})
+
+# Exercise the actual drawing dependency with no OpenGL context. Windows uses
+# the stock-host software-rendering qualification; its GL import ABI is separate.
+if(UNIX AND NOT QT_ANDROID AND NOT ANDROID)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(software_drawing_context_probe SoftwareDrawingContext_probe.cpp)
+  target_link_libraries(software_drawing_context_probe PRIVATE
+      ocpn::plugin-dc ocpn::api ${wxWidgets_LIBRARIES})
+  add_test(NAME weather_routing_software_drawing_context
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/run_software_drawing_probe.py
+          $<TARGET_FILE:software_drawing_context_probe>)
+  set_tests_properties(weather_routing_software_drawing_context PROPERTIES TIMEOUT 30)
+endif()

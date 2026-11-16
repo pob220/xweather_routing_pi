@@ -43,3 +43,9 @@ passes; this is not a claim of new tablet runtime qualification.
 
 These checks do not reproduce Quinton's original Tonga passage; his actual GPX,
 configuration and diagnostics are still needed for that investigation.
+
+Software chart rendering no longer initializes OpenGL in the drawing helper.
+This prevents a macOS startup crash when no GL context exists and also covers
+the visible shoreline overlay. A real wxDC drawing probe rejects any GL query
+and verifies that software lines/text are painted. Inactive shoreline viewing
+does not construct a drawing helper.
