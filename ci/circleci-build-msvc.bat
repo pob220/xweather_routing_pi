@@ -75,10 +75,10 @@ rem selected VS instance before compiling and before dumpbin/runtime checks.
 rem GitHub uses Enterprise; CircleCI can use Community or Build Tools.
 if "%MSVC_VERSION%" == "2022" (
   if defined VSINSTALLDIR (
-    call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars32.bat"
+    call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
     if errorlevel 1 exit /b 1
   ) else (
-    for /f "usebackq tokens=*" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%I\VC\Auxiliary\Build\vcvars32.bat"
+    for /f "usebackq tokens=*" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%I\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
   )
   where cl
   if errorlevel 1 exit /b 1
@@ -133,7 +133,7 @@ cmake -T v141_xp -G "Visual Studio 16 2019" ^
     -DwxWidgets_ROOT_DIR=%wxWidgets_ROOT_DIR% ^
     ..
 ) else (
-cmake -A Win32 -G "Visual Studio 17 2022" ^
+cmake -A Win32 -T host=x64 -G "Visual Studio 17 2022" ^
     -DCMAKE_GENERATOR_PLATFORM=Win32 ^
     -DCMAKE_BUILD_TYPE=%CONFIGURATION% ^
     -DWEATHER_ROUTING_STANDALONE_API=ON ^
