@@ -72,4 +72,6 @@ jobs:
           path: |
             artifacts/windows-x86
             build/CMakeCache.txt
+            build/test-dependencies.txt
             build/Testing/Temporary
+            cache/wx321-runtime.json

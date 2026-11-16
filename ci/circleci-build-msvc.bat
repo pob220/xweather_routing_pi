@@ -57,6 +57,13 @@ if errorlevel 1 exit /b %errorlevel%
 path %SCRIPTDIR%.local\bin;%PATH%;"C:\Program Files\CMake\bin"
 call "%SCRIPTDIR%..\cache\wx-config.bat"
 if errorlevel 1 exit /b %errorlevel%
+rem The Dev archive contains release base DLLs but only debug GUI DLLs.
+rem Integrated v2 tests also link GUI controls; install the matching, pinned
+rem release GUI runtime into this disposable SDK, never into the plugin.
+if defined WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE (
+  python "%SCRIPTDIR%prepare-windows86-wx-runtime.py" "%wxWidgets_LIB_DIR%"
+  if errorlevel 1 exit /b 1
+)
 set PATH=%EXTRA_PATH%;%PATH%
 echo EXTRA_PATH: %EXTRA_PATH%
 echo USING wxWidgets_LIB_DIR: %wxWidgets_LIB_DIR%
@@ -136,6 +143,9 @@ cmake --build . --config %CONFIGURATION% --parallel 2
 if errorlevel 1 exit /b %errorlevel%
 
 if not exist test-results mkdir test-results
+dumpbin /dependents test\%CONFIGURATION%\weather_routing_pi_tests.exe > test-dependencies.txt
+if errorlevel 1 exit /b %errorlevel%
+type test-dependencies.txt
 ctest --test-dir . -C %CONFIGURATION% --output-on-failure --timeout 180 --output-junit test-results\ctest.xml
 if errorlevel 1 exit /b %errorlevel%
 
