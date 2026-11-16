@@ -70,3 +70,42 @@ not an alpha or catalogue update. Its SHA256 is
 The reset/queued-edit and route-visibility GUI probes also pass on Linux,
 including normal shutdown. Both production and development hosts additionally
 closed cleanly during an active calculation.
+
+## Unix package qualification
+
+On 16 November 2026 the following native jobs passed. Each package embeds
+`metadata.xml` and has the xWeatherRouting identity, version 2.3.2 and API 1.21.
+
+| Platform | Exact build source | Enabled tests | Native job |
+| --- | --- | --- | --- |
+| Debian 12 x86_64 | `fdc4806d861b18a9444b00b9498e1e793e852b19` | 725 | [3879](https://app.circleci.com/workflow/dc38243b-1deb-4b2a-9aa8-0adab1435883/job/7a6a9bd7-6f5f-40eb-b243-66ea2744fc33) |
+| Debian 13 x86_64 | `fdc4806d861b18a9444b00b9498e1e793e852b19` | 725 | [3880](https://app.circleci.com/workflow/dc38243b-1deb-4b2a-9aa8-0adab1435883/job/05dac0a6-95f5-4217-953a-d6a4abc9a902) |
+| macOS 15.3.2 arm64, wxWidgets 3.2 | `82765eb1e78a8ef557b1c2c3743cb29d1c4678df` | 726 | [3888](https://app.circleci.com/workflow/1d021d06-b325-4e41-8434-d0535f368267/job/70cb7680-f96d-4f31-bcdd-c15b7d378f24) |
+
+The individual Debian jobs passed; their original shared workflow also contains
+a superseded failed Mac attempt. The final Mac-only workflow passed separately.
+The existing disabled ocean timing comparison remains disabled on all platforms.
+
+All three archives passed stock OpenCPN 5.14.2 normal-profile Plugin Manager import
+and reinstall checks, preserved personal data, and completed seven offshore,
+shoreline and restart routing controls. The private generator passed capabilities,
+real wind-GRIB reading and offline GRIB writing after relocation. Mac helper and
+dependency signatures passed native checks; archive comparison also verified its
+stripped helper's code-signature page hashes and unchanged runtime sections.
+
+Packaging adds the generator's Unix dependencies, private Mac libraries and
+ecCodes/PROJ data. Mac-only presentation fixes retain exact coordinate round trips
+with the macOS 11 C++ deployment target and keep the Unicode leg marker outside
+locale-dependent printf. These do not alter routing methods, automatic settings,
+search allowances or safety decisions. The Mac runtime qualification above is on
+15.3.2, not a claim of runtime testing on every earlier macOS release.
+
+Downloads and import instructions are in [Try on Debian or Apple Silicon](TRY-UNIX.md).
+
+SHA256:
+
+```text
+81b1a8011e5639424fbf0d1e10745f1a081e481cb3d06a7434642cef2e64e5d0  xweather_routing_pi-2.3.2-debian-x86_64-12-bookworm.tar.gz
+bfc2d58bdb4c55c0a6110fa9dc66f43449343e47d605e00eabf1a96a3a6a104d  xweather_routing_pi-2.3.2-debian-x86_64-13-trixie.tar.gz
+3a2971b1e995380e7e50391ec579ad872659fe6addabfeec2e07739576c67334  xweather_routing_pi-2.3.2-darwin-wx32-arm64-15.3.2-macos-arm64.tar.gz
+```

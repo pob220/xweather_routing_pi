@@ -1,10 +1,11 @@
-# xWeatherRouting 2.3.1 development
+# xWeatherRouting 2.3.2 development
 
-Version 2.3.1 builds on 2.3.0 on `feature/xweather-2.3.1`. Version 1 remains the
+Version 2.3.2 builds on 2.3.1. Version 1 remains the
 stable catalogue and maintenance line; version 2 retains separate preferences
 and user data.
 
-See [2.3.1 changes](RELEASE-NOTES-2.3.1.md) and [qualification](QUALIFICATION-2.3.1.md).
+See [2.3.2 changes and qualification](RELEASE-NOTES-2.3.2.md), alongside the
+retained [2.3.1 qualification](QUALIFICATION-2.3.1.md).
 The existing engines, adaptive policies and search allowances are preserved.
 New passages default to Auto, all engines selected for Auto and All, and
 Automatic adaptive settings enabled; remembered user choices take precedence.
@@ -12,6 +13,9 @@ Settings for an active passage are read-only until completion or an explicit sto
 
 For Windows testing, [import the Windows 64-bit plugin tarball](TRY-WINDOWS.md)
 using OpenCPN’s built-in Plugin Manager.
+
+[Debian 12, Debian 13 and Apple Silicon packages](TRY-UNIX.md) are also available
+with native import, routing and offline generator qualification.
 
 An [Android arm64 Plugin Manager tarball](TRY-ANDROID.md) is also available for developer testing.
 
@@ -91,7 +95,8 @@ For Windows x64, see [source build and isolated test instructions](WINDOWS.md).
 The helper builds separately from the matched OpenCPN/wx SDK and carries its
 own scientific dependencies. Native CI checks both pinned wx 3.3.4 and 3.2.9
 hosts; qualification evidence is recorded in [VALIDATION-2.2.md](VALIDATION-2.2.md).
-macOS, Android's in-process generator adapter and the touch workspace require
-their own follow-up qualification. The inherited 1.x matrix is not evidence
-that these new paths have passed. Development packages do not replace the
-stable catalogue release.
+Native Debian and Apple Silicon qualification is recorded in the
+[2.3.2 release notes](RELEASE-NOTES-2.3.2.md#unix-package-qualification).
+Android's 2.3.2 cross-build passes but does not establish new tablet runtime
+qualification; the existing downloadable tablet test remains 2.3.1.
+Development packages do not replace the stable catalogue release.
