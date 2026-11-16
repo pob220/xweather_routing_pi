@@ -6,6 +6,7 @@
 #include "RouteMapOverlay.h"
 #include "RoutingFootprint.h"
 #include "WeatherRouting.h"
+#include "ShorelineSettings.h"
 
 #ifdef __OCPN__ANDROID__
 
@@ -597,6 +598,13 @@ wxWindow* WeatherRouting::BuildAndroidWorkspace(wxBoxSizer* root) {
       {_("Display settings"), command(&WeatherRouting::OnSettings)},
       {_("Chart awareness"), command(&WeatherRouting::OnChartAwarenessSettings)},
       {_("Shoreline data"), command(&WeatherRouting::OnShorelineData)},
+      {_("Show / hide routing shoreline"), [this]() {
+        wxCommandEvent event(wxEVT_MENU);
+        event.SetInt(!PassageShorelineVisible());
+        m_mPassageShorelineView->Check(event.IsChecked());
+        OnViewPassageShoreline(event);
+        if (PassageShorelineVisible()) ShowAndroidRouteOnChart();
+      }},
   });
   addActions(tools, toolsContent, _("Help"), {
       {_("Information"), command(&WeatherRouting::OnInformation)},
@@ -687,6 +695,8 @@ void WeatherRouting::RefreshAndroidReadiness(RouteMapOverlay* route) {
   const auto readiness = weather_routing::EvaluatePassage(input);
   m_androidReadinessReport = readiness.Report();
   wxString status = readiness.Summary();
+  status += "\n" + weather_routing::PassageShorelineSummary(
+      input.shorelineResolution, c.DetectLand, input.chartSafetyEnforced);
   wxString action = _("Review checks");
   if (const auto* blocker = readiness.FirstBlocker()) {
     m_androidReadinessCode = blocker->code;
@@ -709,6 +719,12 @@ void WeatherRouting::ReviewAndroidReadiness() {
   auto* route = FirstCurrentRouteMap();
   if (!route) return;
   RefreshAndroidReadiness(route);
+  if (m_androidReadinessCode == "passage.limits.shoreline_missing") {
+    wxCommandEvent event;
+    OnShorelineData(event);
+    RefreshAndroidReadiness(route);
+    return;
+  }
   if (m_androidReadinessCode.empty()) {
     WR_MessageBox(m_androidReadinessReport.Text(), _("Passage checks"), wxOK, this);
     return;

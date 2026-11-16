@@ -53,6 +53,7 @@
 #include "weather_routing_pi.h"
 #include "WeatherRouting.h"
 #include "ShorelineManager.h"
+#include "ShorelineSettings.h"
 #include "ShorelineSpec.h"
 #include "icons.h"
 
@@ -1494,7 +1495,6 @@ bool ConfigurationDialog::HandleEngineEdit(wxObject* control) {
       const bool chartMode = m_WeatherRouting.HasEnhancedChartSafety() &&
           m_cbUseExperimentalChartSafety->GetValue() && m_cbEnforceExperimentalChartSafety->GetValue();
       if (chartMode) config.ChartShorelineResolution = resolution;
-      else if (config.IsFastEngine()) config.FastShorelineResolution() = resolution;
       else config.ShorelineResolution = resolution;
       config.shoreline_dataset.reset();
       config.shoreline_description.clear();
@@ -1670,13 +1670,13 @@ void ConfigurationDialog::UpdateEngineControls() {
     else if (shoreline != value) { shoreline = wxNOT_FOUND; break; }
     first = false;
   }
-  m_tShorelineResolution->SetLabel(chartAuthoritative ? _("Scout shoreline resolution") : _("Shoreline resolution"));
+  m_tShorelineResolution->SetLabel(chartAuthoritative ? _("Scout shoreline resolution") : _("Passage shoreline (all methods)"));
   m_cShorelineResolution->Clear();
   m_shorelineChoiceResolutions.clear();
   int selectedIndex = wxNOT_FOUND;
   for (int q = 0; q < 5; ++q) {
     const bool available = weather_routing::ShorelineManager::Available(q);
-    if (!available && q != shoreline) continue;
+    // Keep missing optional levels visible so installation is discoverable.
 #ifdef __OCPN__ANDROID__
     wxString label = wxString::Format("%d / %s", q,
         wxGetTranslation(weather_routing::kShorelineSpecs[q].quality));
@@ -1684,7 +1684,7 @@ void ConfigurationDialog::UpdateEngineControls() {
     wxString label = wxString::Format("%d - %s", q,
         wxGetTranslation(weather_routing::kShorelineSpecs[q].quality));
 #endif
-    if (!available) label += _(" (missing; install)");
+    label += available ? _(" (available)") : _(" (not installed)");
     if (q == shoreline) selectedIndex = static_cast<int>(m_shorelineChoiceResolutions.size());
     m_shorelineChoiceResolutions.push_back(q);
     m_cShorelineResolution->Append(label);
@@ -1693,7 +1693,7 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_cShorelineResolution->Enable(!running);
   m_cShorelineResolution->SetToolTip(chartAuthoritative
       ? _("Chart geometry and depth checks are authoritative. This separately saved shoreline choice controls preliminary scouting. It starts at Crude; increase it for finer coastal detail.")
-      : _("Shoreline detail for the selected routing method. Quick, Standard and Professional remember independent choices. High and Full require installation from Shoreline data under Routing controls. Lower resolutions omit smaller coastal features."));
+      : _("Passage-wide shoreline detail for all routing methods. Auto and All use the same selected resolution. High and Full require installation from Shoreline data under Routing controls. Lower resolutions omit smaller coastal features."));
   m_pMainEngine->Enable(!running);
   const bool managedStep = automatic && nativeSettings && (combined ||
       engine == weather_routing::RoutingEngine::Original ||
@@ -2657,7 +2657,7 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   SetPlanningHelp(m_cbEnforceExperimentalChartSafety, PlanningHelpTopic::Safety, _("Require loaded-chart land and depth validation."));
   SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Optional custom exclusions from OpenCPN Draw. Leave unchecked for ordinary routing; land avoidance is separate."));
   SetPlanningHelp(m_sDepartureTimeOptimizationConcurrentRoutes, PlanningHelpTopic::Resources, _("0 = Auto. Available RAM also limits concurrent departures."));
-  SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("Shoreline detail for this routing method; High and Full need installed data."));
+  SetPlanningHelp(m_cShorelineResolution, PlanningHelpTopic::Shoreline, _("One shoreline choice for all routing methods. Install High or Full, then select it here."));
 #ifndef __OCPN__ANDROID__
   auto* reset = new wxButton(this, wxID_ANY, _("Reset wind/wave limits..."));
   m_weatherReset = reset;
@@ -2730,7 +2730,7 @@ void ConfigurationDialog::RefreshCompactPlanningStatus() {
     label += _(" · mixed automatic/manual settings");
   m_compactEngineStatus->SetLabel(label);
   weather_routing::SetPlanningHelp(m_cShorelineResolution, weather_routing::PlanningHelpTopic::Shoreline,
-      _("Shoreline detail for this routing method; High and Full need installed data."));
+      _("One shoreline choice for all routing methods. Install High or Full, then select it here."));
   if (m_cbDetectLand->Get3StateValue() == wxCHK_UNDETERMINED ||
       m_cbUseExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED ||
       m_cbEnforceExperimentalChartSafety->Get3StateValue() == wxCHK_UNDETERMINED) {
@@ -2748,6 +2748,10 @@ void ConfigurationDialog::RefreshCompactPlanningStatus() {
   else if (!enforced || m_sMinimumDepthMeters->GetValue() == 0)
     safety += _(L" · depth limit: Off");
   else safety += wxString::Format(_(L" · minimum depth %.1f m"), m_sMinimumDepthMeters->GetValue());
+  const int shorelineIndex = m_cShorelineResolution->GetSelection();
+  if (land && shorelineIndex >= 0 && shorelineIndex < static_cast<int>(m_shorelineChoiceResolutions.size()))
+    safety += "\n" + weather_routing::PassageShorelineSummary(
+        m_shorelineChoiceResolutions[shorelineIndex], true, enforced);
   m_compactSafetyStatus->SetLabel(safety);
   m_compactSafetyStatus->Wrap(std::max(260, m_pBasic->GetClientSize().x / 2 - 30));
 }
@@ -2870,6 +2874,7 @@ void ConfigurationDialog::RefreshValidationFooter() {
 void ConfigurationDialog::ShowProblem(const std::string& code) {
   wxWindow* field = m_sFromDegree;
   if (code == "passage.search.engines") field = m_cRoutingEngine;
+  else if (code.find("shoreline") != std::string::npos) field = m_cShorelineResolution;
   else if (code.find("depth") != std::string::npos) field = m_sMinimumDepthMeters;
   else if (code.find("boundary") != std::string::npos) field = m_cbDetectBoundary;
   else if (code.find("wave") != std::string::npos) field = m_sMaxSwellMeters;

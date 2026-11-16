@@ -1,10 +1,10 @@
-# xWeatherRouting 2.3.2 development
+# xWeatherRouting 2.3.3 development
 
-Version 2.3.2 builds on 2.3.1. Version 1 remains the
+Version 2.3.3 builds on 2.3.2. Version 1 remains the
 stable catalogue and maintenance line; version 2 retains separate preferences
 and user data.
 
-See [2.3.2 changes and qualification](RELEASE-NOTES-2.3.2.md), alongside the
+See [2.3.3 changes and qualification](RELEASE-NOTES-2.3.3.md), alongside the
 retained [2.3.1 qualification](QUALIFICATION-2.3.1.md).
 The existing engines, adaptive policies and search allowances are preserved.
 New passages default to Auto, all engines selected for Auto and All, and

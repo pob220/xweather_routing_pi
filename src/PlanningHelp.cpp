@@ -86,8 +86,12 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
           "Crude, Low and Intermediate GSHHG datasets are bundled. High and "
           "Full can be installed from Shoreline data and then used offline. "
           "Lower resolutions omit small coastal features.\n\n"
-          "Quick, Standard and Professional retain their own shoreline "
-          "selections. When chart enforcement is active, the separately saved "
+          "Select one Passage shoreline for all routing methods, including Auto "
+          "and All. Installing a dataset does not change saved passage selections. "
+          "View > Show selected passage shoreline displays its actual outlines. "
+          "OpenCPN 5.10 and later display a separate OSM background map; use "
+          "Chart Downloader > OSM basemap to improve that display.\n\n"
+          "When chart enforcement is active, the separately saved "
           "scouting resolution guides the preliminary search; the loaded "
           "charts remain authoritative for acceptance.");
     case PlanningHelpTopic::Resources:

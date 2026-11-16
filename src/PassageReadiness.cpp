@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassageReadiness.h"
+#include "ShorelineSettings.h"
 #include <cmath>
 #include <wx/intl.h>
 
@@ -210,6 +211,23 @@ PassageReadiness EvaluatePassage(const PassageInputs& in) {
     add(PassageSection::Limits, "passage.limits.land", warning,
         _("Land avoidance is off"), _("Review this setting for the passage."),
         _("Passage settings"));
+  if (in.avoidLand && in.shorelineResolution >= 0 && in.shorelineResolution <= 4) {
+    const auto quality = wxGetTranslation(ShorelineSpecFor(in.shorelineResolution).quality);
+    if (!in.shorelineAvailable)
+      add(PassageSection::Limits, "passage.limits.shoreline_missing", error,
+          wxString::Format(_("Selected GSHHG %s data are not installed"), quality),
+          _("Open Shoreline data to install the selected dataset, or explicitly choose another passage shoreline. Installing data does not change saved selections. The same choice applies to all routing methods."),
+          _("Install selected shoreline data"));
+    else if (!in.chartSafetyEnforced && in.shorelineResolution < 3)
+      add(PassageSection::Limits, "passage.limits.shoreline_detail", warning,
+          wxString::Format(_("GSHHG %s can omit small islands"), quality),
+          _("High and Full contain smaller islands. Install them in Shoreline data, then select the passage shoreline. OpenCPN's displayed OSM background map is separate; use View > Show selected passage shoreline to inspect the routing outlines."),
+          _("Review passage shoreline"));
+    else
+      add(PassageSection::Limits, "passage.limits.shoreline", DiagnosticSeverity::Notice,
+          PassageShorelineSummary(in.shorelineResolution, true, in.chartSafetyEnforced),
+          _("The selected dataset is available and is verified before calculation."), {});
+  }
   if (in.avoidBoundaries && !in.boundaryProviderAvailable)
     add(PassageSection::Limits, "passage.limits.boundary_provider", error,
         _("Draw exclusion checking is enabled, but OpenCPN Draw is unavailable"),

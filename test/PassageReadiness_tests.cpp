@@ -270,3 +270,24 @@ TEST(PassageReadiness, InvalidSearchSettingsBlockWithEngineRecoveryWithoutChangi
   EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
   EXPECT_TRUE(input.avoidLand);
 }
+
+TEST(PassageReadiness, MissingSelectedShorelineBlocksWithInstallRecovery) {
+  auto input=Ready(); input.shorelineResolution=4; input.shorelineAvailable=false;
+  const auto report=wr::EvaluatePassage(input);
+  ASSERT_FALSE(report.CanCalculate());
+  ASSERT_NE(report.FirstBlocker(),nullptr);
+  EXPECT_EQ(report.FirstBlocker()->code,"passage.limits.shoreline_missing");
+  EXPECT_TRUE(report.FirstBlocker()->title.Contains("Full"));
+  input.shorelineAvailable=true;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+  input.avoidLand=false; input.shorelineAvailable=false;
+  EXPECT_TRUE(wr::EvaluatePassage(input).CanCalculate());
+}
+TEST(PassageReadiness, CoarseShorelineWarnsWithoutBlockingAndChartScoutStaysSeparate) {
+  auto input=Ready(); input.shorelineResolution=2;
+  auto report=wr::EvaluatePassage(input);
+  EXPECT_TRUE(report.CanCalculate()); EXPECT_EQ(report.Warnings(),1U);
+  EXPECT_TRUE(report.Report().Text().Contains("small islands"));
+  input.chartSafetyEnforced=true;
+  EXPECT_EQ(wr::EvaluatePassage(input).Warnings(),0U);
+}

@@ -34,6 +34,8 @@ struct PassageInputs {
   bool climatologyWind{false};
   bool wavesAvailable{false}, currentsAvailable{false};
   bool requireWaves{false}, useCurrents{false}, avoidLand{true};
+  int shorelineResolution{-1};  // Unknown until sampled by the host adapter.
+  bool shorelineAvailable{true}, chartSafetyEnforced{false};
   bool avoidBoundaries{false}, boundaryProviderAvailable{false};
   double windLimit{PassageDefaults::windKnots};
   double apparentWindLimit{PassageDefaults::apparentWindKnots};

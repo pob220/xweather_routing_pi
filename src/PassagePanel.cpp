@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PassagePanel.h"
 #include "PlanningHelp.h"
+#include "ShorelineSettings.h"
 #include "PlanningTimeCtrl.h"
 #include <wx/aui/auibook.h>
 #include "PassagePresentation.h"
@@ -489,7 +490,7 @@ void PassagePanel::RefreshPassage() {
       weather_routing::PassageSettingValue(weather_routing::PassageSetting::TrueWind, c.MaxTrueWindKnots) +
       _(L" • waves ") + weather_routing::PassageSettingValue(weather_routing::PassageSetting::WaveHeight, c.MaxSwellMeters) +
       L" • " + (c.Currents ? _("currents on") : _("currents off")) +
-      L" • " + (c.DetectLand ? _("land avoidance on") : _("land avoidance off")));
+      L" • " + weather_routing::PassageShorelineSummary(input.shorelineResolution, c.DetectLand, input.chartSafetyEnforced));
   wxString state = readiness_.Summary();
   if (current->Finished() && readiness_.CanCalculate())
     state = current->GetDiagnostics().Summary();
@@ -907,7 +908,11 @@ void PassagePanel::ShowChecks() {
   dialog.ShowModal();
 }
 void PassagePanel::ResolveReadinessIssue(const std::string& code) {
-  if (code == "passage.limits.boundary_provider") {
+  if (code == "passage.limits.shoreline_missing") {
+    wxCommandEvent event;
+    routing_.OnShorelineData(event);
+    RefreshPassage();
+  } else if (code == "passage.limits.boundary_provider") {
     routing_.DisablePassageDrawExclusions();
     RefreshPassage();
   } else if (code == "passage.weather.waves" ||
@@ -944,10 +949,13 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
                     ? routing_.GetMultiLegGroupRoutes(config.MultiLegGroupId)
                     : std::vector<RouteMapOverlay*>{current};
   wxString key;
-  for (auto* r : routes)
-    key +=
-        r->GetDiagnostics().Summary() + r->ModernNativeCoverageNotes() +
+  for (auto* r : routes) {
+    const auto report = r->GetDiagnostics();
+    key += report.Summary() + r->ModernNativeCoverageNotes() +
         (r->EndTime().IsValid() ? r->EndTime().FormatISOCombined() : wxString("pending"));
+    for (const auto& item : report.items)
+      if (item.code == "source.shoreline") key += item.title + item.detail;
+  }
   if (current == resultRoute_ && key == resultKey_) return;
   resultRoute_ = current;
   resultKey_ = key;
@@ -1058,6 +1066,14 @@ void PassagePanel::RefreshResults(RouteMapOverlay* current, bool busy) {
                       _(L"Passage incomplete • %u of %zu legs complete"),
                       complete, routes.size())
           : current->GetDiagnostics().Summary();
+  wxArrayString shorelineUsed;
+  for (auto* route : routes) {
+    const auto report = route->GetDiagnostics();
+    for (const auto& item : report.items)
+      if (item.code == "source.shoreline" && shorelineUsed.Index(item.title) == wxNOT_FOUND)
+        shorelineUsed.Add(item.title);
+  }
+  for (const auto& label : shorelineUsed) summary += "\n" + _("Land checks: ") + label;
   results_->SetLabel(summary);
   resultsBox_->Show(true);
   // Showing a sizer reveals all its children; apply conditional visibility last.
