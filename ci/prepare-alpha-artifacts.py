@@ -124,7 +124,7 @@ def inspect_pair(directory, channel="xweather-alpha"):
             raise ValueError(f"Unsafe archive path: {archive}")
         if sum(item.isfile() and PurePosixPath(item.name).name in libraries for item in members) != 1:
             raise ValueError(f"Missing/duplicate {profile['name']} library: {archive}")
-        if matrix_name.startswith("windows-x64"):
+        if matrix_name.startswith("windows-"):
             library = next(item for item in members if item.isfile() and
                            PurePosixPath(item.name).name == package_name + ".dll")
             windows_abi.validate(package.extractfile(library).read(), matrix_name)

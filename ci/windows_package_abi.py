@@ -1,10 +1,10 @@
-"""Inspect the Windows x64 DLL in a finished package without loading it."""
+"""Inspect Windows plugin DLL architectures and wx ABIs without loading them."""
 import re
 import struct
 
 
-def imports(data):
-    """Read an AMD64 PE import table; XML and archive filenames are not proof."""
+def imports(data, architecture="x64"):
+    """Read a PE import table; XML and archive filenames are not proof."""
     def unpack(fmt, offset):
         if offset < 0 or offset + struct.calcsize(fmt) > len(data):
             raise ValueError("Truncated Windows PE image")
@@ -19,12 +19,17 @@ def imports(data):
     optional_size, = unpack("<H", pe + 20)
     optional = pe + 24
     magic, = unpack("<H", optional)
-    if machine != 0x8664 or magic != 0x20b:
-        raise ValueError("Windows x64 catalogue packages require an AMD64 PE32+ DLL")
+    expected_machine, expected_magic, count_offset, imports_offset = {
+        "x64": (0x8664, 0x20b, 108, 120),
+        "x86": (0x14c, 0x10b, 92, 104),
+    }[architecture]
+    if machine != expected_machine or magic != expected_magic:
+        label = "AMD64 PE32+" if architecture == "x64" else "I386 PE32"
+        raise ValueError(f"Windows {architecture} catalogue packages require an {label} DLL")
     if not 0 < count <= 96 or optional_size < 128:
         raise ValueError("Invalid Windows PE headers")
-    directory_count, = unpack("<I", optional + 108)
-    import_rva, import_size = unpack("<II", optional + 120)
+    directory_count, = unpack("<I", optional + count_offset)
+    import_rva, import_size = unpack("<II", optional + imports_offset)
     if directory_count < 2 or not import_rva or import_size < 20:
         raise ValueError("Windows PE import table is absent")
     sections = []
@@ -59,11 +64,13 @@ def imports(data):
 
 
 def validate(data, target):
-    family = {"windows-x64": "334", "windows-x64-wx329": "32"}[target]
-    dependencies = imports(data)
-    core = f"wxmsw{family}u_core_vc14x_x64.dll"
+    family = {"windows-x64": "334", "windows-x64-wx329": "32", "windows-x86": "32"}[target]
+    architecture = "x86" if target == "windows-x86" else "x64"
+    suffix = "" if architecture == "x86" else "_x64"
+    dependencies = imports(data, architecture)
+    core = f"wxmsw{family}u_core_vc14x{suffix}.dll"
     wx = [name for name in dependencies if name.startswith("wx")]
-    pattern = rf"wx(?:base|msw){family}u(?:_[a-z]+)?_vc14x_x64\.dll"
+    pattern = rf"wx(?:base|msw){family}u(?:_[a-z]+)?_vc14x{suffix}\.dll"
     if core not in dependencies or any(not re.fullmatch(pattern, name) for name in wx):
         raise ValueError(f"Wrong wxWidgets ABI for {target}; expected {core}")
     return dependencies

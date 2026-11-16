@@ -55,7 +55,7 @@ def verify(directory, target):
                 raise ValueError(f"Missing/duplicate embedded metadata: {path}")
             root = ET.fromstring(package.extractfile("metadata.xml").read())
             selected = ALIASES.get(target, target)
-            if selected.startswith("windows-x64"):
+            if selected.startswith("windows-"):
                 libraries = [m for m in package if m.isfile() and
                              Path(m.name).name.endswith("weather_routing_pi.dll")]
                 if len(libraries) != 1:

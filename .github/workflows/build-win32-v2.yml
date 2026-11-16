@@ -1,0 +1,75 @@
+name: build-win32-v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feature/xweather-2.3.3-win32']
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-win32-v2:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      WEATHER_ROUTING_CI_XWEATHER: 'true'
+      WEATHER_ROUTING_API_HEADER_VERSION: '1.21'
+      WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64: '1'
+      MSVC_VERSION: '2022'
+      WX_VER: '32'
+      OCPN_TARGET: MSVC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+          vsversion: '2022'
+      - name: Verify unchanged scientific-helper inputs
+        shell: pwsh
+        run: |
+          git diff --exit-code 1cb4ab91ba788375bacf8b93d7ede04ea3327fc6 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
+          if ($LASTEXITCODE -ne 0) { throw 'Scientific helper inputs changed; requalify before reuse' }
+      - name: Retrieve qualified independent AMD64 helper
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 43622382776
+          name: windows-generator-stage
+          path: .windows-deps/stage
+      - name: Verify helper provenance and select its private stage
+        shell: python
+        run: |
+          import hashlib, json, os
+          from pathlib import Path
+          source = Path('third_party/environmental-grib-generator')
+          stage = Path('.windows-deps/stage').resolve()
+          receipt = json.loads((stage / 'runtime/stage.json').read_text())
+          actual = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
+          crlf = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')).hexdigest() for p in source.rglob('*') if p.is_file()}
+          if receipt['architecture'] != 'x86_64' or receipt['source_sha256'] not in [actual, crlf]:
+              raise RuntimeError('Qualified helper source/architecture mismatch')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
+              stream.write('WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE=' + str(stage) + '\n')
+      - name: Build and test Win32 plugin in stock OpenCPN
+        shell: cmd
+        run: ci\circleci-build-msvc.bat
+      - name: Qualify exact Win32 archive and independent GRIB helper
+        run: python ci/qualify-windows32-v2.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xWeatherRouting-2.3.3-windows-x86
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            artifacts/windows-x86
+            build/CMakeCache.txt
+            build/Testing/Temporary

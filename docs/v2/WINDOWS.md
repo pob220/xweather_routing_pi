@@ -122,7 +122,24 @@ Climatology bytes are preserved by `.gitattributes` and remain checksum-verified
 The plugin itself uses the host's pinned wx SDK, without the root vcpkg
 wxWidgets manifest. A manual plugin configure must supply
 `WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE` pointing at the complete helper stage.
-Use the script above for the supported end-to-end build. Windows x86 is not
-qualified for this integrated v2 runtime.
+Use the script above for the supported end-to-end x64 build.
+
+## Windows x86 plugin qualification
+
+The `build-win32-v2` workflow builds a genuine Win32 DLL for the ordinary
+32-bit OpenCPN 5.14.2 host. It retains the independently qualified AMD64 GRIB
+helper as a separate process, following the existing xGRIB Windows layout.
+This variant **requires 64-bit Windows**; it is not a package for a 32-bit
+Windows operating system. The helper DLLs stay beside the helper and are
+never loaded into the x86 OpenCPN process.
+
+The build must explicitly enable `WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64`
+(CMake option, or environment value `1`) and name the complete qualified
+`WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE`. Native qualification checks the
+actual PE32 plugin and its 32-bit wxWidgets imports, runs the plugin tests,
+imports/reinstalls the archive through stock OpenCPN's Plugin Manager, runs
+the routing controls, and tests the delivered/installed helper offline with
+build dependencies removed from PATH. The tarball contains `metadata.xml`
+and plugin resources; it does not contain OpenCPN itself.
 
 </details>

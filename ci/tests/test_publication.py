@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from windows_pe_fixture import pe_image
+from windows_pe_fixture import pe_image, pe32_image
 
 
 def module(name, filename):
@@ -45,7 +45,8 @@ class Publication(unittest.TestCase):
         archive = directory / f"{profile['package']}-1.30.1-{target}.tar.gz"
         library = (profile["package"] + ".dll" if target.startswith("windows") else
                    "lib" + profile["package"] + (".dylib" if target == "macos-arm64" else ".so"))
-        content = (pe_image(wx_family or ("32" if target.endswith("wx329") else "334"))
+        content = (pe32_image(wx_family or "32") if target == "windows-x86" else
+                   pe_image(wx_family or ("32" if target.endswith("wx329") else "334"))
                    if target.startswith("windows-x64") else b"original library bytes")
         with tarfile.open(archive, "w:gz") as output:
             for name, data in [("lib/" + library, content),

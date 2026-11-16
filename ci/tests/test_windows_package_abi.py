@@ -3,7 +3,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 
-from windows_pe_fixture import pe_image
+from windows_pe_fixture import pe_image, pe32_image
 
 spec = importlib.util.spec_from_file_location(
     "windows_package", Path(__file__).parents[1] / "windows_package_abi.py")
@@ -23,6 +23,15 @@ class WindowsPackageAbi(unittest.TestCase):
     def test_x86_binary_cannot_be_published_as_x64(self):
         with self.assertRaisesRegex(ValueError, "AMD64"):
             abi.validate(pe_image(machine=0x14c), "windows-x64")
+
+    def test_x86_requires_pe32_and_the_32bit_wx_runtime(self):
+        abi.validate(pe32_image(), "windows-x86")
+        with self.assertRaisesRegex(ValueError, "I386 PE32"):
+            abi.validate(pe_image("32"), "windows-x86")
+        with self.assertRaisesRegex(ValueError, "wxWidgets ABI"):
+            abi.validate(pe32_image("334"), "windows-x86")
+        with self.assertRaisesRegex(ValueError, "AMD64"):
+            abi.validate(pe32_image(), "windows-x64-wx329")
 
     def test_malformed_or_truncated_binaries_fail_closed(self):
         for data in (b"fixture", pe_image()[:300], pe_image()[:670]):

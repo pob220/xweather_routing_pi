@@ -8,7 +8,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from windows_pe_fixture import pe_image
+from windows_pe_fixture import pe_image, pe32_image
 
 
 spec = importlib.util.spec_from_file_location(
@@ -31,7 +31,8 @@ class AlphaArtifacts(unittest.TestCase):
                    "libxweather_routing_pi.dylib" if name == "macos-arm64" else
                    "libxweather_routing_pi.so")
         with tarfile.open(archive, "w:gz") as package:
-            content = (pe_image("32" if name.endswith("wx329") else "334")
+            content = (pe32_image() if name == "windows-x86" else
+                       pe_image("32" if name.endswith("wx329") else "334")
                        if name.startswith("windows-x64") else b"fixture")
             member = tarfile.TarInfo(f"plugin/lib/{library}")
             member.size = len(content)

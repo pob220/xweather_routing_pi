@@ -19,10 +19,21 @@ if(NOT OCPN_FLATPAK_CONFIG)
   if(WIN32)
     # Keep the helper's scientific dependencies outside the in-process wx SDK.
     # ci/build-windows-generator.py builds and checks this app-local runtime.
-    set(WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE "" CACHE PATH
+    set(WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE "$ENV{WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE}" CACHE PATH
       "Staged x64 environmental-grib runtime from ci/build-windows-generator.py")
-    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-      message(FATAL_ERROR "The integrated Windows v2 build currently supports x64 only")
+    set(_weather_x86_host_on_x64_default OFF)
+    if("$ENV{WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64}" STREQUAL "1")
+      set(_weather_x86_host_on_x64_default ON)
+    endif()
+    option(WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64
+      "Build an x86 OpenCPN plugin for 64-bit Windows, using the separate x64 helper"
+      ${_weather_x86_host_on_x64_default})
+    if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+      if(NOT WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64)
+        message(FATAL_ERROR "The Windows x86 plugin uses an x64 GRIB helper and requires 64-bit Windows. Enable WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64 explicitly.")
+      endif()
+    elseif(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+      message(FATAL_ERROR "Unsupported Windows plugin architecture")
     endif()
     foreach(_required bin/environmental-grib.exe bin/vcomp140.dll
         runtime/share/eccodes/definitions/grib1/boot.def

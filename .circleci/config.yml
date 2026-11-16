@@ -349,6 +349,13 @@ validation-filters: &validation-filters
     ignore: /.*/
 
 workflows:
+  windows-x86-package-contracts:
+    when:
+      matches:
+        pattern: "^feature/xweather-2[.]3[.]3-win32$"
+        value: << pipeline.git.branch >>
+    jobs:
+      - publication-contracts
   unix-plugin-packages:
     when:
       and:
@@ -381,6 +388,10 @@ workflows:
       and:
         - not: << pipeline.parameters.run_workflow_deploy >>
         - not: << pipeline.parameters.run_windows_only >>
+        - not:
+            matches:
+              pattern: "^feature/xweather-2[.]3[.]3-win32$"
+              value: << pipeline.git.branch >>
         - not:
             matches:
               pattern: "^packaging/unix-.*"
