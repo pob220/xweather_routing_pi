@@ -158,7 +158,11 @@ if not exist test-results mkdir test-results
 dumpbin /dependents test\%CONFIGURATION%\weather_routing_pi_tests.exe > test-dependencies.txt
 if errorlevel 1 exit /b %errorlevel%
 type test-dependencies.txt
-ctest --test-dir . -C %CONFIGURATION% --output-on-failure --timeout 180 --output-junit test-results\ctest.xml
+rem The Win32 numerical suite takes substantially longer than x64.  Retain
+rem every assertion and routing allowance; only allow more wall time in CTest.
+set "WR_CTEST_TIMEOUT=180"
+if defined WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE set "WR_CTEST_TIMEOUT=600"
+ctest --test-dir . -C %CONFIGURATION% --output-on-failure --timeout %WR_CTEST_TIMEOUT% --output-junit test-results\ctest.xml
 if errorlevel 1 exit /b %errorlevel%
 
 if exist stage rmdir /s /q stage

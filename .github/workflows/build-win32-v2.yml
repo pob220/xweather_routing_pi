@@ -20,6 +20,7 @@ jobs:
       MSVC_VERSION: '2022'
       WX_VER: '32'
       OCPN_TARGET: MSVC
+      CTEST_PARALLEL_LEVEL: '2'
     steps:
       - uses: actions/checkout@v4
         with:
