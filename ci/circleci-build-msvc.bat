@@ -70,10 +70,22 @@ echo USING wxWidgets_LIB_DIR: %wxWidgets_LIB_DIR%
 echo USING wxWidgets_ROOT_DIR: %wxWidgets_ROOT_DIR%
 echo USING OCPN_TARGET_TUPLE: %TARGET_TUPLE%
 
-nmake /?  >nul 2>&1
-if errorlevel 1 (
-  set "VS_HOME=C:\Program Files\Microsoft Visual Studio\2022"
-  call "%VS_HOME%\Community\VC\Auxiliary\Build\vcvars32.bat"
+rem refreshenv above discards the developer-command-prompt PATH. Restore the
+rem selected VS instance before compiling and before dumpbin/runtime checks.
+rem GitHub uses Enterprise; CircleCI can use Community or Build Tools.
+if "%MSVC_VERSION%" == "2022" (
+  if defined VSINSTALLDIR (
+    call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvars32.bat"
+    if errorlevel 1 exit /b 1
+  ) else (
+    for /f "usebackq tokens=*" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%I\VC\Auxiliary\Build\vcvars32.bat"
+  )
+  where cl
+  if errorlevel 1 exit /b 1
+  where dumpbin
+  if errorlevel 1 exit /b 1
+  where nmake
+  if errorlevel 1 exit /b 1
 )
 
 rem The test executable links the same wxWidgets DLLs supplied by an OpenCPN
