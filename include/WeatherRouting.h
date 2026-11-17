@@ -297,6 +297,7 @@ public:
 
   WeatherRouting(wxWindow* parent, weather_routing_pi& plugin);
   ~WeatherRouting();
+  void ShutdownReportWorkers() { m_ReportDialog.ShutdownCycloneAssessment(); }
   weather_routing::PassageWeather& PassageForecast();
   bool OpenPassageForecast(const wxString& path, wxString& error);
   bool OpenPassageForecastForUser(const wxString& path, wxString& error);

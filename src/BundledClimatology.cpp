@@ -361,6 +361,8 @@ ClimatologyMessage BundledClimatology::Resolve(
   result.data = Data;
   result.wind_atlas = Atlas;
   result.cyclones = Cyclones;
+  result.cyclone_worker_safe = true;
+  result.cyclone_revision_supported = true;
   return result;
 }
 wxString BundledClimatology::Source() {
