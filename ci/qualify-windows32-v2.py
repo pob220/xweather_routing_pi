@@ -14,9 +14,9 @@ OUTPUT = ROOT / 'artifacts/windows-x86'
 
 def main():
     package_dir = OUTPUT / 'package'
-    archives = list(package_dir.glob('xweather_routing_pi-2.3.3-*.tar.gz'))
+    archives = list(package_dir.glob('xweather_routing_pi-2.4.0-*.tar.gz'))
     if len(archives) != 1:
-        raise RuntimeError('Expected exactly one xWeatherRouting 2.3.3 Win32 archive')
+        raise RuntimeError('Expected exactly one xWeatherRouting 2.4.0 Win32 archive')
     archive = archives[0]
     subprocess.run([sys.executable, str(ROOT / 'ci/verify-package-abi.py'),
                     str(package_dir), '--target', 'windows-x86'], check=True)
@@ -43,7 +43,7 @@ def main():
         if bundle.getnames().count('metadata.xml') != 1:
             raise RuntimeError('Package needs one root-level metadata.xml')
         metadata = ET.fromstring(bundle.extractfile('metadata.xml').read())
-        if metadata.findtext('name').strip() != 'xWeatherRouting' or metadata.findtext('version').strip() != '2.3.3':
+        if metadata.findtext('name').strip() != 'xWeatherRouting' or metadata.findtext('version').strip() != '2.4.0':
             raise RuntimeError('Incorrect package identity or version')
         plugin = [item for item in bundle if item.isfile() and
                   PurePosixPath(item.name).name == 'xweather_routing_pi.dll']
@@ -74,7 +74,7 @@ def main():
             with path.open('rb') as stream:
                 sums.append(hashlib.file_digest(stream, 'sha256').hexdigest() + '  ' + path.name)
     (package_dir / 'SHA256SUMS').write_text('\n'.join(sums) + '\n')
-    record = dict(version='2.3.3', target='windows-x86', plugin_architecture='x86',
+    record = dict(version='2.4.0', target='windows-x86', plugin_architecture='x86',
                   helper_architecture='x86_64', requires_64bit_windows=True,
                   package=archive.name, package_sha256=digest, unit_tests_passed=enabled,
                   embedded_metadata=True, plugin_only=True, normal_import_and_reinstallation=True,
