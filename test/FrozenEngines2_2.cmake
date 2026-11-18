@@ -15,7 +15,12 @@ foreach(entry IN LISTS entries)
     if(name STREQUAL "src/engine/native/OpenCpnAdapter.cpp")
       # 2.3.2's sole adapter exception preserves reporting metadata when a stop
       # clears the delivered route. Invert that exact change before hashing;
-      # every other byte must still match the qualified calculation adapter.
+      # The 1.37/2.4 qualification records the authorised source-reporting,
+      # forecast-boundary and optional completion-orchestration adapter.
+      # Vendor solvers remain unchanged. The controller additionally qualifies
+      # an opt-in portfolio handoff after repeated chronological repair failures.
+      # The qualified PartialRoutes helper adds an optional pre-copy distance
+      # filter; all solver .cpp files retain their original hashes.
       file(READ "${SOURCE_ROOT}/${name}" adapter)
       string(REGEX MATCHALL "weather_routing::CancelRoutingResultKeepingDiagnostics\\(result\\)" reporting_calls "${adapter}")
       list(LENGTH reporting_calls reporting_call_count)

@@ -463,7 +463,10 @@ static void FinishHeadlessRouteTestProcess(int exit_code = 0) {
     wxLog::FlushActive();
     _Exit(exit_code);
   }
-  wxTheApp->ExitMainLoop();
+  // Exercise the host's normal close path, so it deinitialises plugins
+  // before destroying config services and wx application state.
+  if (auto* frame = wxTheApp->GetTopWindow()) frame->Close();
+  else wxTheApp->ExitMainLoop();
 }
 
 static bool TextMatchesFilter(const wxString& text, const wxString& filter) {
@@ -1755,6 +1758,7 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
 }
 
 WeatherRouting::~WeatherRouting() {
+  m_ShuttingDown = true;
 #ifndef __OCPN__ANDROID__
   delete m_ResultsWorkspace;
   m_ResultsWorkspace = nullptr;
@@ -10559,6 +10563,9 @@ void WeatherRouting::SaveXML(wxString filename) {
 }
 
 void WeatherRouting::SetEnableConfigurationMenu() {
+  // StopAll also runs during destruction, after host config services may
+  // already be gone. Stopping workers must not refresh settings then.
+  if (m_ShuttingDown) return;
   m_ConfigurationDialog.RefreshActivityState();
   bool current = FirstCurrentRouteMap() != NULL;
   const bool clearSelected = CanClearComputedResults(CurrentRouteMaps());
@@ -11043,7 +11050,7 @@ void WeatherRoute::Update(WeatherRouting* wr, bool stateonly) {
         const auto& engine = computed.selectedEngine.empty() ? computed.engine : computed.selectedEngine;
         weather_routing::RoutingEngineSettings winner;
         winner.SetEngineId(engine);
-        const wxString title =
+        const wxString title = engine == "quick3" ? _("Quick3 recovery") :
             winner.engine != weather_routing::RoutingEngine::Unsupported &&
                     !weather_routing::IsCombinedEngine(winner.engine)
                 ? wxGetTranslation(weather_routing::EngineTitle(winner.engine))

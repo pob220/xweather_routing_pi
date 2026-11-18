@@ -966,6 +966,7 @@ private:
   wxTimer m_tCompute, m_tHideConfiguration, m_tRoutingProgress,
       m_tDeferredRoutingStart;
 
+  bool m_ShuttingDown{};
   bool m_bRunning;
   int m_RoutePreparationDepth;
   wxTimeSpan m_RunTime;

@@ -2,6 +2,11 @@
 #include "Fixtures.h"
 #include "HeadlessFixtures.h"
 #include "InputPolicy.h"
+#include "QuickCompletion.h"
+#include "engine/adaptive/Controller.h"
+#include "engine/adaptive/NativeFeedback.h"
+#include "engine/adaptive/Quick2.h"
+#include "engine/native/RoutingEngineSequence.h"
 #ifdef LAB_HAS_CHARTS
 #include "FrozenChartProvider.h"
 #endif
@@ -68,10 +73,20 @@ int main(int argc, char** argv) {
     auto r = fixture::configure(j);
     if (j.isMember("polar")) fixture::loadPolar(j["polar"].asString(), r);
     headless_fixture::configure(j, r);
+    // Honour the parameter cohorts in the original qualification corpus.
+    const auto controls = j["lab_controls"];
+    if (controls.isMember("step_s")) r.options.timeStep=wr::Duration{controls["step_s"].asInt64()};
+    if (controls.isMember("heading_deg")) r.options.headingStepDegrees=controls["heading_deg"].asDouble();
+    if (controls.isMember("search_half_angle_deg")) r.options.maximumSearchAngleDegrees=controls["search_half_angle_deg"].asDouble();
+    if (controls.isMember("generated")) r.limits.maximumGeneratedStates=controls["generated"].asUInt64();
+    if (controls.isMember("retained")) r.limits.maximumRetainedStates=controls["retained"].asUInt64();
+
     auto raw = j;
     raw["cache"] = false;
+    auto analyticOrigin=r.start;
+    if (j.isMember("weather_origin")) analyticOrigin={j["weather_origin"][0].asDouble(),j["weather_origin"][1].asDouble()};
     std::shared_ptr<const wr::WeatherProvider> source =
-        std::make_shared<fixture::Weather>(raw, r.start);
+        std::make_shared<fixture::Weather>(raw, analyticOrigin);
     bool relative = false;
     if (j.isMember("grib")) {
 #ifdef ATLAS_HAS_ECCODES
@@ -145,9 +160,52 @@ int main(int argc, char** argv) {
       const auto weatherNsBefore = weather->queryNanoseconds,
                  landNsBefore = land->queryNanoseconds,
                  polarNsBefore = performance->queryNanoseconds;
+      std::shared_ptr<wr::PartialRouteArchive> recoveryArchive;
+      if (j.get("completion_prototype",false).asBool() && (engine=="original" || engine=="quick2")) {
+        recoveryArchive=std::make_shared<wr::PartialRouteArchive>(request.start,request.destination,
+            request.departure,request.limits.maximumRouteDuration,2*1024*1024,16,
+            j.get("typed_auto",false).asBool() ? 40. : std::numeric_limits<double>::infinity());
+        request.partials=recoveryArchive;
+      }
+      weather_routing::QuickCompletionResult completion;
       wr::RoutingResult route;
       atlas_routing::Diagnostics d;
-      if (engine == "atlas") {
+      Json::Value adaptiveAttempts;
+      const bool typed = j.get("typed_auto",false).asBool() && (engine=="original" || engine=="quick2");
+      if (typed) {
+        namespace a=weather_routing::adaptive;
+        const auto features=a::Characterize(request,env,*land);
+        a::Options options;
+        options.engine=engine=="original" ? weather_routing::RoutingEngine::Original : weather_routing::RoutingEngine::Quick2;
+        options.nativeAllowance=engine=="original" ? request.limits.maximumGeneratedStates : 2000000;
+        options.objective=a::Objective::FirstAccepted;
+        options.handoffAfterRepeatedRepair=engine=="original" && features.offshore && features.directNm>=800 && j.get("handoff_prototype",false).asBool();
+        auto planned=a::Run(options,request,features,[&](const auto& input,const auto&,auto allowance,auto,const auto& schedule) {
+          auto bounded=input;bounded.limits.maximumGeneratedStates=allowance;
+          a::AttemptResult out;
+          if(engine=="original") {
+            original_routing::Options o;o.allowCoastalEndpointLeeway=true;
+            out.route=original_routing::Engine{}.route(bounded,env,o);
+            out.quotaUsed=out.route.diagnostics.generatedStates;
+          } else {
+            quick2_adaptive::Options o;o.step=std::clamp(input.options.timeStep,wr::Duration{60},wr::Duration{21600});
+            o.maximumLayers=4096;o.maximumProposals=allowance;
+            if(!schedule.empty()) o.localStepCap=[&schedule](auto p){return schedule.cap(p);};
+            auto result=quick2_adaptive::Engine{}.route(bounded,env,o);
+            out.quotaUsed=result.frontier.proposals;out.route=std::move(result.route);
+          }
+          out.stopCause=a::NativeStopCause(out.route,options.handoffAfterRepeatedRepair);return out;
+        },[](auto& result){return weather_routing::native::AcceptedRoute(result);});
+        for(const auto& attempt:planned.attempts) {
+          Json::Value row;row["step_s"]=Json::Int64(attempt.recipe.step.count());row["heading_deg"]=attempt.recipe.heading;
+          row["status"]=wr::toString(attempt.status);row["accepted"]=attempt.accepted;row["milliseconds"]=attempt.milliseconds;
+          row["quota"]=Json::UInt64(attempt.quota);adaptiveAttempts.append(row);
+        }
+        route=std::move(planned.route);
+        j["typed_features"]["offshore"]=features.offshore;j["typed_features"]["distance_nm"]=features.directNm;
+        j["typed_features"]["handoff_eligible"]=options.handoffAfterRepeatedRepair;
+        j["typed_features"]["stop_reason"]=planned.stopReason;
+      } else       if (engine == "atlas") {
         auto result =
             atlas_routing::Engine{}.route(request, env, fixture::options(j));
         route = std::move(result.route);
@@ -168,8 +226,8 @@ int main(int argc, char** argv) {
         wr::QuickRoutingOptions options;
         // Standard has a separate nominal offshore/heading option block.
         // Preserve its built-in coastal and endpoint stepping in both modes.
-        options.offshoreStep = wr::Duration{j.get("standard_step_seconds", 10800).asInt()};
-        options.headingStepDegrees = j.get("quick_heading_step", 10.).asDouble();
+        options.offshoreStep = wr::Duration{controls.get("standard_step_s", j.get("standard_step_seconds", 10800)).asInt()};
+        options.headingStepDegrees = controls.get("standard_heading_deg",j.get("quick_heading_step",10.)).asDouble();
         if (j.get("input_policy", "manual") != "manual") {
           options.offshoreStep = j["input_policy"] == "engine-nominal-v2"
               ? wr::Duration{10800} : request.options.timeStep;
@@ -187,6 +245,17 @@ int main(int argc, char** argv) {
         route = wr::ProfessionalEngine{}.route(request, env, &incumbent);
       } else
         throw std::runtime_error("Unknown engine");
+      const auto initialStatus=route.status;
+      const auto initialMessage=route.message;
+      const bool initialComplete=weather_routing::native::AcceptedRoute(route);
+      if (recoveryArchive && !initialComplete && !r.cancellation.cancelled()) {
+        std::vector<const wr::PartialRouteArchive::Entry*> entries;
+        for (const auto& entry:recoveryArchive->entries()) entries.push_back(&entry);
+        auto options=weather_routing::QuickCompletionOptions{};
+        options.maximumTime=std::chrono::milliseconds{2000};
+        completion=weather_routing::CompleteQuickPrefixes(r,env,entries,options);
+        if(weather_routing::native::AcceptedRoute(completion.route)) route=completion.route;
+      }
       const auto seconds = std::chrono::duration<double>(
                                std::chrono::steady_clock::now() - start)
                                .count();
@@ -217,7 +286,11 @@ int main(int argc, char** argv) {
            route.status == wr::RoutingStatus::CompleteUsingGraphFallback);
       Json::Value v;
       v["case"] = j["name"];
+      v["typed_features"]=j["typed_features"];v["adaptive_attempts"]=adaptiveAttempts;
 
+      v["initial_status"]=wr::toString(initialStatus);
+      v["initial_message"]=initialMessage;
+      v["solving_method"]=route.engineIdentity;
       v["engine"] = engine;
       v["variant"] = LAB_VARIANT;
       v["input_plan"] = inputPlan;
@@ -234,12 +307,12 @@ int main(int argc, char** argv) {
       if (engine == "quick") {
         v["input_plan"]["effective_standard_offshore_s"] =
             j.get("input_policy", "manual") == "manual"
-                ? j.get("standard_step_seconds", 10800)
+                ? controls.get("standard_step_s", j.get("standard_step_seconds", 10800))
                 : Json::Value(Json::Int64(j["input_policy"] == "engine-nominal-v2"
                     ? 10800 : request.options.timeStep.count()));
         v["input_plan"]["effective_standard_heading_deg"] =
             j.get("input_policy", "manual") == "manual"
-                ? j.get("quick_heading_step", 10.)
+                ? controls.get("standard_heading_deg",j.get("quick_heading_step",10.))
                 : Json::Value(request.options.headingStepDegrees);
       }
       for (const auto& [display, id] : names)
@@ -262,6 +335,14 @@ int main(int argc, char** argv) {
 #endif
       v["repeat"] = repeat;
       v["cache_state"] = repeat ? "warm" : "cold";
+      v["initial_complete"]=initialComplete;
+      v["completion"]["traces"]=completion.tracesExamined;
+      v["completion"]["prefixes_rejected"]=completion.prefixesRejected;
+      v["completion"]["seeds"]=completion.seedsTried;
+      v["completion"]["motion_calls"]=Json::UInt64(completion.motionCalls);
+      v["completion"]["milliseconds"]=completion.milliseconds;
+      v["completion"]["allowance_reached"]=completion.allowanceReached;
+      v["completion"]["accepted"]=weather_routing::native::AcceptedRoute(completion.route);
       v["status"] = wr::toString(route.status);
       v["message"] = route.message;
       v["complete"] = complete;

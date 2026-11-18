@@ -20,9 +20,12 @@ pkg_check_modules(ECCODES REQUIRED IMPORTED_TARGET eccodes)
 find_package(wxWidgets REQUIRED COMPONENTS core base net xml html adv aui)
 include(${wxWidgets_USE_FILE})
 add_executable(adaptive-lab Runner.cpp
+  "${ROOT}/src/engine/adaptive/Quick2.cpp"
+  "${ROOT}/src/QuickCompletion.cpp"
   "${ROOT}/src/ChartSafetyCache.cpp" "${ROOT}/src/ChartHazardEvaluator.cpp"
   "${ROOT}/src/AppendOnlyCache.cpp" "${ROOT}/src/SystemMemory.cpp")
 target_include_directories(adaptive-lab PRIVATE support
+  "${ROOT}/vendor/weather-routing-engine/src"
   "${ROOT}/vendor/atlas-routing-engine/tests" "${ROOT}/include"
   "${ROOT}/opencpn-libs/api-21")
 target_compile_definitions(adaptive-lab PRIVATE ATLAS_HAS_ECCODES=1 LAB_HAS_CHARTS=1
