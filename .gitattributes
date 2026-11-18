@@ -7,9 +7,11 @@ vendor/** -text
 third_party/** -text
 src/engine/** -text
 include/engine/adaptive/** -text
+include/engine/native/** -text
 src/headless/** -text
 src/RouteMap.cpp -text
 include/RoutingEngineSettings.h -text
 include/RoutingQualityPolicy.h -text
 include/RoutingResourcePolicy.h -text
+include/RoutingWorkerBudget.h -text
 data/WeatherRoutingConfiguration.xml -text

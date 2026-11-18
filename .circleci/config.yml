@@ -352,7 +352,7 @@ workflows:
   windows-x86-package-contracts:
     when:
       matches:
-        pattern: "^feature/xweather-2[.]3[.]3-win32$"
+        pattern: "^(feature/xweather-2[.]3[.]3-win32|packaging/windows-performance-2[.]5[.]0)$"
         value: << pipeline.git.branch >>
     jobs:
       - publication-contracts
@@ -390,7 +390,7 @@ workflows:
         - not: << pipeline.parameters.run_windows_only >>
         - not:
             matches:
-              pattern: "^feature/xweather-2[.]3[.]3-win32$"
+              pattern: "^(feature/xweather-2[.]3[.]3-win32|packaging/windows-performance-2[.]5[.]0)$"
               value: << pipeline.git.branch >>
         - not:
             matches:

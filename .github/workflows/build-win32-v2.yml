@@ -3,7 +3,7 @@ name: build-win32-v2
 on:
   workflow_dispatch:
   push:
-    branches: ['packaging/unix-performance-2.5.0']
+    branches: ['packaging/windows-performance-2.5.0']
 
 permissions:
   contents: read
