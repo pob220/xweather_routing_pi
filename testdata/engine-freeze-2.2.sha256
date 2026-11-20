@@ -1,3 +1,4 @@
+# 2.8 additionally qualifies saved helper opt-in, conservative sample limits and bounded cache eviction.
 # 2.8 explicitly qualifies bounded ordered evaluation, shared weather and concurrent shoreline helpers.
 # Only the changed files listed in docs/release-2.8.0.md were requalified; all other inputs retain their hashes.
 # Production engine/model inputs from 0eb63adb5db00c758fd18f9b502c77a4e68298d8
@@ -23,7 +24,7 @@ c2233adecb4b2e4263be3746d820049357c3b68b6e13f275fb4298af1cf521c5  src/RouteMap.c
 d94c8a83b6a08148f51ff1d66625f0a693a1669462d713f4072dab085ba99c96  src/engine/adaptive/Quick2.cpp
 90869f0c6b9323103c199fe8d7baa278196c9bffde934e3dc777615f60cbb7a0  src/engine/adaptive/StandardRecovery.cpp
 # Shoreline scout clearance probes use the shoreline during chart preparation.
-81c26ae7dded59a692d2ac11c0764615fb2f5e847ac9f1a3fa02fca9e1d41cb3  src/engine/native/OpenCpnAdapter.cpp
+6267f3c5f59ff8d2d9f6eb1a3cb2a51ec0642bfa6c2aa7cd0400e96981af69c3  src/engine/native/OpenCpnAdapter.cpp
 228a37601f4a695273f556f6208527ee78a4c9c68a2af3db448b51a708ec4675  src/headless/HeadlessRouteRunner.cpp
 6b8bb3ffc4d2e14c98486f05e0a80030e852a85a0ff8313e130dd53a0c8c2ad7  src/headless/HeadlessRouteRunner.h
 3898f490b7b1c27a5fdffe83195e4749b5c3a80fe29a0819b971a06a94479500  src/headless/RouteLifecycleContract.cpp
@@ -186,3 +187,4 @@ a4d1cde14f3640aee6f093422a703a280cf31fc461aa16f2d6738f9f4744ff03  include/Routin
 5302c0125dbe619108e9ae012e632c8eac6b7ff444ce12739de17b298dd94a56  include/engine/native/RoutingEngineSequence.h
 29b236e42b4aa98cf52ec842da615edaf04b8143132a88be76b79e62fb2f3b00  include/engine/native/RoutingMethodExecution.h
 53f3f878d240288bd1d9cf4158b30654fd7d3a25bc24f924b15d3bbd50bbd5bb  include/engine/native/RoutingStepExecutor.h
+051202c27718487e741f2d43f6cf4e9fd40b228850205eefd1c55ef7dd1db0a3  include/CalculationHelperPolicy.h
