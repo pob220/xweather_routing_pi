@@ -17,10 +17,10 @@ foreach(entry IN LISTS entries)
       # clears the delivered route. Invert that exact change before hashing;
       # The 1.37/2.4 qualification records the authorised source-reporting,
       # forecast-boundary and optional completion-orchestration adapter.
-      # Vendor solvers remain unchanged. The controller additionally qualifies
+      # 2.8 qualifies ordered parallel evaluation in the vendor solver inputs. The controller additionally qualifies
       # an opt-in portfolio handoff after repeated chronological repair failures.
       # The qualified PartialRoutes helper adds an optional pre-copy distance
-      # filter; all solver .cpp files retain their original hashes.
+      # filter; unrelated solver inputs retain their original hashes.
       file(READ "${SOURCE_ROOT}/${name}" adapter)
       string(REGEX MATCHALL "weather_routing::CancelRoutingResultKeepingDiagnostics\\(result\\)" reporting_calls "${adapter}")
       list(LENGTH reporting_calls reporting_call_count)
@@ -34,7 +34,7 @@ foreach(entry IN LISTS entries)
       string(SHA256 actual "${adapter}")
     endif()
     if(NOT actual STREQUAL expected)
-      message(FATAL_ERROR "2.2 must preserve the existing engines: ${name}")
+      message(FATAL_ERROR "Calculation input differs from the qualified manifest: ${name}")
     endif()
     list(APPEND expected_names "${name}")
   endif()
