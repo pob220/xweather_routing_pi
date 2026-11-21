@@ -103,8 +103,9 @@ def profile(output, identity):
                  'WR_HEADLESS_SCENARIO', 'WR_HEADLESS_OUTPUT', 'WR_HEADLESS_GRIB_FILE'):
         environment.pop(name, None)
     if sys.platform == 'darwin':
-        require(os.environ.get('CIRCLECI') == 'true',
-                'Native macOS normal-profile tests require a disposable CircleCI VM')
+        require(os.environ.get('CIRCLECI') == 'true' or
+                os.environ.get('GITHUB_ACTIONS') == 'true',
+                'Native macOS normal-profile tests require a disposable CI VM')
         # Cocoa/wx standard paths can use the account's home independently of
         # HOME. Exercise the real account in the disposable VM.
         home = Path.home()

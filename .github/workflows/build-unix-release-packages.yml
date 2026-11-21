@@ -1,0 +1,75 @@
+name: Qualified Unix plugin packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  debian:
+    name: Debian ${{ matrix.release }} x86_64 plugin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {release: '12', image: 'debian:bookworm', target: bookworm}
+          - {release: '13', image: 'debian:trixie', target: trixie}
+    container:
+      image: ${{ matrix.image }}
+    env:
+      OCPN_TARGET: ${{ matrix.target }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '3'
+      WEATHER_ROUTING_CI_XWEATHER: 'true'
+      WEATHER_ROUTING_API_HEADER_VERSION: '1.21'
+      CLOUDSMITH_API_KEY: ''
+    steps:
+      - name: Bootstrap checkout
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Trust isolated checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install native dependencies
+        run: bash ci/install-debian-build-deps.sh
+      - name: Build, test, package and import into stock host
+        run: |
+          chmod +x ci/*.sh
+          ci/build-linux-catalogue.sh "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/work"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xWeatherRouting-${{ matrix.target }}-qualified
+          path: work/artifacts/${{ matrix.target }}
+          if-no-files-found: error
+  macos:
+    name: macOS Apple Silicon plugin
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '3'
+      WEATHER_ROUTING_CI_XWEATHER: 'true'
+      WEATHER_ROUTING_API_HEADER_VERSION: '1.21'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      WX_VER: '32'
+      CLOUDSMITH_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Require native Apple Silicon
+        run: test "$(uname -m)" = arm64
+      - name: Build, test, package and import into official stock host
+        run: |
+          chmod +x ci/*.sh cmake/*.sh
+          ci/circleci-build-macos-universal.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xWeatherRouting-macos-arm64-qualified
+          path: artifacts/macos-arm64
+          if-no-files-found: error
