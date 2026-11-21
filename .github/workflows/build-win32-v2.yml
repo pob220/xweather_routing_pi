@@ -61,7 +61,11 @@ jobs:
               stream.write('WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE=' + str(stage) + '\n')
       - name: Build and test Win32 plugin in stock OpenCPN
         shell: cmd
-        run: ci\circleci-build-msvc.bat
+        run: |
+          rem Exercise the cold-runner discovery path used by CircleCI.
+          set "VSINSTALLDIR="
+          call ci\circleci-build-msvc.bat
+          exit /b %errorlevel%
       - name: Qualify exact Win32 archive and independent GRIB helper
         run: python ci/qualify-windows32-v2.py
       - uses: actions/upload-artifact@v4

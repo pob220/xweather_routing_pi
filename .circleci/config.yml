@@ -180,11 +180,13 @@ jobs:
           name: Stage qualified unchanged AMD64 GRIB helper
           command: python ci/stage-qualified-windows-generator.py
       - run:
-          shell: cmd.exe
+          shell: powershell.exe -ExecutionPolicy Bypass
           name: Native Windows build, tests and package
           environment:
             WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64: "1"
-          command: ci\circleci-build-msvc.bat
+          command: |
+            cmd.exe /d /s /c "call ci\circleci-build-msvc.bat"
+            exit $LASTEXITCODE
           no_output_timeout: 45m
       - run:
           name: Qualify Win32 plugin and independent helper

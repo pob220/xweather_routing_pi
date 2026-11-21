@@ -75,20 +75,27 @@ echo USING OCPN_TARGET_TUPLE: %TARGET_TUPLE%
 rem refreshenv above discards the developer-command-prompt PATH. Restore the
 rem selected VS instance before compiling and before dumpbin/runtime checks.
 rem GitHub uses Enterprise; CircleCI can use Community or Build Tools.
-if "%MSVC_VERSION%" == "2022" (
-  if defined VSINSTALLDIR (
-    call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
-    if errorlevel 1 exit /b 1
-  ) else (
-    for /f "usebackq tokens=*" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%I\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
-  )
-  where cl
-  if errorlevel 1 exit /b 1
-  where dumpbin
-  if errorlevel 1 exit /b 1
-  where nmake
-  if errorlevel 1 exit /b 1
-)
+if not "%MSVC_VERSION%" == "2022" goto wr_vs_ready
+if defined VSINSTALLDIR goto wr_vs_selected
+rem Query directly: FOR /F starts another CMD which strips the leading quote
+rem from a Program Files path. Read the quoted command's output instead.
+set "WR_VS_QUERY_FILE=%TEMP%\weather-routing-vs-%RANDOM%.txt"
+"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > "%WR_VS_QUERY_FILE%"
+if errorlevel 1 exit /b 1
+set /p "VSINSTALLDIR=" < "%WR_VS_QUERY_FILE%"
+del "%WR_VS_QUERY_FILE%"
+if not defined VSINSTALLDIR exit /b 1
+:wr_vs_selected
+if not exist "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" exit /b 1
+call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
+if errorlevel 1 exit /b 1
+where cl
+if errorlevel 1 exit /b 1
+where dumpbin
+if errorlevel 1 exit /b 1
+where nmake
+if errorlevel 1 exit /b 1
+:wr_vs_ready
 
 rem The test executable links the same wxWidgets DLLs supplied by an OpenCPN
 rem host. Make that recorded runtime directory available before GoogleTest
