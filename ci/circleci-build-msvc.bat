@@ -76,23 +76,25 @@ rem refreshenv above discards the developer-command-prompt PATH. Restore the
 rem selected VS instance before compiling and before dumpbin/runtime checks.
 rem GitHub uses Enterprise; CircleCI can use Community or Build Tools.
 if not "%MSVC_VERSION%" == "2022" goto wr_vs_ready
-if defined VSINSTALLDIR goto wr_vs_selected
+set "WR_VS_INSTANCE=%VSINSTALLDIR%"
+if defined WR_VS_INSTANCE goto wr_vs_selected
 rem Query directly: FOR /F starts another CMD which strips the leading quote
 rem from a Program Files path. Read the quoted command's output instead.
 set "WR_VS_QUERY_FILE=%TEMP%\weather-routing-vs-%RANDOM%.txt"
 "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -version "[17.0,18.0)" -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > "%WR_VS_QUERY_FILE%"
 if errorlevel 1 exit /b 1
-set /p "VSINSTALLDIR=" < "%WR_VS_QUERY_FILE%"
+set /p "WR_VS_INSTANCE=" < "%WR_VS_QUERY_FILE%"
 del "%WR_VS_QUERY_FILE%"
-if not defined VSINSTALLDIR exit /b 1
+if not defined WR_VS_INSTANCE exit /b 1
 :wr_vs_selected
-if not exist "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" exit /b 1
+if not exist "%WR_VS_INSTANCE%\VC\Auxiliary\Build\vcvarsall.bat" exit /b 1
 rem refreshenv replaced PATH but may leave VS's already-initialized markers.
 rem Reset only those markers so vcvarsall actually rebuilds the tool paths.
 for /f "tokens=1 delims==" %%V in ('set VSCMD_ 2^>nul') do set "%%V="
 for /f "tokens=1 delims==" %%V in ('set __VSCMD_ 2^>nul') do set "%%V="
 set "VSCMD_START_DIR=%CD%"
-call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
+set "VSINSTALLDIR="
+call "%WR_VS_INSTANCE%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
 if errorlevel 1 exit /b 1
 where cl
 if errorlevel 1 exit /b 1
