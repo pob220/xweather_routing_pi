@@ -87,6 +87,11 @@ del "%WR_VS_QUERY_FILE%"
 if not defined VSINSTALLDIR exit /b 1
 :wr_vs_selected
 if not exist "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" exit /b 1
+rem refreshenv replaced PATH but may leave VS's already-initialized markers.
+rem Reset only those markers so vcvarsall actually rebuilds the tool paths.
+for /f "tokens=1 delims==" %%V in ('set VSCMD_ 2^>nul') do set "%%V="
+for /f "tokens=1 delims==" %%V in ('set __VSCMD_ 2^>nul') do set "%%V="
+set "VSCMD_START_DIR=%CD%"
 call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64_x86
 if errorlevel 1 exit /b 1
 where cl
