@@ -67,7 +67,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: xWeatherRouting-2.3.3-windows-x86
+          name: xWeatherRouting-windows-x86
           include-hidden-files: true
           if-no-files-found: error
           path: |
