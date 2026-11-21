@@ -4,5 +4,8 @@
 #        - --share=network
 # be carefull about indents and naming.
 build-options:
+    env:
+        PKG_CONFIG_PATH: /app/extensions/xweather_routing_pi/lib/pkgconfig:/app/extensions/xweather_routing_pi/share/pkgconfig:/app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+        CMAKE_PREFIX_PATH: /app/extensions/xweather_routing_pi
     build-args:
         - --share=network

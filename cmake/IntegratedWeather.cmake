@@ -51,6 +51,25 @@ if(NOT OCPN_FLATPAK_CONFIG)
       third_party/INTEGRATED_WEATHER_SOURCES.md DESTINATION "${_weather_runtime}/licenses")
   else()
     add_subdirectory(third_party/environmental-grib-generator generator)
+    if(UNIX AND NOT APPLE AND NOT ANDROID)
+      # Older distro ecCodes exposes the GRIB-specific sample factory, but
+      # not the generic factory added later. Both callers create GRIB samples.
+      # Keep this build adaptation outside the shared scientific source tree.
+      include(CheckCXXSourceCompiles)
+      find_path(_weather_eccodes_header NAMES eccodes.h REQUIRED)
+      set(_weather_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+      set(CMAKE_REQUIRED_INCLUDES "${_weather_eccodes_header}")
+      check_cxx_source_compiles("#include <eccodes.h>
+using SampleFactory = decltype(&codes_handle_new_from_samples);
+int main() { return 0; }"
+        WEATHER_ROUTING_ECCODES_HAS_GENERIC_SAMPLE_FACTORY)
+      set(CMAKE_REQUIRED_INCLUDES "${_weather_saved_required_includes}")
+      unset(_weather_saved_required_includes)
+      if(NOT WEATHER_ROUTING_ECCODES_HAS_GENERIC_SAMPLE_FACTORY)
+        target_compile_definitions(environmental_grib_engine PRIVATE
+          codes_handle_new_from_samples=codes_grib_handle_new_from_samples)
+      endif()
+    endif()
   endif()
   if(WIN32)
     # Installed above from the independently built and tested helper stage.

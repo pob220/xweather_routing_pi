@@ -182,10 +182,9 @@ jobs:
       - run:
           shell: cmd.exe
           name: Native Windows build, tests and package
-          command: |
-            set "WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE=%CD%\.windows-deps\stage"
-            set "WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64=1"
-            ci\circleci-build-msvc.bat
+          environment:
+            WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64: "1"
+          command: ci\circleci-build-msvc.bat
           no_output_timeout: 45m
       - run:
           name: Qualify Win32 plugin and independent helper

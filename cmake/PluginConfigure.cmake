@@ -366,6 +366,8 @@ if (OCPN_FLATPAK_CONFIG)
     set(build_options "")
   else ()
     file(READ ${PLUGIN_FLATPAK_OPTIONS} build_options)
+    string(REPLACE "/app/extensions/xweather_routing_pi"
+      "/app/extensions/${PACKAGE}" build_options "${build_options}")
   endif ()
 
   find_file(

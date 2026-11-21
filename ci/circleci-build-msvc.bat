@@ -9,6 +9,8 @@ set "SCRIPTDIR=%~dp0"
 set "GIT_HOME=C:\Program Files\Git"
 if "%CONFIGURATION%" == "" set "CONFIGURATION=RelWithDebInfo"
 set "WR_XWEATHER_IDENTITY=OFF"
+rem CircleCI must invoke this batch as one command; prepare the stage here.
+if "%WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64%" == "1" if "%WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE%" == "" set "WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE=%SCRIPTDIR%..\.windows-deps\stage"
 if /I "%WEATHER_ROUTING_CI_XWEATHER%" == "true" set "WR_XWEATHER_IDENTITY=ON"
 if "%WEATHER_ROUTING_CI_XWEATHER%" == "" if /I "%CIRCLE_PROJECT_REPONAME%" == "xweather_routing_pi" set "WR_XWEATHER_IDENTITY=ON"
 
