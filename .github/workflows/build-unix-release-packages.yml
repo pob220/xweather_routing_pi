@@ -1,5 +1,8 @@
 name: Qualified Unix plugin packages
 on:
+  push:
+    branches: [packaging/unix-2.8.0-20261121]
+    paths: [.github/workflows/build-unix-release-packages.yml]
   workflow_dispatch:
 permissions:
   contents: read
