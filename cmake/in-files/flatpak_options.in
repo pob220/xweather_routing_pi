@@ -4,8 +4,10 @@
 #        - --share=network
 # be carefull about indents and naming.
 build-options:
+    prepend-ld-library-path: /app/extensions/xweather_routing_pi/lib:/app/extensions/xweather_routing_pi/lib64
+    ldflags: -Wl,-rpath-link,/app/extensions/xweather_routing_pi/lib:/app/extensions/xweather_routing_pi/lib64
     env:
-        PKG_CONFIG_PATH: /app/extensions/xweather_routing_pi/lib/pkgconfig:/app/extensions/xweather_routing_pi/share/pkgconfig:/app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+        PKG_CONFIG_PATH: /app/extensions/xweather_routing_pi/lib/pkgconfig:/app/extensions/xweather_routing_pi/lib64/pkgconfig:/app/extensions/xweather_routing_pi/share/pkgconfig:/app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
         CMAKE_PREFIX_PATH: /app/extensions/xweather_routing_pi
     build-args:
         - --share=network
