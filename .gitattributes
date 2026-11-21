@@ -15,3 +15,4 @@ include/RoutingQualityPolicy.h -text
 include/RoutingResourcePolicy.h -text
 include/RoutingWorkerBudget.h -text
 data/WeatherRoutingConfiguration.xml -text
+include/CalculationHelperPolicy.h -text
