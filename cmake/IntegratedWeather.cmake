@@ -77,10 +77,13 @@ if(NOT OCPN_FLATPAK_CONFIG)
     install(PROGRAMS tools/environmental-grib DESTINATION
       "share/opencpn/plugins/${PACKAGE_NAME}/bin")
     find_path(ECCODES_DEFINITIONS_DIR NAMES grib1/boot.def
-      PATHS /usr/share/eccodes/definitions /usr/local/share/eccodes/definitions REQUIRED)
+      PATHS /usr/share/eccodes/definitions /usr/local/share/eccodes/definitions
+        "${CMAKE_INSTALL_PREFIX}/share/eccodes/definitions" REQUIRED)
     find_path(ECCODES_SAMPLES_DIR NAMES regular_ll_sfc_grib1.tmpl
-      PATHS /usr/share/eccodes/samples /usr/local/share/eccodes/samples REQUIRED)
-    find_path(PROJ_DATA_DIR NAMES proj.db PATHS /usr/share/proj /usr/local/share/proj REQUIRED)
+      PATHS /usr/share/eccodes/samples /usr/local/share/eccodes/samples
+        "${CMAKE_INSTALL_PREFIX}/share/eccodes/samples" REQUIRED)
+    find_path(PROJ_DATA_DIR NAMES proj.db PATHS /usr/share/proj /usr/local/share/proj
+      "${CMAKE_INSTALL_PREFIX}/share/proj" REQUIRED)
     # The helper handles GRIB. BUFR, aviation and GRIB3 definitions contribute
     # about 80 MiB on current distributions and are not part of this reader.
     install(DIRECTORY "${ECCODES_DEFINITIONS_DIR}"

@@ -17,6 +17,8 @@ foreach(entry IN LISTS entries)
       # clears the delivered route. Invert that exact change before hashing;
       # The 1.37/2.4 qualification records the authorised source-reporting,
       # forecast-boundary and optional completion-orchestration adapter.
+      # The 1.41/2.8 coordinator also drains completions arriving during
+      # publication; the individual search solvers remain unchanged.
       # 2.8 qualifies ordered parallel evaluation in the vendor solver inputs. The controller additionally qualifies
       # an opt-in portfolio handoff after repeated chronological repair failures.
       # The qualified PartialRoutes helper adds an optional pre-copy distance

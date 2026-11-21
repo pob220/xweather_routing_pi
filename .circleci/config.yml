@@ -11,11 +11,11 @@ parameters:
     default: false
   build_xweather_identity:
     type: boolean
-    default: false
+    default: true
   publication_channel:
     type: enum
     enum: [production, xweather-alpha]
-    default: production
+    default: xweather-alpha
   release_workflow_id:
     type: string
     default: ""
@@ -177,10 +177,19 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Stage qualified unchanged AMD64 GRIB helper
+          command: python ci/stage-qualified-windows-generator.py
+      - run:
           shell: cmd.exe
           name: Native Windows build, tests and package
-          command: ci\circleci-build-msvc.bat
+          command: |
+            set "WEATHER_ROUTING_WINDOWS_GENERATOR_STAGE=%CD%\.windows-deps\stage"
+            set "WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64=1"
+            ci\circleci-build-msvc.bat
           no_output_timeout: 45m
+      - run:
+          name: Qualify Win32 plugin and independent helper
+          command: python ci/qualify-windows32-v2.py
       - run:
           name: Verify Windows x86 package ABI
           command: python ci/verify-package-abi.py artifacts/windows-x86/package --target windows-x86
@@ -323,7 +332,7 @@ jobs:
           name: Install Android cross-build tools
           command: |
             sudo apt-get update
-            sudo apt-get install -y git cmake curl unzip gettext python3 openjdk-17-jdk-headless
+            sudo apt-get install -y git cmake curl unzip gettext python3 openjdk-17-jdk-headless autoconf autoconf-archive automake libtool pkg-config
       - run:
           name: Build OpenCPN 5.14 core and selected plugin for Android arm64
           command: bash ci/build-android-arm64.sh

@@ -379,6 +379,8 @@ if (OCPN_FLATPAK_CONFIG)
     set(flatpak_extra_modules "")
   else ()
     file(READ ${PLUGIN_FLATPAK_EXTRA_MODULES} flatpak_extra_modules)
+    string(REPLACE "/app/extensions/xweather_routing_pi"
+      "/app/extensions/${PACKAGE}" flatpak_extra_modules "${flatpak_extra_modules}")
   endif ()
 endif ()
 

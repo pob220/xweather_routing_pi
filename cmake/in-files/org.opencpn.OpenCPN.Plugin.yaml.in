@@ -8,7 +8,28 @@ appstream-compose: false
 ${finish_args}
 ${build_options}
 
+# Dependency modules install before the plugin, so their development outputs
+# must be removed by manifest-level cleanup rather than per-module cleanup.
+cleanup:
+  - /include
+  - /bin
+  - /cmake
+  - /lib/*.a
+  - /lib/*.la
+  - /lib/*.settings
+  - /lib/lib*.so*
+  - /lib/objects-*
+  - /lib/cmake
+  - /lib/pkgconfig
+  - /share/bash-completion
+  - /share/doc
+  - /share/eccodes
+  - /share/licenses
+  - /share/man
+  - /share/proj
+
 modules:
+${flatpak_extra_modules}
   - name: ${PACKAGE}
     no-autogen: true
     buildsystem: cmake
@@ -34,4 +55,3 @@ modules:
          # a second unauthenticated network clone inside flatpak-builder.
          url: file://${PROJECT_SOURCE_DIR}
          ${GIT_BRANCH_OR_TAG}: ${GIT_REPOSITORY_ITEM}
-${flatpak_extra_modules}
