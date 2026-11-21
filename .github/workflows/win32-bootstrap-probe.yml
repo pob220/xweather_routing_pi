@@ -1,0 +1,39 @@
+name: Windows compiler bootstrap replay
+on:
+  push:
+    branches: [tmp]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bootstrap:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [current, normalized, private]
+    env:
+      PROBE_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+          vsversion: '2022'
+      - name: Prepare exact source replay
+        run: python .github/scripts/make-win32-bootstrap-probe.py
+      - name: Exercise compiler discovery after PATH refresh
+        shell: pwsh
+        run: |
+          cmd.exe /d /s /c "call bootstrap-probe.bat"
+          $code = $LASTEXITCODE
+          Write-Host "PROBE_RESULT mode=$env:PROBE_MODE exit=$code"
+          if ($env:PROBE_MODE -eq 'current') {
+            if ($code -eq 0) { throw 'Expected existing failure was not reproduced' }
+          } elseif ($code -ne 0) {
+            exit $code
+          }
