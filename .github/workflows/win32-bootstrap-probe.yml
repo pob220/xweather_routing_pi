@@ -37,3 +37,4 @@ jobs:
           } elseif ($code -ne 0) {
             exit $code
           }
+          exit 0
