@@ -803,6 +803,10 @@ private:
   void RefreshRunDiagnosticsRecord();
   void RecordChartSafetyPreparationFailure(RouteMapOverlay* route,
                                            const wxString& reason);
+  std::map<wxString, bool> m_EndpointPreflightDecisions;
+  bool ValidateRoutingEndpoints(RouteMapOverlay* route,
+                                const RouteMapConfiguration& configuration,
+                                bool useChartSafety, bool enforceChartSafety);
   bool ValidateChartSafetyEndpoints(RouteMapOverlay* route,
                                     const RouteMapConfiguration& configuration,
                                     bool useChartSafety,

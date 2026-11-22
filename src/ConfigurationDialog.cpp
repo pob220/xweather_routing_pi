@@ -332,7 +332,9 @@ ConfigurationDialog::ConfigurationDialog(WeatherRouting& weatherrouting)
         "is off. Crude, Low and Intermediate are bundled; High and Full can be "
         "installed from Shoreline data. With both chart options "
         "enabled on a compatible host, loaded charts decide route land and "
-        "depth safety; GSHHG helps the initial search.");
+        "depth safety; GSHHG helps the initial search. Compute checks both "
+        "endpoints before search: land stops the calculation; water inside "
+        "the shore margin offers Continue with existing coastal access.");
   m_cbDetectLand->SetToolTip(detect_land_note);
   m_sSafetyMarginLand->SetToolTip(
       detect_land_note + _("\n\nSpecify a minimum distance in nautical miles "
@@ -2646,13 +2648,13 @@ void ConfigurationDialog::BuildCompactPlanningControls() {
   SetPlanningHelp(m_cBasicRoutingMode, PlanningHelpTopic::Search, _("Auto finds a validated route; All compares selected routing methods."));
   SetPlanningHelp(m_sTimeStepHours, PlanningHelpTopic::Search, _("Nominal time step; routing methods may adapt it. Press F1 for details."));
   SetPlanningHelp(m_sTimeStepMinutes, PlanningHelpTopic::Search, m_sTimeStepHours->GetToolTipText());
-  SetPlanningHelp(m_sMaxSearchAngle, PlanningHelpTopic::Search, _("Heading search around the target bearing; separate from diverted-course limits."));
+  SetPlanningHelp(m_sMaxSearchAngle, PlanningHelpTopic::Search, _("Trial-heading range: Quick uses the previous leg; Standard, Alternative and Professional use the destination bearing in forward search. Press F1 for details."));
   SetPlanningHelp(m_cRoutingEffortPercent, PlanningHelpTopic::Search, _("Professional search allowance; Auto sets its own effort."));
   SetPlanningHelp(m_sMainGribTimelineCacheMiB, PlanningHelpTopic::Resources, _("Maximum retained forecast-frame memory; actual use adapts to available RAM."));
   SetPlanningHelp(m_sQuickGribTimelineCacheMiB, PlanningHelpTopic::Resources, m_sMainGribTimelineCacheMiB->GetToolTipText());
   SetPlanningHelp(m_sMinimumDepthMeters, PlanningHelpTopic::Safety, _("0 = Off. Positive depth requires compatible, enforced chart checks."));
-  SetPlanningHelp(m_sSafetyMarginLand, PlanningHelpTopic::Safety, _("Requested land clearance in nautical miles; Help explains coastal endpoint access."));
-  SetPlanningHelp(m_cbDetectLand, PlanningHelpTopic::Safety, _("Avoid land using the selected shoreline or required chart checks."));
+  SetPlanningHelp(m_sSafetyMarginLand, PlanningHelpTopic::Safety, _("Requested land clearance in nautical miles. A water endpoint inside this margin offers Continue or Cancel; Help explains the existing bounded coastal access."));
+  SetPlanningHelp(m_cbDetectLand, PlanningHelpTopic::Safety, _("Avoid land using the selected shoreline or required chart checks. Compute checks both endpoints first; land stops the search, while water inside the margin offers Continue or Cancel."));
   SetPlanningHelp(m_cbUseExperimentalChartSafety, PlanningHelpTopic::Safety, _("Inspect loaded charts for land and depth; requires a compatible host."));
   SetPlanningHelp(m_cbEnforceExperimentalChartSafety, PlanningHelpTopic::Safety, _("Require loaded-chart land and depth validation."));
   SetPlanningHelp(m_cbDetectBoundary, PlanningHelpTopic::Safety, _("Optional custom exclusions from OpenCPN Draw. Leave unchecked for ordinary routing; land avoidance is separate."));

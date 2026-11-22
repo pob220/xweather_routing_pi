@@ -52,6 +52,7 @@ set(TEST_SRC
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PlanningHelp.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RunDiagnosticsJournal.cpp
     RouteWaypointValidation_tests.cpp
+    RoutingEndpointPreflight_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/RouteWaypointValidation.cpp
     RouteDiagnostics_tests.cpp
     ValidatedRouteReporting_tests.cpp
