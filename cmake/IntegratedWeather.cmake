@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 include("${CMAKE_CURRENT_LIST_DIR}/VerifyClimatology.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/BundledGribAec.cmake")
+target_link_libraries(${PACKAGE_NAME} PRIVATE grib_aec_decoder)
 add_subdirectory(opencpn-libs/wxJSON)
 target_link_libraries(${PACKAGE_NAME} PRIVATE ocpn::wxjson)
 target_include_directories(${PACKAGE_NAME} PRIVATE

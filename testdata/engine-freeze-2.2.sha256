@@ -1,3 +1,5 @@
+# 2.10 qualifies native CCSDS decoding and the missing-wind timestamp in RouteMap.
+# All existing solver and generation inputs retain their hashes.
 # 2.8 additionally qualifies saved helper opt-in, conservative sample limits and bounded cache eviction.
 # 2.8 explicitly qualifies bounded ordered evaluation, shared weather and concurrent shoreline helpers.
 # Only the changed files listed in docs/release-2.8.0.md were requalified; all other inputs retain their hashes.
@@ -19,7 +21,8 @@ ce6252130d673e152e28a3724bc880d23d2bab941b871e54b45582bb46ce4c24  include/engine
 d7b66baf7f77333096e7c3fbd354ceb9d3c8d109682f37bd888067cd55b17516  include/engine/adaptive/StepSchedule.h
 b1fe3c9e917ccbfa7af857b2975a5dc24cb9463f611d354d93c6f8bb8463c3fa  include/engine/adaptive/WorkForecast.h
 # GRIB request handoff and diagnostics updated for concurrent workers.
-c2233adecb4b2e4263be3746d820049357c3b68b6e13f275fb4298af1cf521c5  src/RouteMap.cpp
+14280163dcea4290a64c8a6355f64ffa7cdbb12b4ee635e04a8cf291b0398273  src/RouteMap.cpp
+336212677631f5e12806c425e9009cbfda6e00f5fa4475fe39eda5dc28205b55  src/GribV2Record.cpp
 738a38dd534a10d88e364cce4f03fef7f2f17f98332fe24b89364787836338c1  src/engine/StabilityCorridorCalculator.cpp
 d94c8a83b6a08148f51ff1d66625f0a693a1669462d713f4072dab085ba99c96  src/engine/adaptive/Quick2.cpp
 90869f0c6b9323103c199fe8d7baa278196c9bffde934e3dc777615f60cbb7a0  src/engine/adaptive/StandardRecovery.cpp
@@ -188,3 +191,11 @@ a4d1cde14f3640aee6f093422a703a280cf31fc461aa16f2d6738f9f4744ff03  include/Routin
 eaa227c2b1823199527d685c0e748d906312598dbc52412e5df5791ac966ccbd  include/engine/native/RoutingMethodExecution.h
 53f3f878d240288bd1d9cf4158b30654fd7d3a25bc24f924b15d3bbd50bbd5bb  include/engine/native/RoutingStepExecutor.h
 051202c27718487e741f2d43f6cf4e9fd40b228850205eefd1c55ef7dd1db0a3  include/CalculationHelperPolicy.h
+9fdabba96fbc46af0ca018f86329f1e06e873b25801732001128d5afca265e36  third_party/libaec-decoder/LICENSE.txt
+32d970e58a3ec92f58e478f69b9f7ce0966b5e91bc6d7cbf82d2780fcc1bd2d7  third_party/libaec-decoder/README.md
+4fa4cbeb2eed71195e498454f0da4629dc1a4ee2a1a9546e56eabc2b3cfcf43f  third_party/libaec-decoder/config.h
+2dba55922b51063796c1c3c8b67f8fd985c7fca29eaa53a3653fbc24a6ba3f02  third_party/libaec-decoder/decode.c
+1a9edb74319f8757816bb6331ab3e61bada5ae3596dcabcc67306ddfe7b859db  third_party/libaec-decoder/decode.h
+ddc77910d4ccdee62e9b242d6c2ed8d2a24bddfdf7c9d2b55eaea01b743c31a3  third_party/libaec-decoder/libaec.h
+b7dff7bf71cf57704c61a4c483666fae19adade0485c1c893c855b4ccac6ac30  third_party/libaec-decoder/vector.c
+dca81b6c8fa195639fe88fc9c6e23e5effbdc25be91f47aeac4c55a4c35ea09c  third_party/libaec-decoder/vector.h

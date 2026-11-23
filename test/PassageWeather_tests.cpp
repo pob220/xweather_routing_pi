@@ -62,9 +62,7 @@ TEST(PassageWeather, FailedReplacementKeepsSelectedForecast) {
   EXPECT_EQ(w.Path(), path);
   EXPECT_TRUE(w.HasWind(w.FirstWindTime(), 53.4, -5.5));
 }
-#ifdef JASPER
-TEST(PassageWeather, Jpeg2000WindAndMaskedWavesMatchIndependentDecoder) {
-  const auto fixture = source + "/ci/testdata/farallon-jpeg2000.grb2";
+void CheckFarallonWindAndMaskedWaves(const wxString& fixture) {
   GribReader reader(fixture);
   ASSERT_TRUE(reader.isOk());
   ASSERT_EQ(reader.getTotalNumberOfGribRecords(), 7);
@@ -110,6 +108,15 @@ TEST(PassageWeather, Jpeg2000WindAndMaskedWavesMatchIndependentDecoder) {
   ASSERT_TRUE(forecast.Open(fixture, error)) << error;
   EXPECT_TRUE(forecast.HasWind(1791892800, 37.5, -123.0));
   EXPECT_TRUE(forecast.HasWind(1791898200, 37.5, -123.0));
+}
+
+TEST(PassageWeather, CcsdsWindAndMaskedWavesMatchIndependentDecoder) {
+  CheckFarallonWindAndMaskedWaves(source + "/ci/testdata/farallon-ccsds.grb2");
+}
+
+#ifdef JASPER
+TEST(PassageWeather, Jpeg2000WindAndMaskedWavesMatchIndependentDecoder) {
+  CheckFarallonWindAndMaskedWaves(source + "/ci/testdata/farallon-jpeg2000.grb2");
 }
 
 TEST(PassageWeather, Jpeg2000RepeatedAndConcurrentWorkerLoads) {

@@ -180,6 +180,7 @@ set(TEST_SRC
    )
 
    add_executable(weather_routing_pi_tests ${TEST_SRC})
+   target_link_libraries(weather_routing_pi_tests PRIVATE grib_aec_decoder)
    if(TARGET libjasper)
      target_link_libraries(weather_routing_pi_tests PRIVATE libjasper)
      target_compile_definitions(weather_routing_pi_tests PRIVATE JASPER)
