@@ -1615,6 +1615,7 @@ void ConfigurationDialog::UpdateEngineControls() {
   m_cBasicRoutingMode->Show(combined);
 #endif
   const bool atlas = engine == weather_routing::RoutingEngine::Atlas;
+  const bool meridian = engine == weather_routing::RoutingEngine::Meridian;
   bool nativeSettings = true;
   for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) {
     const auto c = route->GetConfiguration();
@@ -1626,7 +1627,7 @@ void ConfigurationDialog::UpdateEngineControls() {
       m_cbAutomaticAdaptiveSettings->Get3StateValue() == wxCHK_CHECKED;
   m_pMainEngine->Show(engine == weather_routing::RoutingEngine::Main || combined ||
       engine == weather_routing::RoutingEngine::Quick2 || engine == weather_routing::RoutingEngine::Alternative ||
-      engine == weather_routing::RoutingEngine::Atlas);
+      engine == weather_routing::RoutingEngine::Atlas || meridian);
   m_pQuickEngine->Show(engine == weather_routing::RoutingEngine::Original ||
                        engine == weather_routing::RoutingEngine::Quick ||
                        engine == weather_routing::RoutingEngine::Main);
@@ -1641,8 +1642,8 @@ void ConfigurationDialog::UpdateEngineControls() {
       ? _("Standard's nominal offshore step. Routes under 120 NM are capped at one hour; departure and destination search use smaller steps.")
       : _("Quick uses the configured nominal time step and reduces it near departure and destination. Larger steps must be selected explicitly."));
   m_bResetAdvanced->Enable(engine != weather_routing::RoutingEngine::Unsupported);
-  m_cEnginePreset->Enable(engine != weather_routing::RoutingEngine::Unsupported && !atlas);
-  if (atlas) m_bResetAdvanced->Enable(false);
+  m_cEnginePreset->Enable(engine != weather_routing::RoutingEngine::Unsupported && !atlas && !meridian);
+  if (atlas || meridian) m_bResetAdvanced->Enable(false);
   bool running = false;
   for (auto* route : m_WeatherRouting.CurrentRouteMaps(false)) running |= m_WeatherRouting.RouteComputationActive(route);
   // Keep section navigation and Close available while the settings themselves
@@ -1656,10 +1657,10 @@ void ConfigurationDialog::UpdateEngineControls() {
     m_cbAllEngines[i]->Enable(!running);
   }
   const bool departureMode = m_rbRouteByDepartureTime->GetValue();
-  m_cbExploreComfortAlternatives->Enable(!running && departureMode);
-  m_sComfortAdditionalPercent->Enable(!running && departureMode &&
+  m_cbExploreComfortAlternatives->Enable(!running && departureMode && !meridian);
+  m_sComfortAdditionalPercent->Enable(!running && departureMode && !meridian &&
                                       m_cbExploreComfortAlternatives->IsChecked());
-  m_sComfortMaximumSeconds->Enable(!running && departureMode &&
+  m_sComfortMaximumSeconds->Enable(!running && departureMode && !meridian &&
                                    m_cbExploreComfortAlternatives->IsChecked());
   const bool chartAuthoritative = m_WeatherRouting.HasEnhancedChartSafety() &&
       m_cbUseExperimentalChartSafety->GetValue() && m_cbEnforceExperimentalChartSafety->GetValue();
@@ -1700,15 +1701,15 @@ void ConfigurationDialog::UpdateEngineControls() {
   const bool managedStep = automatic && nativeSettings && (combined ||
       engine == weather_routing::RoutingEngine::Original ||
       engine == weather_routing::RoutingEngine::Quick2);
-  m_cbAutomaticAdaptiveSettings->Enable(!running && nativeSettings);
+  m_cbAutomaticAdaptiveSettings->Enable(!running && nativeSettings && !meridian);
   m_sTimeStepHours->Enable(!running && !atlas && !managedStep);
   m_sTimeStepMinutes->Enable(!running && !atlas && !managedStep);
-  m_sMaxSearchAngle->Enable(!running && !atlas);
+  m_sMaxSearchAngle->Enable(!running && !atlas && !meridian);
   m_cRoutingEffortPercent->Enable(!running && engine != weather_routing::RoutingEngine::Auto &&
-                                 engine != weather_routing::RoutingEngine::Quick2 && !atlas);
-  m_sByDegrees->Enable(!running && engine != weather_routing::RoutingEngine::Quick2 && !atlas &&
+                                 engine != weather_routing::RoutingEngine::Quick2 && !atlas && !meridian);
+  m_sByDegrees->Enable(!running && engine != weather_routing::RoutingEngine::Quick2 && !atlas && !meridian &&
       !managedStep);
-  m_cbUseReverseReachabilityRecovery->Enable(!running && engine != weather_routing::RoutingEngine::Quick2 && !atlas);
+  m_cbUseReverseReachabilityRecovery->Enable(!running && engine != weather_routing::RoutingEngine::Quick2 && !atlas && !meridian);
   if (engine == weather_routing::RoutingEngine::Auto)
     m_cRoutingEffortPercent->SetSelection(RoutingEffortSelection(400));
   m_pQuickEngine->Enable(!running);
@@ -1726,6 +1727,8 @@ void ConfigurationDialog::UpdateEngineControls() {
       ? _("Auto: finds a validated route using the routing methods selected in Routing controls. Enable alternatives to compare passage time and comfort.")
       : engine == weather_routing::RoutingEngine::All
       ? _("All (slow): compares every routing method selected in Routing controls and keeps the earliest validated arrival. Enable alternatives to compare passage time and comfort.")
+      : meridian
+      ? _("Meridian experimental: standalone time-dependent best-first search with a full-circle heading fan, finer coastal steps and reserved refinement. Excluded from Auto and All. May miss feasible routes; uses the same weather and safety checks.")
       : engine == weather_routing::RoutingEngine::Quick2
       ? _("Routing method: Quick2 CPU frontier. Bounded search may miss routes or return detours. Auto stops when it supplies the first validated route.")
       : engine == weather_routing::RoutingEngine::Alternative

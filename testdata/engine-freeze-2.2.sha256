@@ -1,3 +1,5 @@
+# 2.11 adds isolated Meridian and qualifies only its adapter/diagnostic wiring.
+# All six existing solver implementations retain their prior hashes.
 # 2.10 qualifies native CCSDS decoding and the missing-wind timestamp in RouteMap.
 # All existing solver and generation inputs retain their hashes.
 # 2.8 additionally qualifies saved helper opt-in, conservative sample limits and bounded cache eviction.
@@ -9,7 +11,7 @@
 # RouteMap.cpp adds a resident-only cache peek; headless JSON accepts an explicit adaptive flag.
 # The existing gfs_fallback_tests.cpp concurrent counter fix is included in this footprint.
 3558b853894b78ed1c02ac1490b193b08367bb735a5762cd70d0b1c527facad9  data/WeatherRoutingConfiguration.xml
-2d6ff354f7ccbce3a827f071c6ac1e5646ae5a1c05db39415563285b1102a0c2  include/RoutingEngineSettings.h
+6b928764d4571d1e09b094b8858372c5a3b3bd2e652944b9c622adbf0513d71d  include/RoutingEngineSettings.h
 71ab20e25679fa79f58f0a4260125b4e623cbd19fea808e3fe6aae281f9257e3  include/RoutingQualityPolicy.h
 31a2010c891035cdedbfe06c8ab61474f90cba0f45875487836a68499c02e9fa  include/RoutingResourcePolicy.h
 1baa9294a4605894b23baa1cf4073b4d7a283c96ce6afa7eab4b4707fe6d4613  include/engine/adaptive/Controller.h
@@ -27,11 +29,11 @@ b1fe3c9e917ccbfa7af857b2975a5dc24cb9463f611d354d93c6f8bb8463c3fa  include/engine
 d94c8a83b6a08148f51ff1d66625f0a693a1669462d713f4072dab085ba99c96  src/engine/adaptive/Quick2.cpp
 90869f0c6b9323103c199fe8d7baa278196c9bffde934e3dc777615f60cbb7a0  src/engine/adaptive/StandardRecovery.cpp
 # Shoreline scout clearance probes use the shoreline during chart preparation.
-6267f3c5f59ff8d2d9f6eb1a3cb2a51ec0642bfa6c2aa7cd0400e96981af69c3  src/engine/native/OpenCpnAdapter.cpp
-228a37601f4a695273f556f6208527ee78a4c9c68a2af3db448b51a708ec4675  src/headless/HeadlessRouteRunner.cpp
+06f4b90bc4ad6cc071e2846bebf46ac74f31caa5897bc5c520bcd8f0a4402294  src/engine/native/OpenCpnAdapter.cpp
+90623c1608ada6037bc74c9d08fc6b29c424746a08b03a37673fe8d9a35206f2  src/headless/HeadlessRouteRunner.cpp
 6b8bb3ffc4d2e14c98486f05e0a80030e852a85a0ff8313e130dd53a0c8c2ad7  src/headless/HeadlessRouteRunner.h
 3898f490b7b1c27a5fdffe83195e4749b5c3a80fe29a0819b971a06a94479500  src/headless/RouteLifecycleContract.cpp
-97c50d7c6c8307d1e77b92fc597c29c07c0fd25c52ba0037391ad08d3bb2df1b  src/headless/RoutingScenarioJson.cpp
+54d0e19811d72fb85b81e2d9a346a05d31f55e76260624176124886cd2980fcd  src/headless/RoutingScenarioJson.cpp
 598aea9664c342f2e9d030b930eeace1060883a52fb3be5917cfad8aa6a6f1dc  src/headless/RoutingScenarioJson.h
 80a7be168d7d0b705698887c107444046d855bf96aa4266e8cf4887a06747300  third_party/INTEGRATED_WEATHER_SOURCES.md
 181aea51235a5684a1ad0d185e7aef46a4086600594ea83a6d0201415a95bb41  third_party/environmental-grib-generator/.gitignore
@@ -199,3 +201,10 @@ eaa227c2b1823199527d685c0e748d906312598dbc52412e5df5791ac966ccbd  include/engine
 ddc77910d4ccdee62e9b242d6c2ed8d2a24bddfdf7c9d2b55eaea01b743c31a3  third_party/libaec-decoder/libaec.h
 b7dff7bf71cf57704c61a4c483666fae19adade0485c1c893c855b4ccac6ac30  third_party/libaec-decoder/vector.c
 dca81b6c8fa195639fe88fc9c6e23e5effbdc25be91f47aeac4c55a4c35ea09c  third_party/libaec-decoder/vector.h
+a51d579a155c6c7c54097375ac9dc964ccfea93f26bb16eb0b5502e4a57e5a52  include/engine/meridian/Engine.h
+4b54ab40ced3cd52ab7e64accf0d37b8437e105813aa583e136e8f5b6fefed31  include/engine/meridian/GeographyGuide.h
+274c52a8126a70f6b1a5655d2d773f922f5328826e5ff3beb9f5c5cdab4d0d07  include/engine/meridian/ShorelineHints.h
+16a82f59df2cfaa02f89e46b824136e58bb1a082374faa1ed37b977f45e74bde  include/engine/meridian/StepPolicy.h
+14c9da9340bd47475350f9ea8c4072694124242ad2a697118b09ded41476d2d0  src/engine/meridian/Engine.cpp
+b5ab2f6dbd59db7c32338c5984af93bdcd4cd00947f5378a20cf6963329f78c2  include/engine/meridian/HierarchicalGuide.h
+32a816e59f514e691de9680bcb717b31f68b3b978a38e4cdeab5014ac609ddb9  include/engine/meridian/StateKey.h

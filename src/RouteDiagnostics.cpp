@@ -23,13 +23,15 @@ bool Complete(wr::RoutingStatus status) {
 // ResourceLimitReached includes deliberate allowances and failed allocations.
 // Interpret only known engine reasons; retain unknown reasons without guessing
 // that the machine ran out of RAM. Engine statuses and raw evidence stay intact.
-wxString ResultStatusTitle(wr::RoutingStatus status, const std::string& reason) {
+wxString ResultStatusTitle(wr::RoutingStatus status, const std::string& details) {
+  const auto reason = details.substr(0, details.find('\n'));
   if (status != wr::RoutingStatus::ResourceLimitReached)
     return RoutingStatusTitle(status);
   if (reason == "retained lineage limit" ||
       reason == "Quick2 retained-state allowance exhausted before finding a validated route")
     return _("Search-history limit reached");
   if (reason == "memory allocation failed" || reason == "Frontier allocation failed" ||
+      reason == "Meridian allocation failed" ||
       reason == "Atlas search memory allowance" ||
       reason.starts_with("Quick allocation failed:"))
     return _("Memory allocation failed");
@@ -43,7 +45,11 @@ wxString ResultStatusTitle(wr::RoutingStatus status, const std::string& reason) 
       reason == "weather query limit" ||
       reason == "Quick2 search allowance exhausted before finding a validated route" ||
       reason == "Quick attempted-motion allowance reached" ||
-      reason == "Quick weather-work allowance reached")
+      reason == "Quick weather-work allowance reached" ||
+      reason == "Meridian retained-state or motion allowance reached" ||
+      reason == "Meridian retained-state allowance reached" ||
+      reason == "Meridian proposal allowance reached; feasibility is unresolved" ||
+      reason == "Meridian has no search allowance")
     return _("Search allowance reached");
   return RoutingStatusTitle(status);
 }
@@ -223,6 +229,18 @@ wxString DiagnosticTimeUtc(wr::TimePoint time) {
       .Format("%Y-%m-%d %H:%M:%S", wxDateTime::UTC);
 #endif
 }
+void AppendLiveWorkerProgress(RouteDiagnosticReport& report,
+    const wxString& stage, const wxString& detail) {
+  // This is a copy-time snapshot, never a stored result or a claim that the
+  // closest candidate is a validated route. Replacing permits refresh callers.
+  std::erase_if(report.items, [](const auto& item) {
+    return item.code == "worker.running";
+  });
+  report.Add({"worker.running", DiagnosticSeverity::Notice,
+      _("Calculation is still running"), stage + "\n" + detail,
+      _("Search progress does not establish a complete route or a finishing time.")});
+}
+
 wxString DiagnosticSeverityTitle(DiagnosticSeverity severity) {
   switch (severity) {
     case DiagnosticSeverity::Error: return _("Error");
@@ -580,6 +598,10 @@ RouteDiagnosticReport DescribeRoutingResult(const wr::RoutingResult& result,
   if (!result.validation.failureReason.empty())
     report.technical += "\n" + _("Final check: ") +
         wxString::FromUTF8(result.validation.failureReason.c_str());
+  if (!report.complete && std::isfinite(result.diagnostics.closestApproachNm))
+    report.technical += wxString::Format(
+        _("\nClosest candidate reported by this result: %.3f NM remaining. This is search progress, not a validated arrival."),
+        result.diagnostics.closestApproachNm);
   const auto& attemptHistory = result.engineAttempts.empty()
       ? result.attemptFailures : result.engineAttempts;
   for (const auto& attempt : attemptHistory)
