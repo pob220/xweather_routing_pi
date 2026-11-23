@@ -18,9 +18,9 @@ inline RoutingEngineSettings ReadNewPassageEnginePreferences(
       (!config->HasEntry("RoutingEngine") && !config->HasEntry("QuickRoute")))
     settings.engine = RoutingEngine::Auto;
   if (!config || !config->HasEntry("AutoEngineMask"))
-    settings.autoEngines = kSelectableEnginesMask;
+    settings.autoEngines = kFirstInstallEnginesMask;
   if (!config || !config->HasEntry("AllEngineMask"))
-    settings.allEngines = kSelectableEnginesMask;
+    settings.allEngines = kFirstInstallEnginesMask;
   return settings;
 }
 

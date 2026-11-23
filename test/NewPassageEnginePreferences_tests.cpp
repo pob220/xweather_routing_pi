@@ -7,8 +7,13 @@
 namespace wr = weather_routing;
 namespace {
 constexpr auto path = "/PlugIns/xWeatherRouting2/LastUsedConfiguration";
-void ExpectEveryEngine(const wr::RoutingEngineSettings& settings) {
+void ExpectEstablishedEngines(const wr::RoutingEngineSettings& settings) {
   for (const auto engine : wr::kSequenceEngines) {
+    if (engine == wr::RoutingEngine::Meridian) {
+      EXPECT_EQ(settings.autoEngines & wr::EngineBit(engine),0U);
+      EXPECT_EQ(settings.allEngines & wr::EngineBit(engine),0U);
+      continue;
+    }
     EXPECT_NE(settings.autoEngines & wr::EngineBit(engine), 0U);
     EXPECT_NE(settings.allEngines & wr::EngineBit(engine), 0U);
   }
@@ -18,13 +23,13 @@ TEST(NewPassageEnginePreferences,
      FreshAndUnavailableConfigStartAutoWithEveryEngine) {
   const auto noConfig = wr::ReadNewPassageEnginePreferences(nullptr);
   EXPECT_EQ(noConfig.engine, wr::RoutingEngine::Auto);
-  ExpectEveryEngine(noConfig);
+  ExpectEstablishedEngines(noConfig);
   wxStringInputStream input("");
   wxFileConfig config(input);
   config.SetPath(path);
   const auto empty = wr::ReadNewPassageEnginePreferences(&config);
   EXPECT_EQ(empty.engine, wr::RoutingEngine::Auto);
-  ExpectEveryEngine(empty);
+  ExpectEstablishedEngines(empty);
 }
 TEST(NewPassageEnginePreferences,
      UnrelatedSavedBoatDoesNotSelectLegacyProfessionalOrOldMasks) {
@@ -34,7 +39,7 @@ TEST(NewPassageEnginePreferences,
   config.SetPath(path);
   const auto settings = wr::ReadNewPassageEnginePreferences(&config);
   EXPECT_EQ(settings.engine, wr::RoutingEngine::Auto);
-  ExpectEveryEngine(settings);
+  ExpectEstablishedEngines(settings);
   EXPECT_EQ(config.Read("Boat", ""), "personal.xml");
   EXPECT_FALSE(
       config.HasEntry("RoutingEngine"));  // Loading does not save choices.
@@ -71,11 +76,11 @@ TEST(NewPassageEnginePreferences,
   auto settings = wr::ReadNewPassageEnginePreferences(&config);
   EXPECT_EQ(settings.engine, wr::RoutingEngine::Auto);
   EXPECT_EQ(settings.autoEngines, 0U);
-  EXPECT_EQ(settings.allEngines, wr::kSelectableEnginesMask);
+  EXPECT_EQ(settings.allEngines, wr::kFirstInstallEnginesMask);
   config.DeleteEntry("AutoEngineMask");
   config.Write("AllEngineMask", 8L);
   settings = wr::ReadNewPassageEnginePreferences(&config);
-  EXPECT_EQ(settings.autoEngines, wr::kSelectableEnginesMask);
+  EXPECT_EQ(settings.autoEngines, wr::kFirstInstallEnginesMask);
   EXPECT_EQ(settings.allEngines, 8U);
 }
 TEST(NewPassageEnginePreferences, LegacySavedChoicesAndRouteXmlArePreserved) {
@@ -109,7 +114,7 @@ TEST(NewPassageEnginePreferences,
   config.SetPath(path);
   wr::ApplyNewPassageEngineChoices(copied, &config);
   EXPECT_EQ(copied.engine, wr::RoutingEngine::Auto);
-  ExpectEveryEngine(copied);
+  ExpectEstablishedEngines(copied);
   EXPECT_EQ(copied.quick, search.quick);
   EXPECT_EQ(copied.original, search.original);
   EXPECT_EQ(copied.mainPreset, search.mainPreset);
@@ -122,4 +127,18 @@ TEST(NewPassageEnginePreferences,
   EXPECT_EQ(copied.allEngines, 32U);
   EXPECT_EQ(copied.quick, search.quick);
   EXPECT_EQ(copied.original, search.original);
+}
+
+TEST(NewPassageEnginePreferences, MeridianMembershipIsAnIndependentRememberedOptIn) {
+  wxStringInputStream input("");wxFileConfig config(input);config.SetPath(path);
+  config.Write("RoutingEngine",wxString("auto"));config.Write("AutoEngineMask",96L);
+  config.Write("AllEngineMask",64L);
+  wr::RoutingEngineSettings target;wr::ApplyNewPassageEngineChoices(target,&config);
+  EXPECT_EQ(target.engine,wr::RoutingEngine::Auto);
+  EXPECT_EQ(target.autoEngines,96U);EXPECT_EQ(target.allEngines,64U);
+  wxStringOutputStream output;ASSERT_TRUE(config.Save(output));
+  wxStringInputStream restoredInput(output.GetString());wxFileConfig restored(restoredInput);
+  restored.SetPath(path);target={};wr::ApplyNewPassageEngineChoices(target,&restored);
+  EXPECT_EQ(target.engine,wr::RoutingEngine::Auto);
+  EXPECT_EQ(target.autoEngines,96U);EXPECT_EQ(target.allEngines,64U);
 }
