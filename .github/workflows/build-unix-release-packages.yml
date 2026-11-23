@@ -1,7 +1,7 @@
 name: Qualified Unix plugin packages
 on:
   push:
-    branches: [release/2.9.0-query-context-20261122]
+    branches: [release/2.10.0-grib]
     paths: [.github/workflows/build-unix-release-packages.yml]
   workflow_dispatch:
 permissions:
