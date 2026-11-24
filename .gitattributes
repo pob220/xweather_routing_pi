@@ -9,6 +9,7 @@ src/engine/** -text
 include/engine/adaptive/** -text
 include/engine/native/** -text
 src/headless/** -text
+src/GribV2Record.cpp -text
 src/RouteMap.cpp -text
 include/RoutingEngineSettings.h -text
 include/RoutingQualityPolicy.h -text
