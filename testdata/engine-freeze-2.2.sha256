@@ -1,3 +1,6 @@
+# 2.11.1 requalifies only Validator.cpp for shared manoeuvre-time weather
+# validation and complete source-duration accounting (also production 1.44.1).
+# All existing search-solver hashes remain unchanged.
 # 2.11 adds isolated Meridian and qualifies only its adapter/diagnostic wiring.
 # All six existing solver implementations retain their prior hashes.
 # 2.10 qualifies native CCSDS decoding and the missing-wind timestamp in RouteMap.
@@ -183,7 +186,7 @@ eb1cae729bd7ec9705c37c7115f9238b097b1a5392c763b0112816384ea1a64b  vendor/weather
 8131994b427e0e5069d9c8fe03c4394d14fab7cb63c77f1bd4ba90dec5278d60  vendor/weather-routing-engine/src/Providers.cpp
 e49a72c1edaa456a4f93cc97cc5b770dc242df792f399d1a4c28a41c7bc59021  vendor/weather-routing-engine/src/QuickEngine.cpp
 68f1fab75b13ccadc6319562682c8f79511263e0ebf674d22bea8734ab8ee8c2  vendor/weather-routing-engine/src/RoutingInternal.h
-45213eb945111a6fb3395002e5b036d3387ac8dbbab975d1e0b11dba97e85430  vendor/weather-routing-engine/src/Validator.cpp
+47f4e6d738b052bee9f507b3eef0abbb24900d4f15153198dd4ea73a5316cf71  vendor/weather-routing-engine/src/Validator.cpp
 a4b64e460bc7b507e2f9d47d6e04883f704f74223973f0b88a927f5c2d217c3a  vendor/weather-routing-engine/tests/CMakeLists.txt
 0fbf25116c78d3876e001f920f2c058166c3bb11341d0c8eecc45cf01a04bbcc  vendor/weather-routing-engine/tests/ContractTests.cpp
 a60d10cccc6763c6b75276ea58b470e13a03c4c89c410405356996a763a8258f  vendor/weather-routing-engine/tests/QuickHeadToHead.cpp
