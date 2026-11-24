@@ -12,5 +12,5 @@ call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build
 if errorlevel 1 exit /b %errorlevel%
 git submodule update --init opencpn-libs
 if errorlevel 1 exit /b %errorlevel%
-python ci\circleci-build-windows64.py
+python ci\circleci-build-windows64.py %*
 exit /b %errorlevel%
