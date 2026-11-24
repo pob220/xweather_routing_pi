@@ -197,7 +197,12 @@ jobs:
           no_output_timeout: 45m
       - run:
           name: Qualify Win32 plugin and independent helper
-          command: python ci/qualify-windows32-v2.py
+          shell: cmd.exe
+          command: |
+            call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+            if errorlevel 1 exit /b 1
+            python ci\qualify-windows32-v2.py
+            exit /b %errorlevel%
       - run:
           name: Verify Windows x86 package ABI
           command: python ci/verify-package-abi.py artifacts/windows-x86/package --target windows-x86
