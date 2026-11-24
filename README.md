@@ -1,19 +1,40 @@
-# Weather Routing integration branch
+# xWeatherRouting improved UX development
 
-See [the 1.29.1 integration summary](docs/integration-1.29.1.md),
-[1.29.1 changes](docs/release-1.29.1.md),
-[stock-host compatibility](docs/release-1.27.0.md) and
-[Quick, Standard and Professional settings](docs/quick-routing.md).
+This repository's default `develop` branch is the **improved UX development
+2.x line**, currently **2.11.1**. It provides the passage-planning interface,
+incorporated GRIB loader and generator, bundled Climatology, and separate
+preferences and user data.
+
+| Line | Current version | Source |
+| --- | --- | --- |
+| Weather Routing production | **1.44.1** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
+| xWeatherRouting improved UX development | **2.11.1** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
+
+[Download the 2.11.1 developer test packages](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
+for Apple Silicon, Debian 12, Debian 13, Windows x64 and 32-bit OpenCPN on
+64-bit Windows. Match the package to the OpenCPN application architecture and,
+on Windows x64, its wxWidgets version. Import the intact `.tar.gz` through
+OpenCPN's Plugin Manager.
+
+Production 1.x retains the established Weather Routing interface and uses
+external GRIB or xGRIB and Climatology providers. Its 1.44.1 integration into
+Rick's `master` is tracked in [PR #740](https://github.com/rgleason/weather_routing_pi/pull/740).
+The development packages are a separate line from the production catalogue.
+
+Both lines include Meridian as an optional routing method. Ordinary GSHHG
+shoreline routing works on stock OpenCPN; chart-backed depth and hazard checks
+require a compatible chart-safety host. See the
+[2.x development overview](docs/v2/README.md), [Meridian](docs/MERIDIAN.md) and
+[routing settings](docs/quick-routing.md).
 
 The optional hardened-OpenCPN planning-provider boundary is documented in
 [docs/external_control_provider_preview_b.md](docs/external_control_provider_preview_b.md).
 Stock OpenCPN remains supported through the unchanged plug-in API 1.21.
 
-This branch integrates the fully working xWeatherRouting developments back
-into the current standard OpenCPN Weather Routing plugin. It retains the
-standard plugin identity, settings, polar and GRIB integrations while adding
-the modern deterministic routing engine developed and qualified in the
-xWeatherRouting branch.
+The development frontend shares routing methods and safety infrastructure with
+production. Its planner groups route, boat and weather preparation, exposes
+readiness checks and recovery actions, and retains the existing specialist
+analysis and export tools.
 
 The plugin currently provides:
 
@@ -66,9 +87,9 @@ release does not claim a new S-63 provider integration.
 
 Fresh installations leave both optional chart/depth controls unchecked.
 Users of an enhanced OpenCPN host can opt in; explicit choices made by
-existing users are preserved. The established `/PlugIns/WeatherRouting`
-settings and user-data layout remain unchanged. Upgrading from v1.24 preserves
-customized boat and polar files without prompting to replace them.
+existing users are preserved. Version 2 uses `/PlugIns/xWeatherRouting2`
+preferences and the separate `plugins/xweather_routing_v2` user-data directory.
+Supported feature upgrades preserve customized boats and polars.
 
 ## Building
 
@@ -78,13 +99,14 @@ For a clean standalone build against the vendored stock OpenCPN 1.21 API:
 cmake -S . -B build-release -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DWEATHER_ROUTING_STANDALONE_API=ON \
+  -DWEATHER_ROUTING_XWEATHER_IDENTITY=ON \
   -DOCPN_BUILD_TEST=OFF
 cmake --build build-release --parallel
 cmake --build build-release --target package
 ```
 
-For the separate xWeatherRouting identity, also set
-`-DWEATHER_ROUTING_XWEATHER_IDENTITY=ON`.
+Use `WEATHER_ROUTING_XWEATHER_IDENTITY=ON` for this development plugin. The
+production source and its standard identity are maintained separately above.
 
 Keep release packaging in a build directory where tests are disabled. This
 prevents test-only GoogleTest libraries from being included by older
@@ -100,6 +122,7 @@ timing extractor, example scenario and setup instructions.
 cmake -S . -B build-test -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DWEATHER_ROUTING_STANDALONE_API=ON \
+  -DWEATHER_ROUTING_XWEATHER_IDENTITY=ON \
   -DOCPN_BUILD_TEST=ON
 cmake --build build-test --parallel
 ctest --test-dir build-test --output-on-failure --parallel
@@ -120,10 +143,11 @@ packages, see [`docs/release-1.35.0.md`](docs/release-1.35.0.md).
 
 ## Status
 
-The package, library, catalogue and UI use the standard identity:
-`weather_routing_pi` / WeatherRouting. Cross-platform artifacts may be built
-for validation, but publishing or opening an upstream pull request is a
-separate release decision.
+The development package uses the separate identity
+`xweather_routing_pi` / xWeatherRouting. Version 2.11.1 is published as the
+developer test linked above. The production line is WeatherRouting 1.44.1,
+using `weather_routing_pi`; publication to the production catalogue is a
+separate release step.
 
 ## Licence and acknowledgement
 

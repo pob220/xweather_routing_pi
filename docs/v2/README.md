@@ -1,23 +1,31 @@
-# xWeatherRouting 2.3.3 development
+# xWeatherRouting 2.11.1 improved UX development
 
-Version 2.3.3 builds on 2.3.2. Version 1 remains the
-stable catalogue and maintenance line; version 2 retains separate preferences
-and user data.
+The default `develop` branch is the improved UX development line, currently
+**2.11.1**. The separate [production `master` branch](https://github.com/pob220/weather_routing_pi/tree/master)
+is **WeatherRouting 1.44.1**. Version 2 retains separate preferences and user data.
 
-See [2.3.3 changes and qualification](RELEASE-NOTES-2.3.3.md), alongside the
-retained [2.3.1 qualification](QUALIFICATION-2.3.1.md).
+The [2.11.1 developer test release](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
+contains the current Plugin Manager packages and qualification summary. It
+includes optional [Meridian routing](../MERIDIAN.md), endpoint preflight,
+complete GSHHG shore-margin checks, and weather validation and source-duration
+accounting during manoeuvre penalties. The incorporated GRIB reader supports
+CCSDS-compressed forecasts. More recent efficiency improvements retain the
+separate, remembered calculation-helper and parallel-method settings.
+
+The earlier [2.3.3 changes](RELEASE-NOTES-2.3.3.md) and
+[2.3.1 qualification](QUALIFICATION-2.3.1.md) remain historical records.
 The existing engines, adaptive policies and search allowances are preserved.
-New passages default to Auto, all engines selected for Auto and All, and
-Automatic adaptive settings enabled; remembered user choices take precedence.
+New passages default to Auto, the six established methods selected for Auto
+and All, and Automatic adaptive settings enabled. Meridian is an additional
+remembered opt-in after Atlas; saved user choices take precedence.
 Settings for an active passage are read-only until completion or an explicit stop.
 
-For Windows testing, [import the Windows 64-bit plugin tarball](TRY-WINDOWS.md)
-using OpenCPN’s built-in Plugin Manager.
-
-[Debian 12, Debian 13 and Apple Silicon packages](TRY-UNIX.md) are also available
-with native import, routing and offline generator qualification.
-
-An [Android arm64 Plugin Manager tarball](TRY-ANDROID.md) is also available for developer testing.
+For desktop testing, download the matching Apple Silicon, Debian 12, Debian 13,
+Windows x64 or Win32 package from the current release linked above and import
+the intact `.tar.gz` using OpenCPN's Plugin Manager. Match the OpenCPN
+application architecture and Windows x64 wxWidgets line. Earlier
+[Android instructions](TRY-ANDROID.md) identify their own package versions;
+the desktop release does not claim a new 2.11.1 Android runtime qualification.
 
 The desktop workspace groups passage, boat and weather preparation, without
 experience levels. Its settings areas are labelled Passage settings and Routing
@@ -41,7 +49,7 @@ Reordering, adding or removing waypoints requires a fresh linked sequence.
 Weather requests cover all route waypoints. Context help and keyboard navigation
 are available without choosing a learning mode.
 
-Routes & analysis retains the existing lists, engines, reports, exports and
+Routes retains the existing lists, routing methods, reports, exports and
 specialist tools. Right-click route analysis, generated legs and chart-position
 actions remain available. A passage's generated legs use the existing sequential
 calculation path. Departure and target-arrival planning use the same engines.
@@ -94,9 +102,10 @@ It neither changes a working launcher nor installs into system/user plugin paths
 For Windows x64, see [source build and isolated test instructions](WINDOWS.md).
 The helper builds separately from the matched OpenCPN/wx SDK and carries its
 own scientific dependencies. Native CI checks both pinned wx 3.3.4 and 3.2.9
-hosts; qualification evidence is recorded in [VALIDATION-2.2.md](VALIDATION-2.2.md).
-Native Debian and Apple Silicon qualification is recorded in the
-[2.3.2 release notes](RELEASE-NOTES-2.3.2.md#unix-package-qualification).
-Android's 2.3.2 cross-build passes but does not establish new tablet runtime
-qualification; the existing downloadable tablet test remains 2.3.1.
+hosts. The current release links its qualification summary and packages;
+[VALIDATION-2.2.md](VALIDATION-2.2.md) and the
+[2.3.2 release notes](RELEASE-NOTES-2.3.2.md#unix-package-qualification) preserve
+earlier platform evidence. Android builds and runtime tests have their own
+versioned qualification; the desktop release is not evidence of a current
+Android package.
 Development packages do not replace the stable catalogue release.
