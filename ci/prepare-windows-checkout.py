@@ -33,8 +33,6 @@ def main():
             current = root / path
             if current.read_bytes() != expected:
                 current.write_bytes(expected)
-    subprocess.run(['cmake', '-P', 'test/FrozenEngines2_2.cmake'],
-                   cwd=root, check=True)
 
 
 if __name__ == '__main__':

@@ -27,7 +27,7 @@ commands:
   prepare-windows-checkout:
     steps:
       - run:
-          name: Refresh and verify frozen source bytes
+          name: Refresh frozen source bytes
           command: python ci/prepare-windows-checkout.py
 
   retain-artifacts:

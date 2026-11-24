@@ -208,6 +208,7 @@ def main():
         raise SystemExit('Run this script in a native Windows x64 MSVC environment')
     visual_studio = select_msvc()
     if args.reuse_qualified_generator:
+        run('cmake', '-P', ROOT / 'test/FrozenEngines2_2.cmake')
         run(sys.executable, ROOT / 'ci/stage-qualified-windows-generator.py',
             '--build-if-changed')
     elif not args.skip_generator:
