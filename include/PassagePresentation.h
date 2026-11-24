@@ -10,4 +10,5 @@ wxString PassageLegLabel(const wxString& name, int leg, int count);
 // Shortest decimal text that preserves the stored coordinate on Save.
 wxString WaypointCoordinateText(double value);
 wxString PassageDirection(const wxString& start, const wxString& end);
+wxString CumulativeClimatologyEngineWarning();
 }  // namespace weather_routing

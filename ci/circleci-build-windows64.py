@@ -198,13 +198,20 @@ def verify_host_imports(library, host_exports, host):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--skip-generator', action='store_true',
-                        help='Use .windows-deps/stage from the CI generator job')
+    generator = parser.add_mutually_exclusive_group()
+    generator.add_argument('--skip-generator', action='store_true',
+                           help='Use .windows-deps/stage from the CI generator job')
+    generator.add_argument('--reuse-qualified-generator', action='store_true',
+                           help='Stage the qualified helper when its inputs are unchanged')
     args = parser.parse_args()
     if sys.platform != 'win32':
         raise SystemExit('Run this script in a native Windows x64 MSVC environment')
     visual_studio = select_msvc()
-    if not args.skip_generator:
+    if args.reuse_qualified_generator:
+        run('cmake', '-P', ROOT / 'test/FrozenEngines2_2.cmake')
+        run(sys.executable, ROOT / 'ci/stage-qualified-windows-generator.py',
+            '--build-if-changed')
+    elif not args.skip_generator:
         run(sys.executable, ROOT / 'ci/build-windows-generator.py')
     generator_stage = ROOT / '.windows-deps/stage'
     run(sys.executable, ROOT / 'ci/test-windows-generator.py', generator_stage,

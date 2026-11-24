@@ -24,6 +24,12 @@ orbs:
   win: circleci/windows@5.1.0
 
 commands:
+  prepare-windows-checkout:
+    steps:
+      - run:
+          name: Refresh frozen source bytes
+          command: python ci/prepare-windows-checkout.py
+
   retain-artifacts:
     parameters:
       target: {type: string}
@@ -176,6 +182,7 @@ jobs:
       WR_HEADLESS_LIFECYCLE_CONTRACT: "1"
     steps:
       - checkout
+      - prepare-windows-checkout
       - run:
           name: Stage qualified unchanged AMD64 GRIB helper
           command: python ci/stage-qualified-windows-generator.py
@@ -224,13 +231,14 @@ jobs:
       WR_HEADLESS_LIFECYCLE_CONTRACT: "1"
     steps:
       - checkout
+      - prepare-windows-checkout
       - restore_cache:
           keys:
             - windows64-upstream-v2-<< parameters.target >>-{{ checksum "<< parameters.sdk_pin >>" }}
       - run:
           shell: cmd.exe
           name: Matched OpenCPN x64 / wxWidgets << parameters.wx_version >> build and runtime tests
-          command: ci\circleci-build-windows64.bat
+          command: ci\circleci-build-windows64.bat --reuse-qualified-generator
           no_output_timeout: 45m
       - run:
           name: Verify Windows x64 package ABI

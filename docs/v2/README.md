@@ -1,11 +1,11 @@
-# xWeatherRouting 2.11.1 improved UX development
+# xWeatherRouting 2.11.2 improved UX development
 
 The default `develop` branch is the improved UX development line, currently
-**2.11.1**. The separate [production `master` branch](https://github.com/pob220/weather_routing_pi/tree/master)
-is **WeatherRouting 1.44.1**. Version 2 retains separate preferences and user data.
+**2.11.2**. The separate [production `master` branch](https://github.com/pob220/weather_routing_pi/tree/master)
+is **WeatherRouting 1.44.2**. Version 2 retains separate preferences and user data.
 
 The [2.11.1 developer test release](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
-contains the current Plugin Manager packages and qualification summary. It
+contains the published Plugin Manager packages and qualification summary for 2.11.1. It
 includes optional [Meridian routing](../MERIDIAN.md), endpoint preflight,
 complete GSHHG shore-margin checks, and weather validation and source-duration
 accounting during manoeuvre penalties. The incorporated GRIB reader supports

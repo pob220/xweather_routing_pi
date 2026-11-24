@@ -44,6 +44,10 @@ if errorlevel 1 (
 )
 cmake --version
 if errorlevel 1 exit /b 1
+if exist "%SCRIPTDIR%..\test\FrozenEngines2_2.cmake" (
+  cmake -P "%SCRIPTDIR%..\test\FrozenEngines2_2.cmake"
+  if errorlevel 1 exit /b 1
+)
 
 set wx_vers="wx%WX_VER%"
 echo Building %wx_vers%

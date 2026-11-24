@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Reuse the unchanged, natively qualified AMD64 helper for Win32-on-Win64."""
+"""Reuse the unchanged, natively qualified AMD64 helper."""
 import argparse
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import struct
 import subprocess
+import sys
 import tarfile
 import urllib.request
 
@@ -25,15 +26,21 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def stage(archive, destination):
-    if digest(archive) != ARCHIVE_SHA256:
-        raise RuntimeError('Qualified helper archive checksum mismatch')
+def unchanged_inputs():
     exists = subprocess.run(['git', '-C', str(ROOT), 'cat-file', '-e', BASELINE + '^{commit}'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if exists.returncode:
         subprocess.run(['git', '-C', str(ROOT), 'fetch', '--no-tags', 'origin', BASELINE], check=True)
-    subprocess.run(['git', '-C', str(ROOT), 'diff', '--exit-code', BASELINE,
-                    '--', *INPUTS], check=True)
+    result = subprocess.run(['git', '-C', str(ROOT), 'diff', '--quiet', BASELINE,
+                             '--', *INPUTS])
+    if result.returncode not in (0, 1):
+        result.check_returncode()
+    return result.returncode == 0
+
+
+def stage(archive, destination):
+    if digest(archive) != ARCHIVE_SHA256:
+        raise RuntimeError('Qualified helper archive checksum mismatch')
     selected = []
     with tarfile.open(archive, 'r:gz') as package:
         for member in package:
@@ -86,7 +93,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path)
     parser.add_argument('--destination', type=Path, default=ROOT/'.windows-deps/stage')
+    parser.add_argument('--build-if-changed', action='store_true',
+                        help='Build the native helper if its qualified inputs have changed')
     args = parser.parse_args()
+    if not unchanged_inputs():
+        if not args.build_if_changed:
+            raise RuntimeError('Scientific helper inputs changed; rebuild and requalify it')
+        print('Scientific helper inputs changed; building the native helper', flush=True)
+        subprocess.run([sys.executable, str(ROOT / 'ci/build-windows-generator.py')],
+                       check=True)
+        return
     archive = args.archive or ROOT/'.windows-deps/qualified-helper.tar.gz'
     if not archive.exists():
         archive.parent.mkdir(parents=True, exist_ok=True)

@@ -1,23 +1,23 @@
 # xWeatherRouting improved UX development
 
 This repository's default `develop` branch is the **improved UX development
-2.x line**, currently **2.11.1**. It provides the passage-planning interface,
+2.x line**, currently **2.11.2**. It provides the passage-planning interface,
 incorporated GRIB loader and generator, bundled Climatology, and separate
 preferences and user data.
 
 | Line | Current version | Source |
 | --- | --- | --- |
-| Weather Routing production | **1.44.1** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
-| xWeatherRouting improved UX development | **2.11.1** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
+| Weather Routing production | **1.44.2** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
+| xWeatherRouting improved UX development | **2.11.2** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
 
-[Download the 2.11.1 developer test packages](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
+[Download the published 2.11.1 developer test packages](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
 for Apple Silicon, Debian 12, Debian 13, Windows x64 and 32-bit OpenCPN on
 64-bit Windows. Match the package to the OpenCPN application architecture and,
 on Windows x64, its wxWidgets version. Import the intact `.tar.gz` through
 OpenCPN's Plugin Manager.
 
 Production 1.x retains the established Weather Routing interface and uses
-external GRIB or xGRIB and Climatology providers. Its 1.44.1 integration into
+external GRIB or xGRIB and Climatology providers. Its 1.44.2 integration into
 Rick's `master` is tracked in [PR #740](https://github.com/rgleason/weather_routing_pi/pull/740).
 The development packages are a separate line from the production catalogue.
 

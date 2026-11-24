@@ -1609,6 +1609,10 @@ void ConfigurationDialog::OnAdaptiveSettings(wxCommandEvent&) {
 void ConfigurationDialog::UpdateEngineControls() {
   const auto engine = weather_routing::EngineFromSelection(m_cRoutingEngine->GetSelection());
   const bool combined = weather_routing::IsCombinedEngine(engine);
+  const int climatology = m_cClimatologyType->GetSelection();
+  const bool warningChanged = m_tCumulativeClimatologyWarning->Show(
+      climatology == RouteMapConfiguration::CUMULATIVE_MAP ||
+      climatology == RouteMapConfiguration::CUMULATIVE_MINUS_CALMS);
 #ifdef __OCPN__ANDROID__
   // The tablet keeps both mode and individual settings on one Engine page.
   // An individual selection has no Auto/All item; avoid an empty picker.
@@ -1778,6 +1782,15 @@ void ConfigurationDialog::UpdateEngineControls() {
       wxMax(200, wxMax(page->GetClientSize().x, GetClientSize().x) - 100));
   FitTabletConfigurationPage(page);
 #endif
+  if (warningChanged) {
+    auto* weatherPage = static_cast<wxScrolledWindow*>(
+        m_tCumulativeClimatologyWarning->GetParent()->GetParent());
+#ifdef __OCPN__ANDROID__
+    FitTabletConfigurationPage(weatherPage);
+#else
+    weatherPage->SendSizeEvent();
+#endif
+  }
 }
 
 void ConfigurationDialog::RefreshEnginePresetStatus() {
@@ -2427,6 +2440,26 @@ bool ConfigurationDialog::RunEngineHostContract() {
   passed &= routes.front()->GetConfiguration().EngineSettings.EngineId() == "atlas" &&
             (routes.front()->GetConfiguration().EngineSettings.autoEngines & 32U) &&
             !m_sByDegrees->IsEnabled() && !m_sTimeStepHours->IsEnabled();
+
+  const auto engineBeforeCumulative = routes.front()->GetConfiguration().EngineSettings;
+  choose(m_cClimatologyType, RouteMapConfiguration::MOST_LIKELY);
+  const bool mostLikelyHidden = !m_tCumulativeClimatologyWarning->IsShown();
+  choose(m_cClimatologyType, RouteMapConfiguration::CUMULATIVE_MAP);
+  const bool mapWarning = m_tCumulativeClimatologyWarning->IsShown();
+  choose(m_cClimatologyType, RouteMapConfiguration::CUMULATIVE_MINUS_CALMS);
+  const bool calmsWarning = m_tCumulativeClimatologyWarning->IsShown();
+  const auto cumulative = routes.front()->GetConfiguration();
+  choose(m_cClimatologyType, RouteMapConfiguration::AVERAGE);
+  const bool averageHidden = !m_tCumulativeClimatologyWarning->IsShown();
+  SetConfigurations({cumulative});
+  const bool savedWarning = m_tCumulativeClimatologyWarning->IsShown();
+  const bool cumulativePassed = mostLikelyHidden && mapWarning && calmsWarning &&
+      averageHidden && savedWarning && cumulative.UsesCumulativeClimatology() &&
+      cumulative.EngineSettings == engineBeforeCumulative &&
+      routes.front()->GetConfiguration().EngineSettings == engineBeforeCumulative;
+  passed &= cumulativePassed;
+  wxLogMessage("WR_CUMULATIVE_CLIMATOLOGY_WARNING_CONTRACT passed=%d",
+               cumulativePassed ? 1 : 0);
   routes.front()->SetConfiguration(saved);
   m_WeatherRouting.SaveLastUsedConfigurationDefaults(saved);
   SetConfigurations({saved});

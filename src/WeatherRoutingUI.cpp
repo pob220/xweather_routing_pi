@@ -6,6 +6,7 @@
 ///////////////////////////////////////////////////////////////////////////
 
 #include "WeatherRoutingUI.h"
+#include "PassagePresentation.h"
 #include "GribTimelineCachePolicy.h"
 #include "RoutingEngineSettings.h"
 #include "WeatherRoutingWxCompat.h"
@@ -1856,10 +1857,18 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
                   wxALL | wxEXPAND | wxALIGN_CENTER_VERTICAL, 5);
 
   sbSizer34->Add(fgSizer961, 1, wxEXPAND | wxALL, 5);
-
   fgSizer59->Add(sbSizer34, 1, wxEXPAND | wxALL | wxALIGN_CENTER_VERTICAL, 5);
-
   fgSizer58->Add(fgSizer59, 1, wxEXPAND | wxALIGN_CENTER_VERTICAL, 5);
+
+  const wxString cumulativeClimatologyWarning =
+      weather_routing::CumulativeClimatologyEngineWarning();
+  m_tCumulativeClimatologyWarning = new wxStaticText(
+      sbData_Source->GetStaticBox(), wxID_ANY, cumulativeClimatologyWarning);
+  m_tCumulativeClimatologyWarning->SetFont(
+      m_tCumulativeClimatologyWarning->GetFont().Bold());
+  m_tCumulativeClimatologyWarning->Wrap(WR_FromDIP(this, 325));
+  fgSizer58->Add(m_tCumulativeClimatologyWarning, 0, wxEXPAND | wxALL, 5);
+  m_tCumulativeClimatologyWarning->Hide();
 
   m_cbAllowDataDeficient =
       new wxCheckBox(sbData_Source->GetStaticBox(), wxID_ANY,
@@ -3170,6 +3179,22 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
     });
   }
 #endif
+
+  weatherPage->Bind(wxEVT_SIZE,
+      [this, weatherPage, cumulativeClimatologyWarning](wxSizeEvent& event) {
+        event.Skip();
+        if (!m_tCumulativeClimatologyWarning->IsShown()) return;
+#ifdef __OCPN__ANDROID__
+        WR_WrapAndroidText(m_tCumulativeClimatologyWarning,
+            cumulativeClimatologyWarning, wxMax(200, event.GetSize().x - 100));
+#else
+        m_tCumulativeClimatologyWarning->SetLabel(cumulativeClimatologyWarning);
+        m_tCumulativeClimatologyWarning->Wrap(
+            wxMax(WR_FromDIP(this, 180), event.GetSize().x - WR_FromDIP(this, 45)));
+#endif
+        weatherPage->Layout();
+        weatherPage->FitInside();
+      });
 
   fgSizer95->Add(m_notebook7, 1, wxEXPAND | wxALL, 5);
 
