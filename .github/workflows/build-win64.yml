@@ -45,6 +45,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify frozen source bytes before building
+        run: cmake -DSOURCE_ROOT="$env:GITHUB_WORKSPACE" -P test/FrozenEngines2_2.cmake
       - uses: ilammy/msvc-dev-cmd@v1
         if: env.WR_REBUILD_GENERATOR == '1'
         with:

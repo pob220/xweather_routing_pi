@@ -6,8 +6,7 @@ data/climatology/** -text
 vendor/** -text
 third_party/** -text
 src/engine/** -text
-include/engine/adaptive/** -text
-include/engine/native/** -text
+include/engine/** -text
 src/headless/** -text
 src/GribV2Record.cpp -text
 src/RouteMap.cpp -text
