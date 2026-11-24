@@ -42,4 +42,10 @@ wxString WaypointCoordinateText(double value) {
 wxString PassageDirection(const wxString& start, const wxString& end) {
   return start + L"  →  " + end;
 }
+
+wxString CumulativeClimatologyEngineWarning() {
+  return _("This route will use only the Legacy isochrones method. This overrides "
+           "your Routing engine selection for the entire route, including sections "
+           "covered by GRIB.");
+}
 }  // namespace weather_routing

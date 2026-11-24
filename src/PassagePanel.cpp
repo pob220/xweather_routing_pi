@@ -485,6 +485,8 @@ void PassagePanel::RefreshPassage() {
   if (!readiness_.sections[2].items.empty() &&
       !weather.Contains(readiness_.sections[2].items.front().title))
     weather += "\n" + readiness_.sections[2].items.front().title;
+  if (c.UsesCumulativeClimatology())
+    weather += "\n" + weather_routing::CumulativeClimatologyEngineWarning();
   weather_->SetLabel(sectionStatus(2) + L" • " + weather);
   limits_->SetLabel(_("Passage limits: wind ") +
       weather_routing::PassageSettingValue(weather_routing::PassageSetting::TrueWind, c.MaxTrueWindKnots) +
