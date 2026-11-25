@@ -7,6 +7,8 @@ src/BundledClimatology.cpp
 src/ClimatologyMath.cpp
 src/PassageWeather.cpp
 src/PassageWeatherRequest.cpp
+src/WorldGribModels.cpp
+src/WorldForecastDialog.cpp
 src/PassageReadiness.cpp
 src/PassageSettings.cpp
 src/PlanningHelp.cpp

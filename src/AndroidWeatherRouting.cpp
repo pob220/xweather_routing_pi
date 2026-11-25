@@ -421,7 +421,7 @@ wxWindow* WeatherRouting::BuildAndroidWorkspace(wxBoxSizer* root) {
     m_androidForecastActions.push_back(button);
   };
   forecastAction(_("Load GRIB"), [this] { LoadAndroidPassageWeather(); });
-  forecastAction(_("Download / generate"), [this] { GenerateAndroidPassageWeather(); });
+  forecastAction(_("Download / generate"), [this] { ChooseAndroidWeatherTool(); });
   planContent->Add(forecastActions, 0, wxEXPAND | wxALL, 10);
 
   auto* routes = new wxPanel(m_androidBook, wxID_ANY);
@@ -640,7 +640,25 @@ void WeatherRouting::LoadAndroidPassageWeather() {
   RefreshAndroidWorkspace();
 }
 
-void WeatherRouting::GenerateAndroidPassageWeather() {
+void WeatherRouting::ChooseAndroidWeatherTool() {
+  WR_MessageSheet menu(static_cast<QWidget*>(GetHandle()), wxID_CANCEL);
+  menu.setStyleSheet("QPushButton { font-size: 17pt; padding: 10px; min-height: 64px; }");
+  auto* layout = new QVBoxLayout(&menu);
+  auto add = [&](const wxString& label, int answer) {
+    auto* button = new QPushButton(QString::fromUtf8(label.ToUTF8().data()));
+    layout->addWidget(button);
+    QObject::connect(button, &QPushButton::clicked, &menu,
+                     [&menu, answer] { menu.done(answer); });
+  };
+  add(_("Download a World forecast"), wxID_OPEN);
+  add(_("Generate a combined GRIB"), wxID_SAVE);
+  add(_("Cancel"), wxID_CANCEL);
+  const int action = menu.exec();
+  if (action == wxID_OPEN || action == wxID_SAVE)
+    GenerateAndroidPassageWeather(action == wxID_OPEN);
+}
+
+void WeatherRouting::GenerateAndroidPassageWeather(bool world) {
   PlugIn_ViewPort viewport{};
   if (!m_weather_routing_pi.CopyLastViewport(viewport)) {
     WR_MessageBox(_("Return to the chart once, then reopen Weather Routing."),
@@ -654,6 +672,26 @@ void WeatherRouting::GenerateAndroidPassageWeather() {
           if (OpenPassageForecast(path, error)) m_androidGeneratedForecast = path;
           else WR_MessageBox(error, _("Generated weather"), wxOK, this);
         });
+  }
+  if (world) {
+    std::optional<weather_routing::PassageForecastDefaults> passage;
+    if (auto* route = FirstCurrentRouteMap())
+      passage = ForecastDefaults(route->GetConfiguration());
+    const auto result = m_androidGenerator->ShowWorld(viewport, passage);
+    if (!result) return;
+    if (result->currentsOnly) {
+      m_androidGenerator->UseDownloadedCurrents(*result,
+          PassageForecast().Path(), passage);
+    } else {
+      std::optional<time_t> departure;
+      if (passage && passage->departure.IsValid()) departure = passage->departure.GetTicks();
+      wxString error;
+      if (!OpenPassageForecast(result->path, error, departure))
+        WR_MessageBox(error, _("Cannot use downloaded forecast"),
+                      wxOK | wxICON_INFORMATION, this);
+      RefreshAndroidWorkspace();
+      return;
+    }
   }
   m_androidGeneratedForecast.clear();
   m_androidGenerator->ShowMobile(viewport);

@@ -62,6 +62,20 @@ TEST(PassageWeather, FailedReplacementKeepsSelectedForecast) {
   EXPECT_EQ(w.Path(), path);
   EXPECT_TRUE(w.HasWind(w.FirstWindTime(), 53.4, -5.5));
 }
+TEST(PassageWeather, WorldForecastOutsideDepartureKeepsPreviousFile) {
+  weather_routing::PassageWeather weather;
+  wxString error;
+  const auto active = source + "/ci/testdata/irish-sea-uniform-wind.grb";
+  const auto download = source + "/ci/testdata/farallon-ccsds.grb2";
+  ASSERT_TRUE(weather.Open(active, error));
+  const auto identity = weather.Identity();
+  EXPECT_FALSE(weather.Open(download, error, 1791892800 - 1));
+  EXPECT_TRUE(error.Contains("planned departure"));
+  EXPECT_EQ(weather.Path(), active);
+  EXPECT_EQ(weather.Identity(), identity);
+  EXPECT_TRUE(weather.Open(download, error, 1791892800));
+  EXPECT_EQ(weather.Path(), download);
+}
 void CheckFarallonWindAndMaskedWaves(const wxString& fixture) {
   GribReader reader(fixture);
   ASSERT_TRUE(reader.isOk());

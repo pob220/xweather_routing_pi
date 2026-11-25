@@ -163,9 +163,10 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
           "permits seasonal wind wherever forecast wind is unavailable. "
           "Climatology is not a forecast.\n\n"
           "Current and wave coverage are separate. Missing waves do not mean "
-          "calm seas. Load GRIB opens a file; Download / generate GRIB opens "
-          "the integrated generator. Passage checks shows source and coverage "
-          "prerequisites.");
+          "calm seas. Load GRIB opens an existing file. Download / generate GRIB "
+          "offers a World forecast or a combined GRIB. Current-only downloads "
+          "open in the generator so you can add wind. Passage checks shows "
+          "source and coverage prerequisites.");
     case PlanningHelpTopic::Navigation:
       return _(
           "Plan passage contains Route, Boat and polars, and Weather. Passage "

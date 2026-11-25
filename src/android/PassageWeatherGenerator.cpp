@@ -7,6 +7,8 @@
 #include "WeatherRoutingFileDialog.h"
 #include "android/ForecastTimeValidation.h"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -14,6 +16,7 @@
 #include <future>
 #include <map>
 #include <mutex>
+#include <utility>
 #include <QCheckBox>
 #include <QApplication>
 #include <QAbstractItemView>
@@ -26,17 +29,23 @@
 #include <QListWidget>
 #include <QGuiApplication>
 #include <QInputMethod>
+#include <QIntValidator>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScroller>
+#include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <wx/file.h>
 #include <wx/fileconf.h>
+#include <wx/mstream.h>
 #include <wx/filename.h>
 #include "version.h"
+#include "XgribPaths.h"
+#include "weather_routing_pi.h"
 #include "AreaPreset.h"
 #include "android/ForecastServerDownload.h"
 #include "environmental_grib/environment.h"
@@ -46,6 +55,7 @@
 #include "environmental_grib/copernicus_auth.h"
 
 namespace eg = environmental_grib;
+namespace wr = weather_routing;
 namespace {
 std::string Text(const QString& value) { return value.toUtf8().toStdString(); }
 QString Text(const std::string& value) { return QString::fromUtf8(value.c_str()); }
@@ -129,7 +139,16 @@ struct AndroidPassageWeatherDialog::Impl {
   bool restoredPassword{false};
   QLabel* accountNote;
   QLabel* timeNote;
+  QLabel* presetNote;
+  QLabel* regionalSourceNote;
   bool serverDownload{false};
+  QPushButton* updateModels;
+  QIntValidator* serverHoursValidator;
+  std::vector<wr::WorldGribModel> worldModels;
+  wxString worldModelCache;
+  std::future<std::vector<unsigned char>> modelJob;
+  std::optional<wr::WorldForecastDownload> worldResult;
+  bool currentDownload{false};
   PlugIn_ViewPort viewport{};
   std::future<eg::EnvironmentResult> job;
   std::shared_ptr<std::atomic<bool>> cancelled;
@@ -155,8 +174,9 @@ struct AndroidPassageWeatherDialog::Impl {
     tabs->addTab(scroll, title);
     return layout;
   }
-  void Note(QVBoxLayout* layout, const QString& text) {
+  QLabel* Note(QVBoxLayout* layout, const QString& text) {
     auto* label = new QLabel(text); label->setWordWrap(true); layout->addWidget(label);
+    return label;
   }
   QLineEdit* Field(QVBoxLayout* layout, const char* key, const char* label, const QString& value) {
     auto* row = new QWidget; rows[key] = row;
@@ -280,7 +300,7 @@ struct AndroidPassageWeatherDialog::Impl {
     const auto presets = xgrib::LoadAreaPresets(GetOCPNConfigObject());
     for (const auto& preset : presets) areas->addItem(QtText(preset.name));
     area->addWidget(areas);
-    Note(area, "Area presets set the boundaries only; choose weather and current sources on their tabs.");
+    presetNote = Note(area, "Area presets set the boundaries. Choose weather and current sources on their tabs.");
     Field(area, "west", "West longitude", "-8"); Field(area, "east", "East longitude", "-2");
     Field(area, "south", "South latitude", "50"); Field(area, "north", "North latitude", "56");
     for (const char* key : {"west", "east", "south", "north"}) fields[key]->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
@@ -315,8 +335,19 @@ struct AndroidPassageWeatherDialog::Impl {
     Field(area, "hours", "Duration (hours)", "24")->setInputMethodHints(Qt::ImhDigitsOnly);
     Choice(area, "step", "Forecast interval (hours)", {{"1","1"},{"3","3"},{"6","6"},{"12","12"}})->setCurrentIndex(1);
     auto* weather = Page("Weather / waves");
-    Choice(area, "serverDuration", "Server forecast duration", {{"24","24 hours"},{"72","3 days"},{"999","Full available forecast"}});
-    Choice(weather, "serverModel", "OpenCPN forecast server", {{"ecmwf0p25","ECMWF IFS 0.25 degrees"},{"ecmwfaifs0p25","ECMWF AIFS 0.25 degrees"}});
+    auto* serverDuration = Field(area, "serverDuration", "Forecast length (hours)", "24");
+    serverDuration->setInputMethodHints(Qt::ImhDigitsOnly);
+    serverHoursValidator = new QIntValidator(1, 360, serverDuration);
+    serverDuration->setValidator(serverHoursValidator);
+    Choice(weather, "serverModel", "OpenCPN forecast server", {});
+    updateModels = new QPushButton("Update Models");
+    weather->addWidget(updateModels);
+    QObject::connect(updateModels, &QPushButton::clicked, root,
+                     [this] { RefreshWorldModels(); });
+    worldModelCache = wxFileName(weather_routing_pi::StandardPath(),
+        wr::kWorldGribModelsFile).GetFullPath();
+    SetWorldModels(wr::LoadWorldGribModels(
+        worldModelCache, GetXgribDataDirectory() + wr::kWorldGribModelsFile));
     Choice(weather, "weather", "Weather source", {{"gfs","NOAA GFS"}, {"noaa_hrrr","NOAA HRRR 3 km"},
       {"ukmo_ukv","Met Office UKV 2 km"}, {"metno_nordic","MET Norway Nordic"}, {"dwd_icon_eu","DWD ICON-EU"},
       {"ecmwf_ifs_open","ECMWF IFS Open Data"}, {"ecmwf_aifs_open","ECMWF AIFS Open Data"},
@@ -326,7 +357,7 @@ struct AndroidPassageWeatherDialog::Impl {
     Choice(weather, "wave", "Waves", {{"none","None"},{"gfs_wave","NOAA GFS Wave"},{"copernicus_global_waves","Copernicus Global Waves"}});
     File(weather, "weatherFile", "weather GRIB");
     Field(weather, "weatherGrid", "Weather output grid spacing (degrees)", "0.025");
-    Note(weather, "Regional sources must cover the area and forecast period. The shared generator validates their actual coverage.");
+    regionalSourceNote = Note(weather, "Regional sources must cover the area and forecast period. The shared generator validates their actual coverage.");
     auto* currents = Page("Currents");
     Choice(currents, "current", "Current source", {{"none","None"}, {"existing-file","Existing current GRIB"},
       {"offline-tidal","Offline tidal package (.xtd)"},
@@ -412,9 +443,95 @@ struct AndroidPassageWeatherDialog::Impl {
         fields["password"]->clear(); restoredPassword = false;
       }
     });
+    QObject::connect(choices["serverModel"],
+        static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+        root, [this] { UpdateWorldForecastRange(); });
+    UpdateWorldForecastRange();
     UpdateOptions();
   }
-  ~Impl() { if (cancelled) cancelled->store(true); if (job.valid()) job.wait(); if (credentialJob.valid()) credentialJob.wait(); }
+  ~Impl() {
+    if (cancelled) cancelled->store(true);
+    if (job.valid()) job.wait();
+    if (credentialJob.valid()) credentialJob.wait();
+    if (modelJob.valid()) modelJob.wait();
+  }
+  void SetArea(const xgrib::AreaPreset& bounds) {
+    fields["west"]->setText(QString::number(bounds.west, 'f', 5));
+    fields["south"]->setText(QString::number(bounds.south, 'f', 5));
+    fields["east"]->setText(QString::number(bounds.east, 'f', 5));
+    fields["north"]->setText(QString::number(bounds.north, 'f', 5));
+  }
+  void SetWorldModels(std::vector<wr::WorldGribModel> models) {
+    auto* choice = choices["serverModel"];
+    const auto saved = choice->currentData().toString();
+    const QSignalBlocker block(choice);
+    worldModels = std::move(models);
+    choice->clear();
+    for (const auto& model : worldModels)
+      choice->addItem(QtText(model.title), Text(model.id));
+    const auto selection = choice->findData(saved);
+    if (selection >= 0) choice->setCurrentIndex(selection);
+    UpdateWorldForecastRange();
+  }
+  void UpdateWorldForecastRange() {
+    const int index = choices["serverModel"]->currentIndex();
+    if (index < 0) return;
+    const int limit = worldModels[index].maxHours;
+    auto* editor = fields["serverDuration"];
+    serverHoursValidator->setTop(limit);
+    editor->setToolTip(QString("1 to %1 hours from the model run").arg(limit));
+    bool ok = false;
+    const int hours = editor->text().toInt(&ok);
+    if (ok && hours > limit) editor->setText(QString::number(limit));
+  }
+  void RefreshWorldModels() {
+    if (running || modelJob.valid() || credentialAction != CredentialAction::None)
+      return;
+    cancelled = std::make_shared<std::atomic<bool>>(false);
+    eg::ExecutionContext execution;
+    execution.cancelled = cancelled;
+    execution.ca_bundle =
+        (GetXgribDataDirectory() + "android-ca-bundle.pem").ToStdString();
+    modelJob = std::async(std::launch::async, [execution] {
+      eg::ExecutionScope scope(execution);
+      return eg::CurlHttpGet(wr::kWorldGribModelsUrl, 15);
+    });
+    closeWhenFinished = false;
+    tabs->setEnabled(false);
+    generate->setEnabled(false);
+    cancel->setEnabled(true);
+    close->setText("Cancel and close");
+    status->setText("Updating the model list…");
+    timer->start(150);
+  }
+  void PollWorldModels() {
+    if (modelJob.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+      return;
+    timer->stop();
+    tabs->setEnabled(true);
+    generate->setEnabled(true);
+    cancel->setEnabled(false);
+    close->setText("Close");
+    try {
+      const auto bytes = modelJob.get();
+      wxMemoryInputStream stream(bytes.data(), bytes.size());
+      auto models = wr::ParseWorldGribModels(stream);
+      if (models.empty()) throw std::runtime_error("The model list is invalid.");
+      if (!cancelled->load()) {
+        wxTempFile cache(worldModelCache);
+        if (!cache.IsOpened() || !cache.Write(bytes.data(), bytes.size()) ||
+            !cache.Commit())
+          throw std::runtime_error("Could not save the model list.");
+        SetWorldModels(std::move(models));
+      }
+      status->setText(cancelled->load() ? "Model update cancelled."
+                                        : "Model list updated.");
+    } catch (const std::exception& error) {
+      status->setText(cancelled->load() ? "Model update cancelled."
+                                        : Text(std::string(error.what())));
+    }
+    if (closeWhenFinished) { closeWhenFinished = false; Close(); }
+  }
   void CredentialTask(CredentialAction action, const QString& value = {}) {
     credentialUsername = fields["username"]->text().trimmed();
     const auto username = credentialUsername;
@@ -449,8 +566,19 @@ struct AndroidPassageWeatherDialog::Impl {
   }
   void Close() {
     if (credentialAction != CredentialAction::None) return;
-    if (running) { closeWhenFinished = true; Cancel(); return; }
+    if (running || modelJob.valid()) { closeWhenFinished = true; Cancel(); return; }
     QGuiApplication::inputMethod()->hide();
+    if (serverDownload) {
+      if (auto* config = GetOCPNConfigObject()) {
+        const wxString prefix = "/PlugIns/xWeatherRouting2/AndroidGenerator/";
+        config->Write(prefix + "serverModel",
+                      Wx(choices["serverModel"]->currentData().toString()));
+        config->Write(prefix + "serverDuration", Wx(fields["serverDuration"]->text()));
+        config->Flush();
+      }
+      FinishClose();
+      return;
+    }
     if (auto* config = GetOCPNConfigObject()) {
       for (const auto& [key, field] : fields)
         if (key != "password" && key != "start" && key != "filename" && key != "username") config->Write("/PlugIns/xWeatherRouting2/AndroidGenerator/" + wxString(key), Wx(field->text()));
@@ -513,7 +641,13 @@ struct AndroidPassageWeatherDialog::Impl {
     const auto weather = Selected("weather"), current = Selected("current");
     for (const char* key : {"start", "hours", "step", "weather", "wave"}) rows[key]->setVisible(!serverDownload);
     timeNote->setVisible(!serverDownload);
-    rows["serverModel"]->setVisible(serverDownload); rows["serverDuration"]->setVisible(serverDownload);
+    presetNote->setVisible(!serverDownload);
+    regionalSourceNote->setVisible(!serverDownload);
+    rows["serverModel"]->setVisible(serverDownload);
+    rows["serverDuration"]->setVisible(serverDownload);
+    updateModels->setVisible(serverDownload);
+    open->setVisible(!serverDownload);
+    tabs->setTabText(1, serverDownload ? "Models" : "Weather / waves");
     tabs->setTabEnabled(2, !serverDownload); tabs->setTabEnabled(4, !serverDownload);
     extend->setVisible(!serverDownload); keep->setVisible(!serverDownload);
     rows["weatherFile"]->setVisible(!serverDownload && weather == "existing-file");
@@ -533,7 +667,7 @@ struct AndroidPassageWeatherDialog::Impl {
     for (const char* key : {"fallbackWeather", "fallbackWave", "fallbackCurrent"}) rows[key]->setVisible(!serverDownload && extend->isChecked());
     if (running) return;
     if (serverDownload) {
-      estimate->setText("Downloads from grib.bosun.io, the same volunteer-run ECMWF service as desktop xGRIB. Model fields/timesteps are set by the server. No currents are added. Maximum download: 128 MiB.");
+      estimate->setText("Hours count from the model run. Current-only forecasts open in the combined GRIB generator. Maximum download: 128 MiB.");
       return;
     }
     try {
@@ -630,7 +764,7 @@ struct AndroidPassageWeatherDialog::Impl {
     return false;
   }
   void Start(std::optional<eg::EnvironmentRequest> retry = std::nullopt) {
-    if (running || credentialAction != CredentialAction::None) return;
+    if (running || modelJob.valid() || credentialAction != CredentialAction::None) return;
     QGuiApplication::inputMethod()->hide();
     if (!retry && !ValidateAreaInput()) return;
     try {
@@ -653,12 +787,24 @@ struct AndroidPassageWeatherDialog::Impl {
         tabs->setCurrentIndex(4);
         throw std::runtime_error("Enter your Copernicus username and password on the Account tab.");
       }
+      std::optional<wr::WorldGribModel> model;
+      int duration = 0;
+      if (serverDownload) {
+        const int index = choices["serverModel"]->currentIndex();
+        if (index < 0) throw std::runtime_error("Update Models to load a forecast model.");
+        model = worldModels[index];
+        bool ok = false;
+        duration = fields["serverDuration"]->text().toInt(&ok);
+        if (!ok || duration < 1 || duration > model->maxHours)
+          throw std::runtime_error("Enter a forecast length from 1 to " +
+                                   std::to_string(model->maxHours) + " hours.");
+        currentDownload = wr::IsWorldCurrentModel(*model);
+      }
       QGuiApplication::inputMethod()->hide();
       latestProgress.clear(); log->clear(); hasLog = true; log->show();
-      const auto model = Selected("serverModel"); const int duration = std::stoi(Selected("serverDuration"));
       lastRequest = request;
       job = std::async(std::launch::async, [this, request = std::move(request), model, duration] {
-        if (serverDownload) return xgrib::DownloadServerGrib(request, model, duration);
+        if (model) return wr::DownloadServerGrib(request, *model, duration);
         auto result = eg::GenerateEnvironment(request, {}, std::nullopt,
             [this, flag = request.execution.cancelled](const std::string& stage, const Json::Value&) {
               if (flag->load()) throw std::runtime_error("Generation cancelled");
@@ -670,10 +816,11 @@ struct AndroidPassageWeatherDialog::Impl {
       running = true; closeWhenFinished = false;
       tabs->setEnabled(false); generate->setEnabled(false); cancel->setEnabled(true);
       close->setText("Cancel and close");
-      status->setText(serverDownload ? "Preparing / downloading forecast from server…" : "Generating forecast…"); timer->start(150);
+      status->setText(serverDownload ? "Downloading forecast…" : "Generating forecast…"); timer->start(150);
     } catch (const std::exception& error) { status->setText(Text(std::string(error.what()))); }
   }
   void Poll() {
+    if (modelJob.valid()) { PollWorldModels(); return; }
     if (credentialAction != CredentialAction::None) {
       if (credentialJob.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
       const auto action = credentialAction; credentialAction = CredentialAction::None;
@@ -728,9 +875,21 @@ struct AndroidPassageWeatherDialog::Impl {
             result.inspection["first_valid_time"].asString() + " to " +
             result.inspection["last_valid_time"].asString() +
             ". Individual fields can have shorter coverage."));
-      if (!closeWhenFinished && open->isChecked() && ready) ready(wxString::FromUTF8(result.output.string().c_str()));
-      // Keep repeated jobs convenient without ever overwriting a previous GRIB.
-      fields["filename"]->setText("wr_forecast_" + QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss") + ".grb2");
+      fields["filename"]->setText("wr_forecast_" +
+          QDateTime::currentDateTimeUtc().toString("yyyyMMdd_HHmmss_zzz") + ".grb2");
+      if (!closeWhenFinished && serverDownload) {
+        xgrib::AreaPreset area;
+        area.west = lastRequest.bbox.west;
+        area.south = lastRequest.bbox.south;
+        area.east = lastRequest.bbox.east;
+        area.north = lastRequest.bbox.north;
+        worldResult = wr::WorldForecastDownload{
+            wxString::FromUTF8(result.output.string().c_str()), currentDownload, area};
+        Close();
+        return;
+      }
+      if (!closeWhenFinished && open->isChecked() && ready)
+        ready(wxString::FromUTF8(result.output.string().c_str()));
     } catch (const eg::CopernicusAuthenticationError& error) {
       const auto message = Text(std::string(error.what()));
       status->setText(message); log->appendPlainText(message);
@@ -742,7 +901,11 @@ struct AndroidPassageWeatherDialog::Impl {
         Start(lastRequest);
         return;
       }
-    } catch (const std::exception& error) { status->setText(cancelled->load() ? "Generation cancelled." : Text(std::string(error.what()))); }
+    } catch (const std::exception& error) {
+      status->setText(cancelled->load()
+                          ? (serverDownload ? "Download cancelled." : "Generation cancelled.")
+                          : Text(std::string(error.what())));
+    }
     if (closeWhenFinished) { closeWhenFinished = false; Close(); }
   }
 };
@@ -753,12 +916,77 @@ AndroidPassageWeatherDialog::AndroidPassageWeatherDialog(wxWindow* parent, GribR
   Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { impl_->Close(); });
 }
 AndroidPassageWeatherDialog::~AndroidPassageWeatherDialog() = default;
-void AndroidPassageWeatherDialog::ShowMobile(const PlugIn_ViewPort& viewport, bool serverDownload) {
-  impl_->viewport = viewport; impl_->serverDownload = serverDownload;
+void AndroidPassageWeatherDialog::ShowMode(const PlugIn_ViewPort& viewport,
+                                            bool serverDownload) {
+  impl_->viewport = viewport;
+  if (serverDownload || impl_->serverDownload != serverDownload) {
+    impl_->hasLog = false;
+    impl_->log->clear();
+    impl_->log->hide();
+  }
+  impl_->serverDownload = serverDownload;
   impl_->generate->setText(serverDownload ? "Download" : "Generate");
-  impl_->heading->setText(serverDownload ? "Weather Routing — Download from server" : "Weather Routing — Generate forecast");
-  impl_->tabs->setCurrentIndex(0); impl_->UpdateOptions();
-  impl_->resize->Fit(); impl_->LoadCredentials(); ShowModal();
+  impl_->cancel->setText(serverDownload ? "Cancel transfer" : "Cancel job");
+  impl_->heading->setText(serverDownload ? "Weather Routing — Download a World forecast"
+                                       : "Weather Routing — Generate forecast");
+  impl_->tabs->setCurrentIndex(0);
+  if (serverDownload) impl_->status->setText("Choose an area and model, then tap Download.");
+  impl_->UpdateOptions();
+  impl_->resize->Fit();
+  if (!serverDownload) impl_->LoadCredentials();
+  ShowModal();
+}
+
+void AndroidPassageWeatherDialog::ShowMobile(const PlugIn_ViewPort& viewport) {
+  ShowMode(viewport, false);
+}
+
+std::optional<wr::WorldForecastDownload> AndroidPassageWeatherDialog::ShowWorld(
+    const PlugIn_ViewPort& viewport,
+    const std::optional<wr::PassageForecastDefaults>& passage) {
+  const std::array<const char*, 4> keys = {"west", "south", "east", "north"};
+  std::array<QString, 4> previous;
+  for (size_t i = 0; i < keys.size(); ++i)
+    previous[i] = impl_->fields[keys[i]]->text();
+  if (passage) {
+    impl_->SetArea(passage->area);
+    impl_->fields["serverDuration"]->setText(QString::number(passage->hours));
+    impl_->UpdateWorldForecastRange();
+  } else {
+    xgrib::AreaPreset area;
+    area.west = viewport.lon_min;
+    area.south = viewport.lat_min;
+    area.east = viewport.lon_max;
+    area.north = viewport.lat_max;
+    if (xgrib::NormalizeAreaLongitudes(&area.west, &area.east))
+      impl_->SetArea(area);
+  }
+  impl_->worldResult.reset();
+  ShowMode(viewport, true);
+  for (size_t i = 0; i < keys.size(); ++i)
+    impl_->fields[keys[i]]->setText(previous[i]);
+  return std::exchange(impl_->worldResult, std::nullopt);
+}
+
+void AndroidPassageWeatherDialog::UseDownloadedCurrents(
+    const wr::WorldForecastDownload& current, const wxString& weather,
+    const std::optional<wr::PassageForecastDefaults>& passage) {
+  impl_->SetArea(current.area);
+  if (passage && passage->departure.IsValid()) {
+    impl_->startUtc = QDateTime::fromSecsSinceEpoch(passage->departure.GetTicks(), Qt::UTC);
+    impl_->UpdateStartLabel();
+    impl_->fields["hours"]->setText(QString::number(passage->hours));
+  }
+  auto* currents = impl_->choices["current"];
+  currents->setCurrentIndex(currents->findData(QString("existing-file")));
+  impl_->fields["currentFile"]->setText(QtText(current.path));
+  auto* wind = impl_->choices["weather"];
+  if (!weather.empty()) {
+    wind->setCurrentIndex(wind->findData(QString("existing-file")));
+    impl_->fields["weatherFile"]->setText(QtText(weather));
+  } else if (impl_->Selected("weather") == "none") {
+    wind->setCurrentIndex(wind->findData(QString("gfs")));
+  }
 }
 
 void WR_FitForecastDialog(wxWindow* parent, wxDialog& dialog) {

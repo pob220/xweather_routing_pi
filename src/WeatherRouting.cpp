@@ -1936,12 +1936,73 @@ WeatherRouting::~WeatherRouting() {
 weather_routing::PassageWeather& WeatherRouting::PassageForecast() {
   return *m_PassageWeather;
 }
-bool WeatherRouting::OpenPassageForecast(const wxString& path, wxString& error) {
+std::optional<weather_routing::PassageForecastDefaults>
+WeatherRouting::ForecastDefaults(const RouteMapConfiguration& c) const {
+  if (!std::isfinite(c.StartLat) || !std::isfinite(c.EndLat) ||
+      !std::isfinite(c.StartLon) || !std::isfinite(c.EndLon))
+    return std::nullopt;
+
+  std::vector<RouteWaypointInfo> points;
+  wxString error;
+  const auto guid = c.IsMultiLegGenerated ? c.MultiLegParentRouteGUID : c.RouteGUID;
+  if (!guid.empty()) ExtractOpenCPNRouteWaypoints(guid, points, error);
+  if (points.size() < 2)
+    points = {{c.StartGUID, c.Start, c.StartLat, c.StartLon, 0},
+              {c.EndGUID, c.End, c.EndLat, c.EndLon, 1}};
+
+  double distance = 0, south = points.front().lat, north = south;
+  double west = points.front().lon, east = west, previous = west;
+  for (size_t i = 0; i < points.size(); ++i) {
+    const auto& point = points[i];
+    if (!std::isfinite(point.lat) || !std::isfinite(point.lon))
+      return std::nullopt;
+    double lon = point.lon;
+    while (lon - previous > 180) lon -= 360;
+    while (lon - previous < -180) lon += 360;
+    west = std::min(west, lon);
+    east = std::max(east, lon);
+    previous = lon;
+    south = std::min(south, point.lat);
+    north = std::max(north, point.lat);
+    if (i)
+      distance += DistGreatCircle_Plugin(points[i - 1].lat, points[i - 1].lon,
+                                         point.lat, point.lon);
+  }
+  // Preliminary duration at 4 kn plus 50% and 24 h. Forecast coverage is
+  // checked against the actual download.
+  const int estimate =
+      std::max(24, int(std::ceil((distance / 4 * 1.5 + 24) / 3)) * 3);
+  const bool byArrival = c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;
+  const int hours = std::min(360, byArrival
+      ? std::max(estimate, c.ArrivalSearchHorizonMinutes / 60 + 24) : estimate);
+  const double margin = std::max(2.0, std::min(10.0, distance / 120));
+  xgrib::AreaPreset area;
+  area.west = west - margin;
+  area.south = std::max(-89.0, south - margin);
+  area.east = east + margin;
+  area.north = std::min(89.0, north + margin);
+  if (area.east - area.west >= 359) {
+    area.west = -180;
+    area.east = 180;
+  } else {
+    xgrib::NormalizeAreaLongitudes(&area.west, &area.east);
+  }
+  auto departure = c.UseCurrentTime ? wxDateTime::Now() : c.StartTime;
+  if (byArrival)
+    departure = c.PlannedArrivalTime.IsValid()
+        ? c.PlannedArrivalTime - wxTimeSpan::Minutes(c.ArrivalSearchHorizonMinutes)
+        : wxDateTime();
+  return weather_routing::PassageForecastDefaults{
+      area, departure, hours, c.Currents, c.MaxSwellMeters > 0};
+}
+
+bool WeatherRouting::OpenPassageForecast(
+    const wxString& path, wxString& error, std::optional<time_t> plannedDeparture) {
   if (!m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() || m_RoutePreparationDepth || m_DeferredRoutingStartPending) {
     error = _("Cancel the active calculation before changing its forecast.");
     return false;
   }
-  if (!m_PassageWeather->Open(path,error)) return false;
+  if (!m_PassageWeather->Open(path, error, plannedDeparture)) return false;
   if (m_GribTimelineFrameCache) m_GribTimelineFrameCache->Clear();
   m_GribTimelineCacheBatchActive=false;
   m_ConfigurationDialog.m_GribTimelineTime = wxDateTime(m_PassageWeather->FirstWindTime());

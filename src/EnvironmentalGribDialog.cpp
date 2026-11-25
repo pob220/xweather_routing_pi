@@ -787,6 +787,40 @@ EnvironmentalGribDialog::EnvironmentalGribDialog(wxWindow* parent,
   wxLogMessage("xGRIB: environmental generator dialog ready");
 }
 
+bool EnvironmentalGribDialog::UseDownloadedCurrents(
+    const wxString& currentPath, const wxString& weatherPath,
+    const xgrib::AreaPreset& area) {
+  if (m_processRunning) return false;
+  m_west->ChangeValue(wxString::Format("%.5f", area.west));
+  m_south->ChangeValue(wxString::Format("%.5f", area.south));
+  m_east->ChangeValue(wxString::Format("%.5f", area.east));
+  m_north->ChangeValue(wxString::Format("%.5f", area.north));
+  const auto sources = xgrib::CurrentProviderOptions();
+  for (size_t i = 0; i < sources.size(); ++i) {
+    if (sources[i].id == "existing") {
+      m_currentSource->SetSelection(i);
+      break;
+    }
+  }
+  m_generateCurrents->SetValue(true);
+  m_existingCurrentFile->SetPath(currentPath);
+  m_generateWeather->SetValue(true);
+  if (!weatherPath.empty()) {
+    const auto providers = xgrib::WeatherProviderOptions();
+    for (size_t i = 0; i < providers.size(); ++i) {
+      if (providers[i].id == "existing") {
+        m_weatherProvider->SetSelection(i);
+        break;
+      }
+    }
+    m_existingWeatherFile->SetPath(weatherPath);
+  }
+  UpdateSelectedPathDisplays();
+  UpdateProviderUi();
+  QueueEstimate();
+  return true;
+}
+
 void EnvironmentalGribDialog::ConfigureSmokeTestFromEnvironment() {
   wxString enabled;
   if (!wxGetEnv("XGRIB_TEST_OPEN_GENERATOR", &enabled) || enabled != "1") {

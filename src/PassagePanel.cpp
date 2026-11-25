@@ -12,6 +12,7 @@
 #include "WeatherRouting.h"
 #include "weather_routing_pi.h"
 #include "PassageWeather.h"
+#include "WorldForecastDialog.h"
 #include "BundledClimatology.h"
 #include "EnvironmentalGribDialog.h"
 #include "tinyxml.h"
@@ -19,6 +20,9 @@
 #include <wx/combobox.h>
 #include <wx/dir.h>
 #include <wx/filedlg.h>
+#ifdef __WXOSX__
+#include <wx/sysopt.h>
+#endif
 #include <wx/filename.h>
 #include <wx/notebook.h>
 #include <wx/scrolwin.h>
@@ -198,7 +202,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                     [this] { LoadWeather(); }));
   mutableControls_.push_back(Button(content_, weatherActions,
                                     _("Download / generate GRIB"),
-                                    [this] { GenerateWeather(); }));
+                                    [this] { ChooseWeatherTool(); }));
   weather->Add(weatherActions, 0, wxEXPAND);
 #ifdef __OCPN__ANDROID__
   auto* settings = new wxBoxSizer(wxHORIZONTAL);
@@ -1682,18 +1686,78 @@ bool PassagePanel::OpenWeather(const wxString& path, wxString& error) {
 }
 
 void PassagePanel::LoadWeather() {
+#ifdef __WXOSX__
+  const int savedFileTypeSetting =
+      wxSystemOptions::GetOptionInt(wxOSX_FILEDIALOG_ALWAYS_SHOW_TYPES);
+  wxSystemOptions::SetOption(wxOSX_FILEDIALOG_ALWAYS_SHOW_TYPES, 1);
+#endif
   wxFileDialog dialog(
       this, _("Load passage weather"), wxEmptyString, wxEmptyString,
       _("GRIB files|*.grb;*.grib;*.grb2;*.grib2;*.gz;*.bz2|All files|*.*"),
       wxFD_OPEN | wxFD_FILE_MUST_EXIST);
-  if (dialog.ShowModal() != wxID_OK) return;
+  const auto action = dialog.ShowModal();
+#ifdef __WXOSX__
+  wxSystemOptions::SetOption(wxOSX_FILEDIALOG_ALWAYS_SHOW_TYPES,
+                             savedFileTypeSetting);
+#endif
+  if (action != wxID_OK) return;
   wxString error;
   if (!OpenWeather(dialog.GetPath(), error))
     wxMessageBox(error, _("Cannot load weather"), wxOK | wxICON_INFORMATION,
                  this);
   RefreshPassage();
 }
-void PassagePanel::GenerateWeather() {
+void PassagePanel::ChooseWeatherTool() {
+#ifndef __OCPN__ANDROID__
+  wxMenu menu;
+  const auto download = wxWindow::NewControlId();
+  const auto generate = wxWindow::NewControlId();
+  menu.Append(download, _("Download a World forecast…"));
+  menu.Append(generate, _("Generate a combined GRIB…"));
+  const int action = GetPopupMenuSelectionFromUser(menu);
+  if (action == download) DownloadWeather();
+  if (action == generate) GenerateWeather();
+#else
+  GenerateWeather();
+#endif
+}
+
+#ifndef __OCPN__ANDROID__
+void PassagePanel::DownloadWeather() {
+  std::optional<weather_routing::PassageForecastDefaults> passage;
+  if (auto* route = routing_.FirstCurrentRouteMap())
+    passage = routing_.ForecastDefaults(PlanningConfiguration(route->GetConfiguration()));
+
+  std::optional<xgrib::AreaPreset> chart;
+  PlugIn_ViewPort viewport{};
+  if (routing_.GetPlugin().CopyLastViewport(viewport)) {
+    xgrib::AreaPreset bounds{"chart-area", _("Chart area"), viewport.lon_min,
+        viewport.lat_min, viewport.lon_max, viewport.lat_max};
+    if (xgrib::NormalizeAreaLongitudes(&bounds.west, &bounds.east) &&
+        xgrib::ValidateAreaPreset(bounds).empty())
+      chart = bounds;
+  }
+
+  const auto area = passage ? passage->area : chart.value_or(xgrib::AreaPreset{});
+  const auto result = weather_routing::ChooseWorldForecast(
+      this, area, passage ? passage->hours : 24, chart);
+  if (!result) return;
+  if (result->currentsOnly) {
+    GenerateWeather(&*result);
+    return;
+  }
+
+  std::optional<time_t> departure;
+  if (passage && passage->departure.IsValid()) departure = passage->departure.GetTicks();
+  wxString error;
+  if (!routing_.OpenPassageForecast(result->path, error, departure))
+    wxMessageBox(error, _("Cannot use downloaded forecast"),
+                 wxOK | wxICON_INFORMATION, this);
+  RefreshPassage();
+}
+#endif
+
+void PassagePanel::GenerateWeather(const weather_routing::WorldForecastDownload* current) {
   EnsurePassage();
   auto* r = routing_.FirstCurrentRouteMap();
   if (!r) return;
@@ -1705,57 +1769,21 @@ void PassagePanel::GenerateWeather() {
             wxMessageBox(error, _("Generated weather"), wxOK, this);
           RefreshPassage();
         });
-  const auto c = PlanningConfiguration(r->GetConfiguration());
-  if (!generator_->IsShown() && std::isfinite(c.StartLat) &&
-      std::isfinite(c.EndLat)) {
-    std::vector<RouteWaypointInfo> points;
-    wxString error;
-    const auto guid =
-        c.IsMultiLegGenerated ? c.MultiLegParentRouteGUID : c.RouteGUID;
-    if (!guid.empty()) ExtractOpenCPNRouteWaypoints(guid, points, error);
-    if (points.size() < 2)
-      points = {{c.StartGUID, c.Start, c.StartLat, c.StartLon, 0},
-                {c.EndGUID, c.End, c.EndLat, c.EndLon, 1}};
-    double distance = 0, south = points.front().lat, north = south;
-    double west = points.front().lon, east = west, previous = west;
-    for (size_t i = 0; i < points.size(); ++i) {
-      const auto& p = points[i];
-      double lon = p.lon;
-      while (lon - previous > 180) lon -= 360;
-      while (lon - previous < -180) lon += 360;
-      west = std::min(west, lon);
-      east = std::max(east, lon);
-      previous = lon;
-      south = std::min(south, p.lat);
-      north = std::max(north, p.lat);
-      if (i)
-        distance += DistGreatCircle_Plugin(points[i - 1].lat, points[i - 1].lon,
-                                           p.lat, p.lon);
+  if (!generator_->IsShown()) {
+    const auto defaults = routing_.ForecastDefaults(
+        PlanningConfiguration(r->GetConfiguration()));
+    if (defaults) {
+      const auto& area = defaults->area;
+      generator_->SetPassage(area.west, area.south, area.east, area.north,
+          defaults->departure, defaults->hours, defaults->currents, defaults->waves);
     }
-    // Preliminary duration at 4 kn plus 50% and 24 h; actual coverage is
-    // rechecked.
-    const int estimate =
-        std::max(24, int(std::ceil((distance / 4 * 1.5 + 24) / 3)) * 3);
-    const int hours = std::min(
-        360, c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
-                 ? std::max(estimate, c.ArrivalSearchHorizonMinutes / 60 + 24)
-                 : estimate);
-    const double margin = std::max(2.0, std::min(10.0, distance / 120));
-    auto wrap = [](double lon) {
-      while (lon > 180) lon -= 360;
-      while (lon < -180) lon += 360;
-      return lon;
-    };
-    const bool global = east - west + 2 * margin >= 359;
-    const wxDateTime start =
-        c.TimeMode == RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME
-            ? c.PlannedArrivalTime -
-                  wxTimeSpan::Minutes(c.ArrivalSearchHorizonMinutes)
-            : c.StartTime;
-    generator_->SetPassage(
-        global ? -180 : wrap(west - margin), std::max(-89.0, south - margin),
-        global ? 180 : wrap(east + margin), std::min(89.0, north + margin),
-        start, hours, c.Currents, c.MaxSwellMeters > 0);
+  }
+  if (current && !generator_->UseDownloadedCurrents(
+          current->path, routing_.PassageForecast().Path(), current->area)) {
+    wxMessageBox(wxString::Format(
+        _("A generation job is still running. When it finishes, choose this file "
+          "as the existing current GRIB:\n%s"), current->path),
+        _("Current forecast saved"), wxOK | wxICON_INFORMATION, this);
   }
   generator_->SetDisplayTimeZone(routing_.m_SettingsDialog.UseLocalTimeZone(),
                                   routing_.m_SettingsDialog.DisplayTimeZone());

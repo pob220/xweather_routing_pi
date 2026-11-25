@@ -1,34 +1,25 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Adapted from xGRIB 0.4.5, source a5606ce; scoped to Weather Routing.
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Adapted from xGRIB 0.5.0 (ed0c856).
 #pragma once
 
 #include <cstdio>
 #include <fcntl.h>
-#include <locale>
-#include <sstream>
 #include <unistd.h>
+#include "WorldGribModels.h"
 #include "environmental_grib/environment.h"
 #include "environmental_grib/grib.h"
 
-namespace xgrib {
+namespace weather_routing {
 // Same service, model IDs and durations as the desktop Download GRIB tab.
 inline std::string ServerGribUrl(const environmental_grib::BoundingBox& bbox,
-                                 const std::string& model, int hours) {
+                                 const WorldGribModel& model, int hours) {
   bbox.Validate();
-  if (model != "ecmwf0p25" && model != "ecmwfaifs0p25")
-    throw std::runtime_error("Unsupported server model");
-  if (hours != 24 && hours != 72 && hours != 999)
-    throw std::runtime_error("Unsupported server forecast duration");
-  std::ostringstream url; url.imbue(std::locale::classic());
-  url << "https://grib.bosun.io/grib?model=" << model
-      << "&latmin=" << bbox.south << "&latmax=" << bbox.north
-      << "&lonmin=" << bbox.west << "&lonmax=" << bbox.east << "&length=" << hours;
-  return url.str();
+  return WorldGribUrl(model, hours, bbox.south, bbox.north, bbox.west, bbox.east);
 }
 
 inline environmental_grib::EnvironmentResult DownloadServerGrib(
     const environmental_grib::EnvironmentRequest& request,
-    const std::string& model, int hours) {
+    const WorldGribModel& model, int hours) {
   namespace eg = environmental_grib;
   const auto url = ServerGribUrl(request.bbox, model, hours);
   eg::ExecutionScope scope(request.execution);
@@ -59,7 +50,6 @@ inline environmental_grib::EnvironmentResult DownloadServerGrib(
   curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
   curl_easy_setopt(curl.get(), CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
 #endif
-  curl_easy_setopt(curl.get(), CURLOPT_FAILONERROR, 1L);
   curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 30L);
   curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT, 600L);
   curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
@@ -83,6 +73,18 @@ inline environmental_grib::EnvironmentResult DownloadServerGrib(
     throw std::runtime_error(std::string("Server download failed (128 MiB limit): ") + curl_easy_strerror(code));
   const int closed = std::fclose(output.file); output.file = nullptr;
   if (closed) throw std::runtime_error("Unable to finish writing GRIB download");
+  long response = 0;
+  curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &response);
+  const auto partialPath = wxString::FromUTF8(partial.c_str());
+  if (response < 200 || response >= 300) {
+    const auto message = WorldGribServerError(partialPath);
+    const auto reason = message.utf8_str();
+    throw std::runtime_error(
+        "Server download failed (HTTP " + std::to_string(response) + ")" +
+        (reason.length() == 0 ? "" : ": " + std::string(reason.data(), reason.length())));
+  }
+  if (!HasWorldGribFileMarkers(partialPath))
+    throw std::runtime_error("The server did not return a complete GRIB file");
   auto inspection = eg::InspectGrib(partial);
   const auto count = inspection["message_count"].asUInt64();
   if (!count) throw std::runtime_error("The server did not return a usable GRIB file");

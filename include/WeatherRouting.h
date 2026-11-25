@@ -58,6 +58,7 @@ class wxScrolledWindow;
 #include "StabilityCorridorLifecycle.h"
 #include "GribTimelineFrameCache.h"
 #include "RunDiagnosticsJournal.h"
+#include "PassageWeatherRequest.h"
 #include "weather_routing_engine/StabilityCorridor.h"
 
 class weather_routing_pi;
@@ -299,7 +300,10 @@ public:
   ~WeatherRouting();
   void ShutdownReportWorkers() { m_ReportDialog.ShutdownCycloneAssessment(); }
   weather_routing::PassageWeather& PassageForecast();
-  bool OpenPassageForecast(const wxString& path, wxString& error);
+  std::optional<weather_routing::PassageForecastDefaults> ForecastDefaults(
+      const RouteMapConfiguration& configuration) const;
+  bool OpenPassageForecast(const wxString& path, wxString& error,
+                           std::optional<time_t> plannedDeparture = std::nullopt);
   bool OpenPassageForecastForUser(const wxString& path, wxString& error);
   weather_routing::PassageInputs InspectPassageInputs(
       const RouteMapConfiguration& configuration, Boat& boatModel,
@@ -1066,7 +1070,8 @@ private:
   bool EditAndroidPosition(wxString& name, double& latitude, double& longitude,
                            bool waypoint = false);
   void LoadAndroidPassageWeather();
-  void GenerateAndroidPassageWeather();
+  void ChooseAndroidWeatherTool();
+  void GenerateAndroidPassageWeather(bool world);
   void RefreshAndroidPassageWeather();
   void RefreshAndroidReadiness(RouteMapOverlay* route);
   void ReviewAndroidReadiness();

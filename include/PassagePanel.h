@@ -13,6 +13,7 @@ class wxScrolledWindow;
 class wxSizer;
 class RouteMapOverlay;
 struct RouteMapConfiguration;
+namespace weather_routing { struct WorldForecastDownload; }
 
 class PassagePanel : public wxPanel {
 public:
@@ -43,7 +44,11 @@ private:
   void ShowLibrary();
   bool OpenWeather(const wxString& path, wxString& error);
   void LoadWeather();
-  void GenerateWeather();
+  void ChooseWeatherTool();
+#ifndef __OCPN__ANDROID__
+  void DownloadWeather();
+#endif
+  void GenerateWeather(const weather_routing::WorldForecastDownload* current = nullptr);
   void ApplyBoat(const wxString& path);
   WeatherRouting& routing_;
   wxChoice* passages_;

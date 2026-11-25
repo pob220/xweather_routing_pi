@@ -28,6 +28,8 @@ public:
   void PrepareForParentShutdown();
   void SetPassage(double west, double south, double east, double north,
                   const wxDateTime& start, int hours, bool currents, bool waves);
+  bool UseDownloadedCurrents(const wxString& currentPath, const wxString& weatherPath,
+                             const xgrib::AreaPreset& area);
   void RunConfiguredSmokeTest();
 
 private:

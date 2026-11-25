@@ -117,6 +117,8 @@ set(TEST_SRC
     ClimatologyThreadGuard_tests.cpp
     ClimatologyCompatibility_tests.cpp
     PassageWeather_tests.cpp
+    WorldGribModels_tests.cpp
+    ${WEATHER_ROUTING_SOURCE_DIR}/src/WorldGribModels.cpp
     PassageWeatherRequest_tests.cpp
     ${WEATHER_ROUTING_SOURCE_DIR}/src/PassageWeatherRequest.cpp
     PassagePresentation_tests.cpp
@@ -185,7 +187,7 @@ set(TEST_SRC
    )
 
    add_executable(weather_routing_pi_tests ${TEST_SRC})
-   target_link_libraries(weather_routing_pi_tests PRIVATE grib_aec_decoder)
+   target_link_libraries(weather_routing_pi_tests PRIVATE grib_aec_decoder ocpn::wxjson)
    if(TARGET libjasper)
      target_link_libraries(weather_routing_pi_tests PRIVATE libjasper)
      target_compile_definitions(weather_routing_pi_tests PRIVATE JASPER)

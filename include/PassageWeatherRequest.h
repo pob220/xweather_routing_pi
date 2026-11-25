@@ -3,11 +3,19 @@
 #include <optional>
 #include <string_view>
 #include <wx/datetime.h>
+#include "AreaPreset.h"
 
 namespace weather_routing {
 struct PassageWeatherWindow {
   wxDateTime start;
   int hours;
+};
+struct PassageForecastDefaults {
+  xgrib::AreaPreset area;
+  wxDateTime departure;
+  int hours;
+  bool currents;
+  bool waves;
 };
 // Download timestamps must match hourly forecast records. Expand the request
 // around the passage window; never alter the passage's departure or arrival.

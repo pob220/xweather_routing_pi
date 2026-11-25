@@ -61,7 +61,8 @@ wxString UTC(time_t t) {
 }
 }  // namespace
 
-bool PassageWeather::Open(const wxString& path, wxString& error) {
+bool PassageWeather::Open(const wxString& path, wxString& error,
+                          std::optional<time_t> plannedDeparture) {
   try {
     auto next = std::make_unique<GribReader>(path);
     if (!next->isOk()) {
@@ -84,6 +85,24 @@ bool PassageWeather::Open(const wxString& path, wxString& error) {
           _("This GRIB has no complete surface-wind vector. Choose a forecast "
             "with 10 m wind. The previous forecast has been kept.");
       return false;
+    }
+    if (plannedDeparture) {
+      const auto& u = fields[Idx_WIND_VX];
+      const auto& v = fields[Idx_WIND_VY];
+      const auto first = std::max(u.begin()->first, v.begin()->first);
+      const auto last = std::min(u.rbegin()->first, v.rbegin()->first);
+      if (first > last) {
+        error = _("The two wind components do not share a forecast time. "
+                  "The previous forecast has been kept.");
+        return false;
+      }
+      if (*plannedDeparture < first || *plannedDeparture > last) {
+        error = wxString::Format(
+            _("Wind is available from %s to %s. It does not cover the planned "
+              "departure at %s. The previous forecast has been kept."),
+            UTC(first), UTC(last), UTC(*plannedDeparture));
+        return false;
+      }
     }
     reader_ = std::move(next);
     fields_ = std::move(fields);
