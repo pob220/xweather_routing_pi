@@ -191,18 +191,11 @@ jobs:
           name: Native Windows build, tests and package
           environment:
             WEATHER_ROUTING_WINDOWS_X86_HOST_ON_X64: "1"
+            WR_QUALIFY_WIN32_PACKAGE: "1"
           command: |
             cmd.exe /d /s /c "call ci\circleci-build-msvc.bat"
             exit $LASTEXITCODE
           no_output_timeout: 45m
-      - run:
-          name: Qualify Win32 plugin and independent helper
-          shell: cmd.exe
-          command: |
-            call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-            if errorlevel 1 exit /b 1
-            python ci\qualify-windows32-v2.py
-            exit /b %errorlevel%
       - run:
           name: Verify Windows x86 package ABI
           command: python ci/verify-package-abi.py artifacts/windows-x86/package --target windows-x86

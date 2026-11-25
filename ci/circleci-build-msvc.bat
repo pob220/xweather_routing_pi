@@ -259,4 +259,10 @@ dir ..\artifacts\windows-x86\package
 python "%SCRIPTDIR%run-windows86-host.py"
 if errorlevel 1 exit /b 1
 
+rem Package qualification needs the same Visual Studio PATH as this build.
+if "%WR_QUALIFY_WIN32_PACKAGE%" == "1" (
+  python "%SCRIPTDIR%qualify-windows32-v2.py"
+  if errorlevel 1 exit /b 1
+)
+
 endlocal
