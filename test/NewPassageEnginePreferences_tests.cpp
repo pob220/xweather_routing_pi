@@ -9,7 +9,7 @@ namespace {
 constexpr auto path = "/PlugIns/xWeatherRouting2/LastUsedConfiguration";
 void ExpectEstablishedEngines(const wr::RoutingEngineSettings& settings) {
   for (const auto engine : wr::kSequenceEngines) {
-    if (engine == wr::RoutingEngine::Meridian) {
+    if (engine == wr::RoutingEngine::Corridor) {
       EXPECT_EQ(settings.autoEngines & wr::EngineBit(engine),0U);
       EXPECT_EQ(settings.allEngines & wr::EngineBit(engine),0U);
       continue;
@@ -20,7 +20,7 @@ void ExpectEstablishedEngines(const wr::RoutingEngineSettings& settings) {
 }
 }  // namespace
 TEST(NewPassageEnginePreferences,
-     FreshAndUnavailableConfigStartAutoWithEveryEngine) {
+     FreshAndUnavailableConfigStartAutoWithDefaultMembership) {
   const auto noConfig = wr::ReadNewPassageEnginePreferences(nullptr);
   EXPECT_EQ(noConfig.engine, wr::RoutingEngine::Auto);
   ExpectEstablishedEngines(noConfig);
@@ -129,7 +129,7 @@ TEST(NewPassageEnginePreferences,
   EXPECT_EQ(copied.original, search.original);
 }
 
-TEST(NewPassageEnginePreferences, MeridianMembershipIsAnIndependentRememberedOptIn) {
+TEST(NewPassageEnginePreferences, ExplicitMeridianMembershipStaysIndependent) {
   wxStringInputStream input("");wxFileConfig config(input);config.SetPath(path);
   config.Write("RoutingEngine",wxString("auto"));config.Write("AutoEngineMask",96L);
   config.Write("AllEngineMask",64L);
@@ -141,4 +141,10 @@ TEST(NewPassageEnginePreferences, MeridianMembershipIsAnIndependentRememberedOpt
   restored.SetPath(path);target={};wr::ApplyNewPassageEngineChoices(target,&restored);
   EXPECT_EQ(target.engine,wr::RoutingEngine::Auto);
   EXPECT_EQ(target.autoEngines,96U);EXPECT_EQ(target.allEngines,64U);
+}
+
+TEST(NewPassageEnginePreferences, FreshMasksIncludeMeridianAndExcludeCorridor) {
+  const auto settings = wr::ReadNewPassageEnginePreferences(nullptr);
+  EXPECT_EQ(settings.autoEngines, 127U);
+  EXPECT_EQ(settings.allEngines, 127U);
 }

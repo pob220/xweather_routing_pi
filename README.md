@@ -1,14 +1,14 @@
 # xWeatherRouting improved UX development
 
 This repository's default `develop` branch is the **improved UX development
-2.x line**, currently **2.11.3**. It provides the passage-planning interface,
+2.x line**, currently **2.12.0**. It provides the passage-planning interface,
 incorporated GRIB loader and generator, bundled Climatology, and separate
 preferences and user data.
 
 | Line | Current version | Source |
 | --- | --- | --- |
-| Weather Routing production | **1.44.3** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
-| xWeatherRouting improved UX development | **2.11.3** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
+| Weather Routing production | **1.45.0** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
+| xWeatherRouting improved UX development | **2.12.0** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
 
 [Download the published 2.11.1 developer test packages](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
 for Apple Silicon, Debian 12, Debian 13, Windows x64 and 32-bit OpenCPN on
@@ -26,7 +26,13 @@ The plugin includes Crude, Low and Intermediate for offline installation.
 Forecast wind failures report the requested UTC time and the forecast end
 when the weather reader supplies it.
 
-Both lines include Meridian as an optional routing method. Ordinary GSHHG
+These releases add Corridor for blocked coastal passages and offshore
+forecast refinement. Select it as an individual method or include it in Auto
+or All after Standard and before Alternative. On a fresh profile, Auto and
+All include Meridian and the six established methods, with Corridor unchecked.
+Saved selections are kept on upgrade.
+
+Ordinary GSHHG
 shoreline routing works on stock OpenCPN; chart-backed depth and hazard checks
 require a compatible chart-safety host. See the
 [2.x development overview](docs/v2/README.md), [Meridian](docs/MERIDIAN.md) and
