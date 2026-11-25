@@ -50,9 +50,10 @@ void WeatherHours(const EnvironmentRequest& r, int hours, int step) {
   if (provider == "ecmwf_ifs_open" && step != 3 && step != 6 && step != 12)
     throw ValidationError(
         "ECMWF IFS requires 3-hour, 6-hour or 12-hour weather intervals.");
-  if (provider == "gfs" && step != 1 && step != 3 && step != 6 && step != 12)
-    throw ValidationError(
-        "GFS requires 1-hour, 3-hour, 6-hour or 12-hour weather intervals.");
+  if (provider == "gfs") {
+    GfsForecastHours(hours, step);
+    return;
+  }
   ForecastHourSequence(hours, step);
 }
 void ValidateTimes(const EnvironmentRequest& r) {
@@ -73,11 +74,8 @@ void ValidateTimes(const EnvironmentRequest& r) {
       if (!r.extend_forecast && r.hours > 240)
         throw ValidationError(
             "Copernicus Global Waves covers at most 240 forecast hours.");
-    } else if (r.wave_provider == "gfs_wave" && r.wave_step_hours != 1 &&
-               r.wave_step_hours != 3 && r.wave_step_hours != 6 &&
-               r.wave_step_hours != 12) {
-      throw ValidationError(
-          "GFS waves requires 1-hour, 3-hour, 6-hour or 12-hour intervals.");
+    } else if (r.wave_provider == "gfs_wave" && !r.extend_forecast) {
+      GfsForecastHours(r.hours, r.wave_step_hours);
     }
     if (r.wave_step_hours <= 0 || r.hours % r.wave_step_hours != 0)
       throw ValidationError(

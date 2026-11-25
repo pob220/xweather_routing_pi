@@ -2,6 +2,11 @@ name: build-win32-v2
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      use_current_helper:
+        type: boolean
+        default: false
   push:
     branches: ['feature/xweather-2.3.3-win32']
 
@@ -36,15 +41,23 @@ jobs:
           arch: x86
           vsversion: '2022'
       - name: Verify unchanged scientific-helper inputs
+        if: inputs.use_current_helper != true
         shell: pwsh
         run: |
           git diff --exit-code 1cb4ab91ba788375bacf8b93d7ede04ea3327fc6 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
           if ($LASTEXITCODE -ne 0) { throw 'Scientific helper inputs changed; requalify before reuse' }
       - name: Retrieve qualified independent AMD64 helper
+        if: inputs.use_current_helper != true
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: 43622382776
+          name: windows-generator-stage
+          path: .windows-deps/stage
+      - name: Retrieve AMD64 helper built from this checkout
+        if: inputs.use_current_helper == true
+        uses: actions/download-artifact@v4
+        with:
           name: windows-generator-stage
           path: .windows-deps/stage
       - name: Verify helper provenance and select its private stage

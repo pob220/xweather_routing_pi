@@ -534,6 +534,22 @@ std::vector<int> ForecastHourSequence(int hours, int step_hours) {
   return result;
 }
 
+std::vector<int> GfsForecastHours(int hours, int step_hours) {
+  if (hours < 0 || hours > 384)
+    throw ValidationError("GFS forecasts cover up to 384 forecast hours.");
+  if (step_hours == 1 && hours > 120) {
+    auto result = ForecastHourSequence(120, 1);
+    // Include the first published time at or after the requested endpoint.
+    const int last_hour = ((hours + 2) / 3) * 3;
+    for (int hour = 123; hour <= last_hour; hour += 3)
+      result.push_back(hour);
+    return result;
+  }
+  if (step_hours != 1 && step_hours != 3 && step_hours != 6 && step_hours != 12)
+    throw ValidationError("GFS requires 1-, 3-, 6- or 12-hour intervals.");
+  return ForecastHourSequence(hours, step_hours);
+}
+
 std::map<std::string, std::string> GfsVariablesForPreset(
     const std::string& preset) {
   if (preset == "minimal") return kMinimalFields;
@@ -687,9 +703,7 @@ WeatherGenerateResult GenerateGfs(const GFSRequest& request, HttpGet http_get,
                                   HostedGfsDownload hosted_download) {
   progress = SynchronizedProgressCallback(std::move(progress));
   request.bbox.Validate();
-  if (!std::set<int>{1, 3, 6, 12}.contains(request.step_hours))
-    throw ValidationError("step-hours must be one of 1, 3, 6, or 12 for GFS");
-  const auto hours = ForecastHourSequence(request.hours, request.step_hours);
+  const auto hours = GfsForecastHours(request.hours, request.step_hours);
   const auto fields =
       request.waves ? kWaveFields : GfsVariablesForPreset(request.preset);
   const auto cycles = GfsCycleCandidates(request, now);

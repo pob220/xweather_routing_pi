@@ -1918,7 +1918,8 @@ void EnvironmentalGribDialog::UpdateProviderUi() {
     wxString note =
         "Source: NOAA GFS forecast via NOMADS. Bbox-subset weather is compact; "
         "optional wave fields add significant wave height, primary wave "
-        "period, and primary wave direction.";
+        "period, and primary wave direction. With a 1-hour step, GFS weather "
+        "is hourly through forecast hour 120 and 3-hourly after that.";
     if (waveCopernicus) {
       note +=
           "\nWave source: Copernicus Marine Global Waves forecast. Account "
@@ -1926,8 +1927,8 @@ void EnvironmentalGribDialog::UpdateProviderUi() {
     }
     if (m_includeWaves->GetValue() && m_stepHours->GetValue() != 3) {
       note += wxString::Format(
-          "\nWave fields are included every 3 hours; wind/weather and currents "
-          "remain every %d hour%s.",
+          "\nWave fields use a separate 3-hour interval. The requested "
+          "weather and current interval is %d hour%s.",
           m_stepHours->GetValue(), m_stepHours->GetValue() == 1 ? "" : "s");
     }
     if (!currentNote.empty()) note += "\n" + currentNote;

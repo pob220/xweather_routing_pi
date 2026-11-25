@@ -99,6 +99,7 @@ HttpGetRange MakeRetryingHttpGetRange(HttpGetRange download,
 
 std::vector<WeatherProvider> ListWeatherProviders();
 std::vector<int> ForecastHourSequence(int hours, int step_hours);
+std::vector<int> GfsForecastHours(int hours, int step_hours);
 std::map<std::string, std::string> GfsVariablesForPreset(
     const std::string& preset);
 std::vector<GFSCycle> GfsCycleCandidates(

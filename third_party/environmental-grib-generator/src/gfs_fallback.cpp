@@ -22,6 +22,12 @@
 namespace environmental_grib {
 namespace {
 constexpr std::size_t kMaximumResult = 64ULL * 1024 * 1024;
+constexpr std::size_t kMaximumForecast = 512ULL * 1024 * 1024;
+
+class HostedGfsBatchTooLarge : public HostedGfsServiceError {
+ public:
+  using HostedGfsServiceError::HostedGfsServiceError;
+};
 
 std::set<std::string> Fields(const GFSRequest& request) {
   if (request.waves) return {"swh", "perpw", "dirpw"};
@@ -174,7 +180,7 @@ HostedGfsDownload BuiltinHostedGfsDownload() {
 std::map<int, std::vector<unsigned char>> ValidateHostedGfsBytes(
     const std::vector<unsigned char>& bytes, const GFSRequest& request,
     const GFSCycle& cycle, const std::vector<int>& hours) {
-  if (bytes.empty() || bytes.size() > kMaximumResult)
+  if (bytes.empty() || bytes.size() > kMaximumForecast)
     throw HostedGfsServiceError("Hosted GFS result has invalid size");
   ScanGribBytes(bytes);
   const auto fields = Fields(request);
@@ -281,11 +287,12 @@ std::vector<unsigned char> DownloadHostedGfs(const GFSRequest& request,
   std::array<unsigned char, 16> random{};
   randombytes_buf(random.data(), random.size());
   const auto client = Hex(random.data(), random.size());
+  if (hours.empty()) return {};
+  request.bbox.Validate();
   Json::Value wanted(Json::objectValue);
   wanted["cycle"] = cycle.date + cycle.cycle;
-  wanted["hours"] = Json::Value(Json::arrayValue);
-  for (int hour : hours) wanted["hours"].append(hour);
-  for (const auto& field : Fields(request))
+  const auto fields = Fields(request);
+  for (const auto& field : fields)
     wanted["fields"][request.waves ? "waves" : "weather"].append(field);
   wanted["bbox"]["west"] = request.bbox.west;
   wanted["bbox"]["south"] = request.bbox.south;
@@ -322,6 +329,8 @@ std::vector<unsigned char> DownloadHostedGfs(const GFSRequest& request,
         sleeper(reply.retry_after_seconds * 1000);
         continue;
       }
+      if (method == "POST" && reply.status == 413)
+        throw HostedGfsBatchTooLarge("Hosted GFS request exceeds the service limit");
       if (reply.status < 200 || reply.status >= 300)
         throw HostedGfsServiceError("Hosted GFS request failed with HTTP " +
                                     std::to_string(reply.status));
@@ -342,48 +351,89 @@ std::vector<unsigned char> DownloadHostedGfs(const GFSRequest& request,
       throw HostedGfsCoverageUnavailable(
           "Exact GFS forecast cycle/times are not cached by the hosted "
           "service");
-  const auto expected_request = Json::writeString(writer, wanted);
-  auto job = ParseJson(call("/v1/subsets", "POST", expected_request).body);
-  if (!job["status_url"].isString())
-    throw HostedGfsServiceError("Hosted GFS service returned no status path");
-  const auto path = job["status_url"].asString();
-  if (!std::regex_match(path, std::regex("/v1/jobs/[0-9a-f]{32}")))
+  const auto maximum_values =
+      capabilities.get("max_job_values", Json::UInt64{10000000});
+  if (!maximum_values.isUInt64() || !maximum_values.asUInt64())
+    throw HostedGfsServiceError("Hosted GFS service returned an invalid job limit");
+  // Match the service's conservative quarter-degree grid accounting.
+  const auto columns = std::min(
+      1440.0, std::ceil(request.bbox.Width() / .25) + 1);
+  const auto rows =
+      std::ceil((request.bbox.north - request.bbox.south) / .25) + 1;
+  const auto values_per_hour =
+      static_cast<std::uint64_t>(columns * rows) * fields.size();
+  const auto batch_limit = maximum_values.asUInt64() / values_per_hour;
+  if (!batch_limit)
     throw HostedGfsServiceError(
-        "Hosted GFS service returned an invalid status path");
-  while (job["state"] == "queued" || job["state"] == "running") {
-    if (progress) {
-      Json::Value details;
-      details["cycle"] = cycle.CycleTime();
-      details["state"] = job["state"];
-      details["progress"] = job["progress"];
-      progress("creating hosted GFS regional forecast", details);
+        "Hosted GFS area exceeds the service limit for one forecast time");
+
+  auto download_batch = [&](std::size_t first, std::size_t count) {
+    wanted["hours"] = Json::Value(Json::arrayValue);
+    for (std::size_t i = first; i < first + count; ++i)
+      wanted["hours"].append(hours[i]);
+    const auto expected_request = Json::writeString(writer, wanted);
+    auto job = ParseJson(call("/v1/subsets", "POST", expected_request).body);
+    if (!job["status_url"].isString())
+      throw HostedGfsServiceError("Hosted GFS service returned no status path");
+    const auto path = job["status_url"].asString();
+    if (!std::regex_match(path, std::regex("/v1/jobs/[0-9a-f]{32}")))
+      throw HostedGfsServiceError(
+          "Hosted GFS service returned an invalid status path");
+    while (job["state"] == "queued" || job["state"] == "running") {
+      if (progress) {
+        Json::Value details;
+        details["cycle"] = cycle.CycleTime();
+        details["state"] = job["state"];
+        details["progress"] = job["progress"];
+        details["forecastHoursCompleted"] = Json::UInt64(first);
+        details["forecastHoursTotal"] = Json::UInt64(hours.size());
+        progress("creating hosted GFS regional forecast", details);
+      }
+      sleeper(1000);
+      job = ParseJson(call(path, "GET").body);
     }
-    sleeper(1000);
-    job = ParseJson(call(path, "GET").body);
+    if (job["state"] == "failed" && job["error_status"].asInt() == 413)
+      throw HostedGfsBatchTooLarge("Hosted GFS result exceeds the service limit");
+    if (job["state"] != "complete")
+      throw HostedGfsServiceError("Hosted GFS regional generation failed");
+    const auto result = job["result"];
+    if (!result.isObject() || !result["result_url"].isString() ||
+        !result["sha256"].isString())
+      throw HostedGfsServiceError(
+          "Hosted GFS service returned invalid result information");
+    const auto result_path = result["result_url"].asString();
+    const auto sha = result["sha256"].asString();
+    if (!std::regex_match(result_path,
+                          std::regex("/v1/results/[0-9a-f]{64}\\.grib2")) ||
+        !std::regex_match(sha, std::regex("[0-9a-f]{64}")) ||
+        result["request"] != wanted || !result["bytes"].isUInt64() ||
+        result["bytes"].asUInt64() > kMaximumResult)
+      throw HostedGfsServiceError(
+          "Hosted GFS result metadata does not match the request");
+    auto bytes = call(result_path, "GET").body;
+    std::array<unsigned char, crypto_hash_sha256_BYTES> digest{};
+    crypto_hash_sha256(digest.data(), bytes.data(), bytes.size());
+    if (bytes.size() != result["bytes"].asUInt64() ||
+        Hex(digest.data(), digest.size()) != sha)
+      throw HostedGfsServiceError("Hosted GFS result checksum/length mismatch");
+    return bytes;
+  };
+  std::vector<unsigned char> forecast;
+  std::size_t limit = std::min<std::uint64_t>(batch_limit, hours.size());
+  for (std::size_t first = 0; first < hours.size();) {
+    const auto count = std::min(limit, hours.size() - first);
+    try {
+      auto bytes = download_batch(first, count);
+      if (bytes.size() > kMaximumForecast - forecast.size())
+        throw HostedGfsServiceError("Hosted GFS forecast exceeds the download limit");
+      forecast.insert(forecast.end(), bytes.begin(), bytes.end());
+      first += count;
+    } catch (const HostedGfsBatchTooLarge&) {
+      if (count == 1) throw;
+      limit = count / 2;
+    }
   }
-  if (job["state"] != "complete")
-    throw HostedGfsServiceError("Hosted GFS regional generation failed");
-  const auto result = job["result"];
-  if (!result.isObject() || !result["result_url"].isString() ||
-      !result["sha256"].isString())
-    throw HostedGfsServiceError(
-        "Hosted GFS service returned invalid result information");
-  const auto result_path = result["result_url"].asString();
-  const auto sha = result["sha256"].asString();
-  if (!std::regex_match(result_path,
-                        std::regex("/v1/results/[0-9a-f]{64}\\.grib2")) ||
-      !std::regex_match(sha, std::regex("[0-9a-f]{64}")) ||
-      result["request"] != wanted || !result["bytes"].isUInt64() ||
-      result["bytes"].asUInt64() > kMaximumResult)
-    throw HostedGfsServiceError(
-        "Hosted GFS result metadata does not match the request");
-  auto bytes = call(result_path, "GET").body;
-  std::array<unsigned char, crypto_hash_sha256_BYTES> digest{};
-  crypto_hash_sha256(digest.data(), bytes.data(), bytes.size());
-  if (bytes.size() != result["bytes"].asUInt64() ||
-      Hex(digest.data(), digest.size()) != sha)
-    throw HostedGfsServiceError("Hosted GFS result checksum/length mismatch");
-  ValidateHostedGfsBytes(bytes, request, cycle, hours);
-  return bytes;
+  ValidateHostedGfsBytes(forecast, request, cycle, hours);
+  return forecast;
 }
 }  // namespace environmental_grib

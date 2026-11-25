@@ -671,11 +671,15 @@ struct AndroidPassageWeatherDialog::Impl {
       return;
     }
     try {
-      const auto size = eg::EstimateEnvironment(Request(false));
+      const auto request = Request(false);
+      const auto size = eg::EstimateEnvironment(request);
       const auto numeric = size.isMember("decodedBytes") ? "Decoded numeric data: " : "Known numeric data (partial): ";
       QString message = QString(numeric) + QString::number(size["knownDecodedBytes"].asUInt64() / 1048576.0, 'f', 1) + " MiB.";
       if (size.isMember("fileUpperBytes")) message += " File planning upper estimate: " + QString::number(size["fileUpperBytes"].asUInt64() / 1048576.0, 'f', 1) + " MiB.";
       message += " Generation and routing need additional RAM.";
+      if (request.weather_provider == "gfs" && request.step_hours == 1 &&
+          request.hours > 120)
+        message += "\nGFS weather is hourly through forecast hour 120 and 3-hourly after that.";
       estimate->setText(message);
     } catch (const std::exception&) { estimate->setText("Size estimate available when the area, time and source inputs are valid."); }
   }

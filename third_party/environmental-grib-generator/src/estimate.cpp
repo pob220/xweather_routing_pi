@@ -93,18 +93,14 @@ Json::Value EstimateEnvironment(const EnvironmentRequest& r) {
       known("UKV weather", cells(r.weather_grid_spacing_deg), fields, 3);
     } else if (r.weather_provider == "gfs" &&
                (r.weather_preset == "minimal" || r.weather_preset == "routing")) {
-      if (!std::set<int>{1, 3, 6, 12}.contains(r.step_hours) || r.hours > 120)
-        unknown("GFS weather", "Long-lead source cadence requires an inventory.");
-      else {
-        Count fields = 0;
-        for (const auto& [key, value] : GfsVariablesForPreset(r.weather_preset))
-          if (key.starts_with("var_")) ++fields;
-        // NOMADS' quarter-degree subset may align outward at its edges.
-        const Count nx = static_cast<Count>(std::ceil(r.bbox.Width()/0.25)) + 2;
-        const Count ny = static_cast<Count>(std::ceil((r.bbox.north-r.bbox.south)/0.25)) + 2;
-        known("GFS weather", Multiply(nx, ny),
-              Multiply(fields, ForecastHourSequence(r.hours, r.step_hours).size()), 0, true);
-      }
+      Count fields = 0;
+      for (const auto& [key, value] : GfsVariablesForPreset(r.weather_preset))
+        if (key.starts_with("var_")) ++fields;
+      // NOMADS' quarter-degree subset may align outward at its edges.
+      const Count nx = static_cast<Count>(std::ceil(r.bbox.Width()/0.25)) + 2;
+      const Count ny = static_cast<Count>(std::ceil((r.bbox.north-r.bbox.south)/0.25)) + 2;
+      known("GFS weather", Multiply(nx, ny),
+            Multiply(fields, GfsForecastHours(r.hours, r.step_hours).size()), 0, true);
     } else if (r.weather_provider != "none") {
       unknown("weather", "Native grid or selected field/level inventory is needed.");
     }

@@ -46,6 +46,41 @@ Json::Value Parse(const std::string& text) {
 
 int main(int argc, char** argv) {
   try {
+    if (argc == 4 && std::string_view(argv[1]) == "--live-passage") {
+      const std::string cycle = argv[2];
+      const auto output = eg::PathFromUtf8(argv[3]);
+      Check(cycle.size() == 10, "live cycle must be YYYYMMDDHH");
+      eg::GFSRequest request{
+          {-35.0, 6.933, 3.617, 46.542}, output / "weather.grib2", 363};
+      request.date = cycle.substr(0, 8);
+      request.cycle = cycle.substr(8);
+      request.step_hours = 1;
+      request.preset = "routing";
+      request.noaa_unavailable = std::make_shared<std::atomic<bool>>(false);
+      int noaa_calls = 0;
+      auto noaa = [&](const std::string&, double) -> std::vector<unsigned char> {
+        ++noaa_calls;
+        throw eg::HttpDownloadError("Controlled NOMADS rate limit", true, 429);
+      };
+      auto progress = [](const std::string& stage, const Json::Value& details) {
+        if (!details.isMember("progress") ||
+            details["progress"].asInt() % 20 == 0)
+          std::cout << stage << ' ' << details.toStyledString() << std::flush;
+      };
+      const auto weather = eg::GenerateGfs(request, noaa, {}, progress, {},
+                                          eg::BuiltinHostedGfsDownload());
+      request.waves = true;
+      request.step_hours = 3;
+      request.output = output / "waves.grib2";
+      const auto waves = eg::GenerateGfs(request, noaa, {}, progress, {},
+                                        eg::BuiltinHostedGfsDownload());
+      Check(noaa_calls == 1 && weather.message_count == 808 &&
+                waves.message_count == 366,
+            "passage failover lost a field or forecast time");
+      std::cout << "PASS live passage: " << weather.message_count
+                << " weather and " << waves.message_count << " wave messages\n";
+      return 0;
+    }
     if (argc == 3) {
       const std::string cycle = argv[1];
       Check(cycle.size() == 10, "live cycle must be YYYYMMDDHH");
@@ -87,6 +122,14 @@ int main(int argc, char** argv) {
       }
     } cleanup{root};
     const eg::GFSCycle cycle{"20261004", "12"};
+    const auto long_hours = eg::GfsForecastHours(363, 1);
+    Check(long_hours.size() == 202 && long_hours[120] == 120 &&
+              long_hours[121] == 123 && long_hours.back() == 363 &&
+              eg::GfsForecastHours(121, 1).back() == 123 &&
+              eg::GfsForecastHours(120, 1).size() == 121,
+          "GFS hourly request did not preserve the native long-lead cadence");
+    Check(eg::GfsForecastHours(360, 6).size() == 61,
+          "GFS changed an explicitly coarser interval");
     eg::GFSRequest request{{-1, 51, 0, 52}, root / "forecast.grib2", 6};
     request.cycle = cycle.cycle;
     request.date = cycle.date;
@@ -341,6 +384,58 @@ int main(int argc, char** argv) {
                                 [&](int ms) { waited += ms; }) == all &&
               submitted == 2 && waited == 8000,
           "Retry-After or complete hosted protocol failed");
+
+    for (bool reject_large_result : {false, true}) {
+      std::vector<int> collected;
+      std::vector<unsigned char> batch;
+      auto batch_http = [&](const std::string& url, const std::string& method,
+                            const std::string& body, const std::string&, double) {
+        Json::Value value;
+        if (url.ends_with("/v1/capabilities")) {
+          for (int hour : {0, 3, 6})
+            value["coverage"]["2026100412"]["weather"].append(hour);
+          // The 5 by 5 fixture has two fields at each time.
+          value["max_job_values"] = reject_large_result ? 150 : 100;
+          return JsonReply(value);
+        }
+        if (method == "POST") {
+          expected = Parse(body);
+          value["state"] = "running";
+          value["status_url"] = status_path;
+          return JsonReply(value, 202);
+        }
+        if (url.ends_with(status_path)) {
+          if (reject_large_result && expected["hours"].size() > 1) {
+            value["state"] = "failed";
+            value["error_status"] = 413;
+            return JsonReply(value);
+          }
+          Check(expected["hours"].size() <= 2 &&
+                    expected["cycle"].asString() == "2026100412",
+                "fallback request exceeded budget or changed cycle");
+          batch.clear();
+          for (const auto& time : expected["hours"]) {
+            const auto& part = parts.at(time.asInt());
+            collected.push_back(time.asInt());
+            batch.insert(batch.end(), part.begin(), part.end());
+          }
+          crypto_hash_sha256(hash.data(), batch.data(), batch.size());
+          sodium_bin2hex(hex.data(), hex.size(), hash.data(), hash.size());
+          value["state"] = "complete";
+          value["result"]["request"] = expected;
+          value["result"]["result_url"] = result_path;
+          value["result"]["sha256"] = hex.data();
+          value["result"]["bytes"] = Json::UInt64(batch.size());
+          return JsonReply(value);
+        }
+        Check(url.ends_with(result_path), "unexpected batch download path");
+        return eg::HostedHttpReply{200, batch, 0};
+      };
+      Check(eg::DownloadHostedGfs(request, cycle, {0, 3, 6}, {}, batch_http,
+                                  [](int) {}) == all &&
+                collected == std::vector<int>({0, 3, 6}),
+            "batched failover lost or repeated a forecast time");
+    }
     auto wrong = [&](const auto& url, const auto& method, const auto& body,
                      const auto& client, double timeout) {
       auto result = http(url, method, body, client, timeout);
