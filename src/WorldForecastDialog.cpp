@@ -92,8 +92,10 @@ public:
               selected);
     SetSizerAndFit(layout);
 
+#ifndef __WXMSW__
     transferEvents_.Bind(wxEventTypeTag<OCPN_downloadEvent>(wxEVT_DOWNLOAD_EVENT),
                          &WorldDialog::OnTransfer, this);
+#endif
     Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { CloseDialog(); });
     close->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { CloseDialog(); });
     chart_->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) { SetArea(*chartArea_); });
@@ -174,8 +176,10 @@ private:
   void Cancel() {
     if (transfer_ == Transfer::Idle) return;
     transfer_ = Transfer::Idle;
+#ifndef __WXMSW__
     OCPN_cancelDownloadFileBackground(handle_);
     transferEvents_.DeletePendingEvents();
+#endif
     DiscardPartial();
     EnableControls();
   }
@@ -193,10 +197,26 @@ private:
     }
     transfer_ = transfer;
     destination_ = target;
-    handle_ = 0;
     EnableControls();
     SetStatus(transfer == Transfer::Models ? _("Updating the model list…")
                                            : _("Requesting forecast…"));
+#ifdef __WXMSW__
+    // Stock Windows OpenCPN exports the progress-dialog API but does not
+    // provide the download event data symbol in its plugin import library.
+    const auto outcome = OCPN_downloadFile(
+        url, partial_, _("Downloading World forecast"), status_->GetLabelText(),
+        wxNullBitmap, this,
+        OCPN_DLDS_ELAPSED_TIME | OCPN_DLDS_SPEED | OCPN_DLDS_SIZE |
+            OCPN_DLDS_CAN_ABORT | OCPN_DLDS_AUTO_CLOSE,
+        180);
+    if (outcome == OCPN_DL_ABORTED) {
+      Cancel();
+      SetStatus(_("Transfer cancelled."));
+      return;
+    }
+    FinishTransfer(outcome == OCPN_DL_NO_ERROR);
+#else
+    handle_ = 0;
     if (OCPN_downloadFileBackground(url, partial_, &transferEvents_, &handle_) !=
         OCPN_DL_STARTED) {
       transfer_ = Transfer::Idle;
@@ -204,6 +224,7 @@ private:
       EnableControls();
       SetStatus(_("The download could not start. Try again."));
     }
+#endif
   }
 
   void RefreshModels() {
@@ -248,6 +269,7 @@ private:
           wxFileName(folder.GetPath(), filename).GetFullPath());
   }
 
+#ifndef __WXMSW__
   void OnTransfer(OCPN_downloadEvent& event) {
     if (transfer_ == Transfer::Idle) return;
     if (event.getDLEventCondition() == OCPN_DL_EVENT_TYPE_PROGRESS) {
@@ -257,9 +279,13 @@ private:
       return;
     }
     if (event.getDLEventCondition() != OCPN_DL_EVENT_TYPE_END) return;
+    FinishTransfer(event.getDLEventStatus() == OCPN_DL_NO_ERROR);
+  }
+#endif
+
+  void FinishTransfer(bool received) {
     const auto completed = transfer_;
     transfer_ = Transfer::Idle;
-    const bool received = event.getDLEventStatus() == OCPN_DL_NO_ERROR;
     if (completed == Transfer::Models && received) {
       auto models = ReadWorldGribModels(partial_);
       if (!models.empty() && wxRenameFile(partial_, cache_, true)) {
@@ -303,9 +329,11 @@ private:
   xgrib::AreaPreset requestedArea_;
   wxString cache_, partial_, destination_;
   std::optional<xgrib::AreaPreset> chartArea_;
-  wxEvtHandler transferEvents_;
   Transfer transfer_ = Transfer::Idle;
+#ifndef __WXMSW__
+  wxEvtHandler transferEvents_;
   long handle_ = 0;
+#endif
 };
 
 }  // namespace

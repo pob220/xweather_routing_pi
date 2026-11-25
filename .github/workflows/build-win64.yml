@@ -36,7 +36,7 @@ jobs:
       VCPKG_DISABLE_METRICS: '1'
       # UI passes reuse a qualified helper only after verifying its exact inputs.
       # Set to 1 when intentionally rebuilding and requalifying that helper.
-      WR_REBUILD_GENERATOR: '1'
+      WR_REBUILD_GENERATOR: '0'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,14 +79,14 @@ jobs:
         if: env.WR_REBUILD_GENERATOR != '1'
         shell: pwsh
         run: |
-          git diff --exit-code 1cb4ab91ba788375bacf8b93d7ede04ea3327fc6 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
+          git diff --exit-code 72fb9584b785151b862e27efe7635341b99bd9c7 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
           if ($LASTEXITCODE -ne 0) { throw 'Helper inputs changed; rebuild and qualify the scientific helper before reuse' }
       - name: Retrieve qualified unchanged helper
         if: env.WR_REBUILD_GENERATOR != '1'
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 43622382776
+          run-id: 45719482076
           name: windows-generator-stage
           path: .windows-deps/stage
       - name: Verify staged helper source provenance
@@ -104,7 +104,7 @@ jobs:
           qualified_crlf = {p.relative_to(source).as_posix(): hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')).hexdigest() for p in source.rglob('*') if p.is_file()}
           if actual != staged['source_sha256'] and qualified_crlf != staged['source_sha256']:
               raise RuntimeError('Qualified helper source hashes do not match this checkout')
-          print('Using unchanged helper qualified by native run 43622382776; packaged runtime checks run again with each new plugin')
+          print('Using unchanged helper qualified by native run 45719482076; packaged runtime checks run again with each new plugin')
       - uses: actions/upload-artifact@v4
         with:
           name: windows-generator-stage

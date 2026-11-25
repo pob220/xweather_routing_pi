@@ -44,14 +44,14 @@ jobs:
         if: inputs.use_current_helper != true
         shell: pwsh
         run: |
-          git diff --exit-code 1cb4ab91ba788375bacf8b93d7ede04ea3327fc6 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
+          git diff --exit-code 72fb9584b785151b862e27efe7635341b99bd9c7 HEAD -- third_party/environmental-grib-generator ci/windows-generator ci/vcpkg-overlay-ports ci/vcpkg-triplets ci/build-windows-generator.py ci/windows_build_tools.py
           if ($LASTEXITCODE -ne 0) { throw 'Scientific helper inputs changed; requalify before reuse' }
       - name: Retrieve qualified independent AMD64 helper
         if: inputs.use_current_helper != true
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 43622382776
+          run-id: 45719482076
           name: windows-generator-stage
           path: .windows-deps/stage
       - name: Retrieve AMD64 helper built from this checkout
