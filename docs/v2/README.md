@@ -1,8 +1,11 @@
-# xWeatherRouting 2.11.2 improved UX development
+# xWeatherRouting 2.11.3 improved UX development
 
 The default `develop` branch is the improved UX development line, currently
-**2.11.2**. The separate [production `master` branch](https://github.com/pob220/weather_routing_pi/tree/master)
-is **WeatherRouting 1.44.2**. Version 2 retains separate preferences and user data.
+**2.11.3**. The separate [production `master` branch](https://github.com/pob220/weather_routing_pi/tree/master)
+is **WeatherRouting 1.44.3**. Version 2 retains separate preferences and user data.
+
+2.11.3 fixes downloading the optional High and Full GSHHG datasets on a fresh profile.
+The plugin includes Crude, Low and Intermediate for offline installation.
 
 The [2.11.1 developer test release](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
 contains the published Plugin Manager packages and qualification summary for 2.11.1. It

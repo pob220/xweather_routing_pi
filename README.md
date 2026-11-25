@@ -1,14 +1,14 @@
 # xWeatherRouting improved UX development
 
 This repository's default `develop` branch is the **improved UX development
-2.x line**, currently **2.11.2**. It provides the passage-planning interface,
+2.x line**, currently **2.11.3**. It provides the passage-planning interface,
 incorporated GRIB loader and generator, bundled Climatology, and separate
 preferences and user data.
 
 | Line | Current version | Source |
 | --- | --- | --- |
-| Weather Routing production | **1.44.2** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
-| xWeatherRouting improved UX development | **2.11.2** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
+| Weather Routing production | **1.44.3** | [pob220/weather_routing_pi — master](https://github.com/pob220/weather_routing_pi/tree/master) |
+| xWeatherRouting improved UX development | **2.11.3** | [pob220/xweather_routing_pi — develop](https://github.com/pob220/xweather_routing_pi/tree/develop) |
 
 [Download the published 2.11.1 developer test packages](https://github.com/pob220/xweather_routing_pi/releases/tag/developer-test-2.11.1-20261124)
 for Apple Silicon, Debian 12, Debian 13, Windows x64 and 32-bit OpenCPN on
@@ -20,6 +20,9 @@ Production 1.x retains the established Weather Routing interface and uses
 external GRIB or xGRIB and Climatology providers. Its 1.44.2 integration into
 Rick's `master` is tracked in [PR #740](https://github.com/rgleason/weather_routing_pi/pull/740).
 The development packages are a separate line from the production catalogue.
+
+2.11.3 fixes downloading the optional High and Full GSHHG datasets on a fresh profile.
+The plugin includes Crude, Low and Intermediate for offline installation.
 
 Both lines include Meridian as an optional routing method. Ordinary GSHHG
 shoreline routing works on stock OpenCPN; chart-backed depth and hazard checks
