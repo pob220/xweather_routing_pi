@@ -2223,7 +2223,7 @@ bool WeatherRouting::ServiceGribTimelineRequest(
   if (m_PassageWeather->Loaded()) {
     try {
       auto frame = m_PassageWeather->Frame(time.GetTicks());
-      cache->PublishFrame(*request, frame.get());
+      cache->PublishFrame(*request, frame.get(), m_PassageWeather->LastWindTime());
     } catch (const std::bad_alloc&) {
       cache->PublishOutOfMemory(*request);
     }
@@ -2254,8 +2254,9 @@ bool WeatherRouting::ServiceGribTimelineRequest(
   return true;
 }
 
-void WeatherRouting::HandleGribTimelineFrame(const wxString& requestToken,
-                                             GribRecordSet* frame) {
+void WeatherRouting::HandleGribTimelineFrame(
+    const wxString& requestToken, GribRecordSet* frame,
+    std::optional<std::int64_t> windForecastEnd) {
   std::optional<PendingGribRequest> pending;
   {
     std::lock_guard<std::mutex> lock(m_GribRequestMutex);
@@ -2269,7 +2270,7 @@ void WeatherRouting::HandleGribTimelineFrame(const wxString& requestToken,
     m_PendingGribRequests.erase(found);
   }
 
-  pending->cache->PublishFrame(pending->request, frame);
+  pending->cache->PublishFrame(pending->request, frame, windForecastEnd);
   wxLogMessage(
       "WR_GRIB_BROKER delivered token=%s timeline_key=%lld valid=%d",
       requestToken, static_cast<long long>(pending->request.key),
