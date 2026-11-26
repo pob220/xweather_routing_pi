@@ -184,8 +184,9 @@ jobs:
       - checkout
       - prepare-windows-checkout
       - run:
-          name: Stage qualified unchanged AMD64 GRIB helper
-          command: python ci/stage-qualified-windows-generator.py
+          name: Prepare the AMD64 GRIB helper for the Win32 plugin
+          command: python ci/stage-qualified-windows-generator.py --build-if-changed
+          no_output_timeout: 45m
       - run:
           shell: powershell.exe -ExecutionPolicy Bypass
           name: Native Windows build, tests and package

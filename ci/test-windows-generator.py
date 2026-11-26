@@ -59,6 +59,11 @@ def test(stage, output):
 
     command('capabilities', 'capabilities')
     command('inspect-wind', 'inspect-grib', ROOT / 'ci/testdata/irish-sea-uniform-wind.grb')
+    ccsds = command('inspect-ccsds', 'inspect-grib', ROOT / 'ci/testdata/farallon-ccsds.grb2')
+    messages = ccsds['messages']
+    if not messages or any(message['packing_type'] != 'grid_ccsds' or
+                           not message.get('values', {}).get('count') for message in messages):
+        raise RuntimeError('The packaged GRIB helper could not decode CCSDS forecast values')
     # Writes a new GRIB using bundled ecCodes definitions/samples, no network.
     subprocess.run([sys.executable, str(ROOT / 'third_party/environmental-grib-generator/tests/preflight_cli_tests.py'),
                     str(helper)], env=env, cwd=output, check=True, timeout=90)
@@ -77,7 +82,7 @@ def test(stage, output):
     command('inspect-generated', 'inspect-grib', grib)
     (output / 'acceptance.json').write_text(json.dumps({
         'app_local_runtime': True, 'build_dependencies_on_path': False,
-        'capabilities': True, 'read_grib': True, 'generate_grib_offline': True,
+        'capabilities': True, 'read_grib': True, 'read_ccsds': True, 'generate_grib_offline': True,
         'dll_imports': imports,
     }, indent=2) + '\n', encoding='utf-8')
 

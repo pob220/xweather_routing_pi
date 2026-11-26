@@ -93,7 +93,7 @@ set(LONG_DESCRIPTION
 
 set(VERSION_MAJOR "2")
 set(VERSION_MINOR "13")
-set(VERSION_PATCH "1")
+set(VERSION_PATCH "2")
 set(VERSION_TWEAK "0")
 # Keep all five approved source archives for verification and regression tests.
 # Packages ship only Crude, Low and Intermediate; High and Full are optional
