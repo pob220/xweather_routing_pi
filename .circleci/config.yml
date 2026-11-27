@@ -30,6 +30,21 @@ commands:
           name: Refresh frozen source bytes
           command: python ci/prepare-windows-checkout.py
 
+  run-amd64-helper-step:
+    parameters:
+      name: {type: string}
+      script: {type: string}
+    steps:
+      - run:
+          name: << parameters.name >>
+          shell: cmd.exe
+          command: |
+            call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+            if errorlevel 1 exit /b 1
+            python << parameters.script >>
+            exit /b %errorlevel%
+          no_output_timeout: 45m
+
   retain-artifacts:
     parameters:
       target: {type: string}
@@ -183,10 +198,9 @@ jobs:
     steps:
       - checkout
       - prepare-windows-checkout
-      - run:
+      - run-amd64-helper-step:
           name: Prepare the AMD64 GRIB helper for the Win32 plugin
-          command: python ci/stage-qualified-windows-generator.py --build-if-changed
-          no_output_timeout: 45m
+          script: ci/stage-qualified-windows-generator.py --build-if-changed
       - run:
           shell: powershell.exe -ExecutionPolicy Bypass
           name: Native Windows build, tests and package
@@ -196,9 +210,9 @@ jobs:
             cmd.exe /d /s /c "call ci\circleci-build-msvc.bat"
             exit $LASTEXITCODE
           no_output_timeout: 45m
-      - run:
+      - run-amd64-helper-step:
           name: Qualify Win32 plugin and independent helper
-          command: python ci/qualify-windows32-v2.py
+          script: ci/qualify-windows32-v2.py
       - run:
           name: Verify Windows x86 package ABI
           command: python ci/verify-package-abi.py artifacts/windows-x86/package --target windows-x86
