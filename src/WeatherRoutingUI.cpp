@@ -3135,15 +3135,6 @@ ConfigurationDialogBase::ConfigurationDialogBase(wxWindow* parent,
   moveRow(m_sDepartureTimeOptimizationConcurrentRoutes, resources);
   moveRow(m_sChartSafetyRamCacheMiB, resources);
   moveRow(m_cIntegrator, resources);
-  // One visible search-mode selector; the retained compact selector still
-  // participates in existing data bindings and compatibility checks.
-  m_cBasicRoutingMode->Hide();
-  if (auto* source = m_cRoutingEngine->GetContainingSizer()) source->Detach(m_cRoutingEngine);
-  m_cRoutingEngine->Reparent(engineBox->GetStaticBox());
-  for (auto* child : engineSettingsBox->GetStaticBox()->GetChildren())
-    if (auto* label = wxDynamicCast(child, wxStaticText))
-      if (label->GetLabel() == _("Routing method")) label->SetLabel(_("Methods to use"));
-  engineBox->Insert(0, m_cRoutingEngine, 0, wxEXPAND | wxALL, 5);
   auto* weatherOptions = new wxStaticBoxSizer(wxVERTICAL, weatherPage,
                                               _("Weather adjustments"));
   weatherPage->GetSizer()->Add(weatherOptions, 0, wxEXPAND | wxALL, 8);

@@ -3003,9 +3003,18 @@ bool ConfigurationDialog::RunWorkspaceHostContract() {
   for (auto* control : std::vector<wxWindow*>{m_cbDetectLand, m_cbDetectBoundary,
       m_cbUseExperimentalChartSafety, m_cbEnforceExperimentalChartSafety,
       m_sSafetyMarginLand, m_sMinimumDepthMeters, m_cbRequireWaveCoverage}) passed &= under(control, safetyPage);
-  for (auto* control : std::vector<wxWindow*>{m_cRoutingEngine, m_cbAutomaticAdaptiveSettings,
+  for (auto* control : std::vector<wxWindow*>{m_cBasicRoutingMode, m_cRoutingEngine, m_cbAutomaticAdaptiveSettings,
       m_sTimeStepHours, m_sTimeStepMinutes, m_sByDegrees,
       m_sMainGribTimelineCacheMiB, m_sQuickGribTimelineCacheMiB, m_sQuickMemoryBudgetMiB}) passed &= under(control, enginePage);
+  const auto* searchBox = wxDynamicCast(m_cBasicRoutingMode->GetParent(), wxStaticBox);
+  passed &= searchBox && searchBox->GetLabel() == _("Routing search") &&
+      m_cRoutingEngine->GetParent() != searchBox &&
+      m_cBasicRoutingMode->GetCount() == 2 &&
+      m_cBasicRoutingMode->GetString(0) == _("Auto") &&
+      m_cBasicRoutingMode->GetString(1) == _("All (slow)");
+#ifndef __OCPN__ANDROID__
+  passed &= m_cBasicRoutingMode->IsShown();
+#endif
   for (size_t i = 0; i < m_notebook7->GetPageCount(); ++i) {
     m_notebook7->SetSelection(i); Layout();
     const auto c = route->GetConfiguration();
