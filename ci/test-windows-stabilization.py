@@ -48,6 +48,7 @@ def test(host, output, forecast):
     user32.EnumWindows.argtypes = (callback, w.LPARAM)
     user32.EnumChildWindows.argtypes = (w.HWND, callback, w.LPARAM)
     user32.GetWindowTextW.argtypes = (w.HWND, w.LPWSTR, ctypes.c_int)
+    user32.GetClassNameW.argtypes = (w.HWND, w.LPWSTR, ctypes.c_int)
     user32.GetWindowThreadProcessId.argtypes = (w.HWND, ctypes.POINTER(w.DWORD))
     user32.IsWindowVisible.argtypes = (w.HWND,)
     user32.IsWindowEnabled.argtypes = (w.HWND,)
@@ -82,8 +83,10 @@ def test(host, output, forecast):
 
         @callback
         def visit(child, _):
-            if (user32.IsWindowVisible(child) and user32.IsWindowEnabled(child)
-                    and label(child) == label_text):
+            name = ctypes.create_unicode_buffer(128)
+            user32.GetClassNameW(child, name, len(name))
+            if (name.value.lower() == 'button' and user32.IsWindowVisible(child)
+                    and user32.IsWindowEnabled(child) and label(child) == label_text):
                 found.append(child)
             return True
 
