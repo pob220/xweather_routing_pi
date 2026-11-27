@@ -1,5 +1,6 @@
 """Exercise the packaged 2.x planner with saved data in a native Windows host."""
 import argparse
+import configparser
 import ctypes
 from ctypes import wintypes
 import json
@@ -34,9 +35,15 @@ def test(host, output, forecast):
     profile.mkdir(parents=True)
     private.mkdir()
     make_waypoints(profile / 'navobj.xml')
-    config = (host / 'opencpn.ini').read_text(encoding='ascii')
-    config += 'PassageGribFile=' + forecast.as_posix() + '\n'
-    (profile / 'opencpn.ini').write_text(config, encoding='utf-8')
+    config = configparser.RawConfigParser(strict=False)
+    config.optionxform = str
+    config.read(host / 'opencpn.ini', encoding='utf-8-sig')
+    section = 'PlugIns/xWeatherRouting2'
+    if not config.has_section(section):
+        config.add_section(section)
+    config.set(section, 'PassageGribFile', forecast.as_posix())
+    with (profile / 'opencpn.ini').open('w', encoding='utf-8') as stream:
+        config.write(stream, space_around_delimiters=False)
     ET.ElementTree(ET.Element('OpenCPNWeatherRoutingConfiguration',
                               version='1.10', creator='Responsiveness test')).write(
         private / 'WeatherRoutingConfiguration.xml',
