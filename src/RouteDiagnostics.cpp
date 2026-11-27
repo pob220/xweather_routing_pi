@@ -153,6 +153,10 @@ void Warning(RouteDiagnosticReport& report, const wr::RoutingWarning& warning) {
       title = _("Some ensemble evaluations did not meet the target"); next = _("Review achieved feasibility and member failures."); break;
     case wr::RoutingWarningCode::CoastalEndpointLeeway:
       title = _("An endpoint used reduced shore-buffer clearance"); next = _("Inspect the approach or departure. Endpoint access does not permit crossing modelled land."); break;
+    case wr::RoutingWarningCode::ProlongedLocalSailing:
+      title = _("The route repeatedly sails in a small area");
+      next = _("Compare another departure time and check forecast coverage through arrival.");
+      break;
   }
   report.Add({"warning." + std::to_string(static_cast<int>(warning.code)),
       severity, title, wxString::FromUTF8(warning.message.c_str()), next});

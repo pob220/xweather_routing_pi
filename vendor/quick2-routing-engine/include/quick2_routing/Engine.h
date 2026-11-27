@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <functional>
 #include "supercpn/weather_routing/Engine.h"
 
 namespace quick2_routing {
@@ -19,6 +20,8 @@ struct Options {
   std::uint64_t maximumProposals{2000000};
   std::uint64_t maximumLineageNodes{50000};
   unsigned maximumValidatedCandidates{8};
+  // An optional regional cap computed by the adaptive policy.
+  std::function<wr::Duration(wr::GeoPoint)> localStepCap;
 };
 struct Diagnostics {
   std::uint64_t proposals{}, exactMotions{}, preparedMotions{}, duplicateCells{},

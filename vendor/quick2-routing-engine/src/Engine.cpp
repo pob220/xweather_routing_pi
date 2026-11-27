@@ -18,6 +18,9 @@ namespace {
 namespace in = wr::internal;
 using Clock = std::chrono::steady_clock;
 constexpr std::uint32_t noParent = ~std::uint32_t{};
+constexpr double sailedNmWeight = 480;
+constexpr double turnDegreeWeight = 24;
+constexpr double paceDeviationNmWeight = 1000;
 double ms(Clock::time_point t) {
   return std::chrono::duration<double, std::milli>(Clock::now() - t).count();
 }
@@ -134,9 +137,23 @@ std::vector<wr::RouteLeg> traceback(
 }
 }  // namespace
 
-Result Engine::route(const wr::RoutingRequest& request,
+static Result search(const wr::RoutingRequest& request,
                      const wr::RoutingEnvironment& environment,
-                     const Options& options) const {
+                     const Options& options, wr::Duration pacedDuration = {}) {
+  const bool paced = pacedDuration > wr::Duration::zero();
+  const double passageNm =
+      paced ? wr::distanceNm(request.start, request.destination) : 0;
+  const auto distanceRank = [&](wr::GeoPoint p, wr::TimePoint time) {
+    const auto remainingNm = wr::distanceNm(p, request.destination);
+    if (!paced) return remainingNm * 600;
+    // Use the original passage time as a guide for spreading progress
+    // over the available sailing time. Motion and arrival remain weather
+    // checked, so this can also take a feasible earlier approach.
+    const auto remainingTime = std::clamp(pacedDuration - (time - request.departure),
+                                         wr::Duration::zero(), pacedDuration);
+    const double pacedNm = passageNm * remainingTime.count() / pacedDuration.count();
+    return std::abs(remainingNm - pacedNm) * paceDeviationNmWeight;
+  };
   Result output;
   auto& r = output.route;
   auto& d = output.frontier;
@@ -217,16 +234,22 @@ Result Engine::route(const wr::RoutingRequest& request,
     return completeOutput();
   }
   std::vector<Node> history;
+  std::vector<double> sailedNm;
   std::vector<std::uint32_t> frontier, next;
   std::vector<Proposal> proposals;
   try {
     history.reserve(maxNodes);
+    if (paced) {
+      sailedNm.reserve(maxNodes);
+      sailedNm.push_back(0);
+    }
     frontier.reserve(options.frontierLimit);
     next.reserve(options.frontierLimit);
     proposals.reserve(options.frontierLimit * (options.headings + 2));
     d.searchArrayBytes = maxNodes * sizeof(Node) +
                          2 * options.frontierLimit * sizeof(std::uint32_t) +
-                         proposals.capacity() * sizeof(Proposal);
+                         proposals.capacity() * sizeof(Proposal) +
+                         sailedNm.capacity() * sizeof(double);
     Node root;
     root.state.position = request.start;
     root.state.time = request.departure;
@@ -249,16 +272,14 @@ Result Engine::route(const wr::RoutingRequest& request,
       ++d.layers;
       d.peakFrontier =
           std::max(d.peakFrontier, static_cast<unsigned>(frontier.size()));
+      const auto frontierRank = [&](std::uint32_t id) {
+        const auto& node = history[id];
+        return std::tuple{node.cost + (paced ? sailedNm[id] * sailedNmWeight : 0) +
+                              distanceRank(node.state.position, node.state.time),
+                          id};
+      };
       std::sort(frontier.begin(), frontier.end(), [&](auto a, auto b) {
-        return std::tuple{
-                   history[a].cost + wr::distanceNm(history[a].state.position,
-                                                    request.destination) *
-                                         600,
-                   a} < std::tuple{history[b].cost +
-                                       wr::distanceNm(history[b].state.position,
-                                                      request.destination) *
-                                           600,
-                                   b};
+        return frontierRank(a) < frontierRank(b);
       });
       preview.publish([&] {
         wr::RoutingPreview view;
@@ -283,29 +304,41 @@ Result Engine::route(const wr::RoutingRequest& request,
       if (request.partials) {
         for (auto id : frontier) {
           const auto& state = history[id].state;
-          request.partials->offer(state.position, state.time, "Quick2 frontier", [&] {
-            std::vector<Node> path;
-            for (auto i = id; i != noParent; i = history[i].parent) {
-              if ((path.size() + 1) * sizeof(Node) > request.partials->byteBudget()) return wr::PartialRouteTrace{};
-              path.push_back(history[i]);
-            }
-            std::reverse(path.begin(), path.end());
-            std::size_t bytes = sizeof(wr::PartialRouteTrace) + path.capacity() * sizeof(Node);
-            for (std::size_t i = 0; i < path.size(); ++i) {
-              path[i].parent = i ? static_cast<std::uint32_t>(i - 1) : noParent;
-              bytes += path[i].state.profileIdentity.capacity();
-            }
-            return wr::PartialRouteTrace{bytes, [path = std::move(path)](
-                const wr::RoutingRequest& replayRequest,
-                const wr::RoutingEnvironment& replayEnvironment,
-                wr::RoutingDiagnostics& diagnostics) {
-              wr::PolarPerformanceModel fallback(replayRequest.vessel);
-              const auto& performance = replayEnvironment.performance
-                  ? *replayEnvironment.performance : fallback;
-              return traceback(replayRequest, replayEnvironment, performance,
-                  path, static_cast<std::uint32_t>(path.size() - 1), diagnostics);
-            }};
-          }, wr::PartialRoutePhase::Beam);
+          request.partials->offer(
+              state.position, state.time, "Quick2 frontier",
+              [&] {
+                std::vector<Node> path;
+                for (auto i = id; i != noParent; i = history[i].parent) {
+                  if ((path.size() + 1) * sizeof(Node) >
+                      request.partials->byteBudget())
+                    return wr::PartialRouteTrace{};
+                  path.push_back(history[i]);
+                }
+                std::reverse(path.begin(), path.end());
+                std::size_t bytes = sizeof(wr::PartialRouteTrace) +
+                                    path.capacity() * sizeof(Node);
+                for (std::size_t i = 0; i < path.size(); ++i) {
+                  path[i].parent =
+                      i ? static_cast<std::uint32_t>(i - 1) : noParent;
+                  bytes += path[i].state.profileIdentity.capacity();
+                }
+                return wr::PartialRouteTrace{
+                    bytes, [path = std::move(path)](
+                               const wr::RoutingRequest& replayRequest,
+                               const wr::RoutingEnvironment& replayEnvironment,
+                               wr::RoutingDiagnostics& diagnostics) {
+                      wr::PolarPerformanceModel fallback(replayRequest.vessel);
+                      const auto& performance =
+                          replayEnvironment.performance
+                              ? *replayEnvironment.performance
+                              : fallback;
+                      return traceback(
+                          replayRequest, replayEnvironment, performance, path,
+                          static_cast<std::uint32_t>(path.size() - 1),
+                          diagnostics);
+                    }};
+              },
+              wr::PartialRoutePhase::Beam);
         }
       }
       if (request.progress)
@@ -372,10 +405,22 @@ Result Engine::route(const wr::RoutingRequest& request,
       next.clear();
       const auto proposalStart = Clock::now();
       wr::Duration base = options.step;
-      if (layer < 2 || nearest < 15) base = std::min(base, wr::Duration{900});
+      if (layer < 2 || (!paced && nearest < 15))
+        base = std::min(base, wr::Duration{900});
       for (auto id : frontier) {
         const auto& node = history[id];
         const auto& s = node.state;
+        // Refine the approach locally during the retry. A close label
+        // does not slow every offshore label down to the terminal cadence.
+        const auto localBase =
+            paced && wr::distanceNm(s.position, request.destination) < 15
+                ? std::min(base, wr::Duration{900}) : base;
+        const wr::Duration nodeBase =
+            options.localStepCap
+                ? std::min(localBase,
+                           std::clamp(options.localStepCap(s.position),
+                                      wr::Duration{60}, wr::Duration{21600}))
+                : localBase;
         const auto resolved =
             in::resolveEnvironment(request, environment, s.position, s.time);
         ++r.diagnostics.weatherSamples;
@@ -400,7 +445,9 @@ Result Engine::route(const wr::RoutingRequest& request,
           }
           if (++d.proposals > generatedLimit) {
             r.status = wr::RoutingStatus::ResourceLimitReached;
-            r.message = "Quick2 search allowance exhausted before finding a validated route";
+            r.message =
+                "Quick2 search allowance exhausted before finding a validated "
+                "route";
             return completeOutput();
           }
           const double heading = h < options.headings
@@ -432,7 +479,7 @@ Result Engine::route(const wr::RoutingRequest& request,
           const double costRate =
               options.objective == Objective::Comfortable ? exposure : 1;
           const auto step = wr::Duration{std::max<std::int64_t>(
-              60, static_cast<std::int64_t>(base.count() / costRate))};
+              60, static_cast<std::int64_t>(nodeBase.count() / costRate))};
           if (s.time + step >
               request.departure + request.limits.maximumRouteDuration)
             continue;
@@ -443,11 +490,16 @@ Result Engine::route(const wr::RoutingRequest& request,
               wr::distanceNm(request.start, position) >
                   request.limits.maximumExplorationDistanceNm)
             continue;
-          proposals.push_back(
-              {id, heading,
-               node.cost + step.count() * costRate +
-                   wr::distanceNm(position, request.destination) * 600,
-               costRate, step, position});
+          double score = node.cost + step.count() * costRate;
+          if (paced) {
+            const double turn = std::abs(
+                wr::angularDifferenceDegrees(heading, s.incomingHeading));
+            score += sailedNmWeight * (sailedNm[id] + sog * step.count() / 3600.) +
+                     turnDegreeWeight * turn;
+          }
+          proposals.push_back({id, heading,
+                               score + distanceRank(position, s.time + step),
+                               costRate, step, position});
         }
       }
       std::sort(proposals.begin(), proposals.end(),
@@ -474,6 +526,9 @@ Result Engine::route(const wr::RoutingRequest& request,
             return false;
         if (history.size() >= maxNodes) return false;
         const auto id = static_cast<std::uint32_t>(history.size());
+        if (paced)
+          sailedNm.push_back(sailedNm[p.parent] + wr::distanceNm(
+              history[p.parent].state.position, motion.state.position));
         history.push_back({std::move(motion.state), p.parent, p.heading,
                            history[p.parent].cost + p.duration.count() * p.rate,
                            p.duration, wait});
@@ -590,14 +645,17 @@ Result Engine::route(const wr::RoutingRequest& request,
       frontier.swap(next);
       if (history.size() >= maxNodes) {
         r.status = wr::RoutingStatus::ResourceLimitReached;
-        r.message = "Quick2 retained-state allowance exhausted before finding a validated route";
+        r.message =
+            "Quick2 retained-state allowance exhausted before finding a "
+            "validated route";
         return completeOutput();
       }
     }
     r.status = lastFailure == wr::RoutingStatus::Complete
                    ? wr::RoutingStatus::SearchIncomplete
                    : lastFailure;
-    r.message = "Quick2 search did not find a validated route within its allowance";
+    r.message =
+        "Quick2 search did not find a validated route within its allowance";
   } catch (const std::bad_alloc&) {
     r.status = wr::RoutingStatus::ResourceLimitReached;
     r.message = "Frontier allocation failed";
@@ -609,5 +667,122 @@ Result Engine::route(const wr::RoutingRequest& request,
   r.diagnostics.generatedStates = d.proposals;
   r.diagnostics.retainedStates = history.size();
   return completeOutput();
+}
+namespace {
+// Count the union of windows spent sailing repeatedly in a small area.
+// A normal tack, a long coastal detour, and permitted stationary waiting
+// alone cannot qualify.
+wr::Duration confinedSailing(const std::vector<wr::RouteLeg>& legs) {
+  wr::Duration repeated{};
+  std::size_t countedThrough = 0;
+  for (std::size_t i = 0; i < legs.size(); ++i) {
+    const auto origin = legs[i].start;
+    const auto start = legs[i].startTime;
+    double sailed = 0;
+    wr::Duration moving{};
+    for (std::size_t j = i; j < legs.size(); ++j) {
+      const auto& leg = legs[j];
+      const auto duration = leg.endTime - start;
+      if (duration > std::chrono::hours{9}) break;
+      const double displacement = wr::distanceNm(origin, leg.end);
+      if (displacement > 10) break;
+      if (!leg.stationaryWait) {
+        sailed += wr::distanceNm(leg.start, leg.end);
+        moving += leg.endTime - leg.startTime;
+      }
+      if (duration < std::chrono::hours{6} || moving < std::chrono::hours{5} ||
+          sailed < 15 || displacement > 4 || j < countedThrough)
+        continue;
+      for (std::size_t k = std::max(i, countedThrough); k <= j; ++k)
+        if (!legs[k].stationaryWait)
+          repeated += legs[k].endTime - legs[k].startTime;
+      countedThrough = j + 1;
+    }
+  }
+  return repeated;
+}
+}  // namespace
+
+Result Engine::route(const wr::RoutingRequest& request,
+                     const wr::RoutingEnvironment& environment,
+                     const Options& options) const {
+  auto result = search(request, environment, options);
+  if (!result.route.validation.passed || options.objective != Objective::Fastest)
+    return result;
+
+  const auto repeated = confinedSailing(result.route.legs);
+  if (repeated < std::chrono::hours{12}) return result;
+
+  const auto limit =
+      std::min(options.maximumProposals, request.limits.maximumGeneratedStates);
+  const auto spent = result.frontier.proposals;
+  if (limit > spent && limit - spent > 1 &&
+      options.maximumValidatedCandidates > result.frontier.validatedCandidates &&
+      !request.cancellation.cancelled()) {
+    auto settings = options;
+    settings.frontierLimit = std::min(64U, options.frontierLimit);
+    settings.headings = std::min(64U, options.headings);
+    // Search counts the first proposal rejected at its limit, too.
+    settings.maximumProposals = std::min<std::uint64_t>(1700000, limit - spent - 1);
+    settings.maximumValidatedCandidates -= result.frontier.validatedCandidates;
+    auto retryRequest = request;
+    retryRequest.cancellation =
+        request.cancellation.bounded(Clock::now() + std::chrono::seconds{12}, {});
+    retryRequest.preview = {};
+    retryRequest.progress = {};
+    retryRequest.partials.reset();
+    auto retry = search(retryRequest, environment, settings,
+                        result.route.metrics.elapsed);
+
+    const auto& originalUsage = result.route.validation.environment;
+    const auto& retryUsage = retry.route.validation.environment;
+    const bool improved = retry.route.validation.passed &&
+        retry.route.metrics.elapsed <= result.route.metrics.elapsed &&
+        retry.route.metrics.distanceNm < result.route.metrics.distanceNm &&
+        retryUsage.missingWaveDuration <= originalUsage.missingWaveDuration &&
+        retryUsage.estimatedWaveDuration <= originalUsage.estimatedWaveDuration &&
+        retryUsage.climatologyWindDuration <= originalUsage.climatologyWindDuration &&
+        retryUsage.currentAssumedZeroDuration <= originalUsage.currentAssumedZeroDuration &&
+        confinedSailing(retry.route.legs) < std::chrono::hours{6};
+
+    auto& chosen = improved ? retry : result;
+    const auto& other = improved ? result : retry;
+    in::mergeEvaluationDiagnostics(chosen.route.diagnostics, other.route.diagnostics);
+    chosen.route.diagnostics.validationSamples += other.route.diagnostics.validationSamples;
+    chosen.route.diagnostics.waitStates += other.route.diagnostics.waitStates;
+    chosen.frontier.proposals += other.frontier.proposals;
+    chosen.frontier.exactMotions += other.frontier.exactMotions;
+    chosen.frontier.preparedMotions += other.frontier.preparedMotions;
+    chosen.frontier.duplicateCells += other.frontier.duplicateCells;
+    chosen.frontier.frontierTruncations += other.frontier.frontierTruncations;
+    chosen.frontier.lineageNodes = std::max(chosen.frontier.lineageNodes, other.frontier.lineageNodes);
+    chosen.frontier.searchArrayBytes = std::max(chosen.frontier.searchArrayBytes, other.frontier.searchArrayBytes);
+    chosen.frontier.layers += other.frontier.layers;
+    chosen.frontier.peakFrontier = std::max(chosen.frontier.peakFrontier, other.frontier.peakFrontier);
+    chosen.frontier.validatedCandidates += other.frontier.validatedCandidates;
+    chosen.frontier.proposalMs += other.frontier.proposalMs;
+    chosen.frontier.materializeMs += other.frontier.materializeMs;
+    chosen.frontier.validationMs += other.frontier.validationMs;
+    chosen.route.diagnostics.generatedStates = chosen.frontier.proposals;
+    chosen.route.diagnostics.retainedStates = chosen.frontier.lineageNodes;
+    if (request.cancellation.cancelled()) {
+      chosen.route.status = wr::RoutingStatus::Cancelled;
+      chosen.route.legs.clear();
+      chosen.route.metrics = {};
+      chosen.route.validation = {};
+      chosen.route.message = "Routing cancelled";
+      return std::move(chosen);
+    }
+    if (improved) {
+      chosen.route.diagnostics.stageStopReasons.push_back(
+          "Quick2 replaced prolonged local loops with a shorter validated track");
+      return retry;
+    }
+  }
+  result.route.warnings.push_back({wr::RoutingWarningCode::ProlongedLocalSailing,
+      "Quick2 found " + std::to_string(
+          std::chrono::duration_cast<std::chrono::hours>(repeated).count()) +
+      " hours of repeated sailing in a small area"});
+  return result;
 }
 }  // namespace quick2_routing

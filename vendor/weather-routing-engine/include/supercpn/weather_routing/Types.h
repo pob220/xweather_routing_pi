@@ -414,7 +414,8 @@ enum class RoutingWarningCode {
   SearchPruned,
   SearchIncomplete,
   EnsembleMemberFailed,
-  CoastalEndpointLeeway
+  CoastalEndpointLeeway,
+  ProlongedLocalSailing
 };
 
 struct RoutingWarning {

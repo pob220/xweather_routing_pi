@@ -155,6 +155,68 @@ TEST(Quick2Engine, FailedAndCancelledAttemptsChargeSpentWork) {
   EXPECT_EQ(result.route.diagnostics.retainedStates,
             result.frontier.lineageNodes);
 }
+
+TEST(Quick2Engine, RevisitsAnApproachBlockedByWavesWithoutChangingDeparture) {
+  class WeatherWithOpening final : public quick2_fixtures::Weather {
+  public:
+    explicit WeatherWithOpening(wr::TimePoint departure) : opening(
+        departure + std::chrono::hours{39}) {
+      epoch = departure;
+    }
+    wr::WaveSample waves(wr::GeoPoint p, wr::TimePoint t) const override {
+      auto sample = quick2_fixtures::Weather::waves(p, t);
+      sample.metadata.source = wr::EnvironmentalSource::GribForecast;
+      if (p.longitude > .1 && t < opening) sample.significantHeightMetres = 4;
+      return sample;
+    }
+    std::string identity() const override { return "wave-closure"; }
+    const wr::TimePoint opening;
+  };
+
+  auto f = quick2_fixtures::make("open");
+  auto weather = std::make_shared<WeatherWithOpening>(f.request.departure);
+  f.environment.grib = weather;
+  f.request.environment.useWaves = true;
+  f.request.environment.missingWaves = wr::MissingWavePolicy::DisallowWhenConstrained;
+  f.request.constraints.maximumWaveHeightMetres = 3;
+  f.request.options.allowWaiting = false;
+  quick2_routing::Options options;
+  options.headings = 64;
+  options.frontierLimit = 64;
+
+  const auto result = quick2_routing::Engine{}.route(f.request, f.environment, options);
+  ASSERT_TRUE(result.route.validation.passed) << result.route.message;
+  ASSERT_FALSE(result.route.legs.empty());
+  EXPECT_EQ(result.route.legs.front().startTime, f.request.departure);
+  EXPECT_GE(result.route.legs.back().endTime, weather->opening);
+  EXPECT_EQ(result.route.metrics.waitingTime, wr::Duration::zero());
+  EXPECT_EQ(result.route.validation.environment.missingWaveDuration, wr::Duration::zero());
+  EXPECT_LE(result.frontier.proposals, options.maximumProposals);
+  EXPECT_TRUE(wr::RouteValidator{}.validate(f.request, f.environment,
+      *f.environment.performance, result.route.legs).passed);
+  const auto& reasons = result.route.diagnostics.stageStopReasons;
+  EXPECT_NE(std::find(reasons.begin(), reasons.end(),
+      "Quick2 replaced prolonged local loops with a shorter validated track"), reasons.end());
+
+  options.maximumValidatedCandidates = 1;
+  const auto original = quick2_routing::Engine{}.route(f.request, f.environment, options);
+  ASSERT_TRUE(original.route.validation.passed) << original.route.message;
+  EXPECT_LT(result.route.metrics.distanceNm, original.route.metrics.distanceNm);
+  EXPECT_LE(result.route.metrics.elapsed, original.route.metrics.elapsed);
+  const auto& warnings = original.route.warnings;
+  EXPECT_NE(std::find_if(warnings.begin(), warnings.end(), [](const auto& warning) {
+    return warning.code == wr::RoutingWarningCode::ProlongedLocalSailing;
+  }), warnings.end());
+
+  options.maximumValidatedCandidates = 8;
+  options.maximumProposals = original.frontier.proposals + 8;
+  const auto exhausted = quick2_routing::Engine{}.route(f.request, f.environment, options);
+  ASSERT_TRUE(exhausted.route.validation.passed);
+  EXPECT_LE(exhausted.frontier.proposals, options.maximumProposals);
+  EXPECT_EQ(exhausted.route.metrics.distanceNm, original.route.metrics.distanceNm);
+  EXPECT_EQ(exhausted.route.metrics.elapsed, original.route.metrics.elapsed);
+}
+
 TEST(Quick2Engine, PreviewCannotChangeDeliveredRouteOrSearchWork) {
   auto f = quick2_fixtures::make("island");
   const auto ordinary =

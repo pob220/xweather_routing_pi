@@ -10,7 +10,7 @@ struct Fixture {
   wr::RoutingRequest request;
   wr::RoutingEnvironment environment;
 };
-class Weather final : public wr::WeatherProvider {
+class Weather : public wr::WeatherProvider {
 public:
   wr::TimePoint epoch;
   bool variable{}, tidal{}, waveBand{}, missing{};
