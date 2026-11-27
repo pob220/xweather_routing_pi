@@ -420,7 +420,12 @@ workflows:
     when:
       and:
         - not: << pipeline.parameters.run_workflow_deploy >>
-        - not: << pipeline.parameters.run_windows_only >>
+        - not:
+            or: &windows-only-validation
+              - << pipeline.parameters.run_windows_only >>
+              - matches:
+                  pattern: "^release/2[.][0-9]+[.][0-9]+-windows$"
+                  value: << pipeline.git.branch >>
         - not:
             matches:
               pattern: "^feature/xweather-2[.]3[.]3-win32$"
@@ -556,7 +561,7 @@ workflows:
     when:
       and:
         - not: << pipeline.parameters.run_workflow_deploy >>
-        - << pipeline.parameters.run_windows_only >>
+        - or: *windows-only-validation
     jobs:
       - windows-x86:
           filters: *validation-filters
