@@ -6,6 +6,7 @@ from ctypes import wintypes
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -30,10 +31,13 @@ def make_waypoints(path):
 
 
 def test(host, output, forecast):
-    profile = output / 'profile'
-    private = output / 'routing-data'
-    profile.mkdir(parents=True)
-    private.mkdir()
+    profile = host.with_name(host.name + '-responsiveness')
+    private = profile / 'routing-data'
+    output.mkdir(parents=True, exist_ok=True)
+    private.mkdir(parents=True)
+    # With --configdir, OpenCPN discovers plug-ins in that profile's plugins
+    # directory. Install the already extracted package there as well.
+    shutil.copytree(host / 'plugins', profile / 'plugins')
     make_waypoints(profile / 'navobj.xml')
     config = configparser.RawConfigParser(strict=False)
     config.optionxform = str
@@ -177,6 +181,8 @@ def test(host, output, forecast):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            if host_log.exists():
+                shutil.copy2(host_log, output / 'opencpn.log')
     (output / 'responsiveness.json').write_text(
         json.dumps({'profile_waypoints': 6000, 'seconds': timings}, indent=2) + '\n')
 
