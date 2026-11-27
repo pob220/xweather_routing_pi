@@ -11,11 +11,11 @@ import tarfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE_SHA256 = '6b6798f4ba8476965d11c30d4db933a430638be03b1656c4897ce8b66f6681b7'
+ARCHIVE_SHA256 = 'b6cd3eeee6b3856d884241ccabcf709d46d96082ecb6c470124733ff64c3f8ed'
 URL = ('https://github.com/pob220/xweather_routing_pi/releases/download/'
-       'developer-test-2.3.4-20261117/'
-       'xweather_routing_pi-2.3.4-msvc-64-x86_64-10.0-MSVC-x64-wx334.tar.gz')
-BASELINE = '1cb4ab91ba788375bacf8b93d7ede04ea3327fc6'
+       'developer-test-2.13.2/'
+       'xweather_routing_pi-2.13.2-msvc-64-x86_64-10.0-MSVC-x64-wx334.tar.gz')
+BASELINE = 'd6324351ea0aad81f80fab69a842fe7d1a7a1188'
 INPUTS = ['third_party/environmental-grib-generator', 'ci/windows-generator',
           'ci/vcpkg-overlay-ports', 'ci/vcpkg-triplets',
           'ci/build-windows-generator.py', 'ci/windows_build_tools.py']
