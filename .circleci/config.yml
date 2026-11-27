@@ -32,11 +32,11 @@ commands:
 
   run-amd64-helper-step:
     parameters:
-      name: {type: string}
+      step_name: {type: string}
       script: {type: string}
     steps:
       - run:
-          name: << parameters.name >>
+          name: << parameters.step_name >>
           shell: cmd.exe
           command: |
             call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
@@ -199,7 +199,7 @@ jobs:
       - checkout
       - prepare-windows-checkout
       - run-amd64-helper-step:
-          name: Prepare the AMD64 GRIB helper for the Win32 plugin
+          step_name: Prepare the AMD64 GRIB helper for the Win32 plugin
           script: ci/stage-qualified-windows-generator.py --build-if-changed
       - run:
           shell: powershell.exe -ExecutionPolicy Bypass
@@ -211,7 +211,7 @@ jobs:
             exit $LASTEXITCODE
           no_output_timeout: 45m
       - run-amd64-helper-step:
-          name: Qualify Win32 plugin and independent helper
+          step_name: Qualify Win32 plugin and independent helper
           script: ci/qualify-windows32-v2.py
       - run:
           name: Verify Windows x86 package ABI
