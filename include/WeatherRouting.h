@@ -32,9 +32,11 @@ wxDECLARE_EVENT(wxEVT_WR_DEPARTURE_DISPLAY_CHANGED, wxCommandEvent);
 #include <map>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
+#include <thread>
 #include <vector>
 
 #ifdef __OCPN__ANDROID__
@@ -243,6 +245,15 @@ private:
   void BuildRoutesWorkspaceTools(wxWindow* page);
   void RefreshRoutesWorkspaceTools();
   std::shared_ptr<weather_routing::PassageWeather> m_PassageWeather;
+  wxTimer m_SavedForecastTimer;
+  std::atomic_bool m_CancelSavedForecast{false};
+  std::future<std::shared_ptr<weather_routing::PassageWeather>> m_SavedForecast;
+  std::thread m_SavedForecastWorker;
+  void BeginSavedForecastRestore(wxArrayString paths);
+  void FinishSavedForecastRestore(wxTimerEvent&);
+  bool SavedForecastPending() const;
+  void InstallPassageForecast(
+      std::shared_ptr<weather_routing::PassageWeather> forecast);
   PassagePanel* m_PassagePanel{nullptr};
   wxAuiNotebook* m_PassageNotebook{nullptr};
   void RequestPassageWeatherDisplay(const wxString& path);

@@ -34,6 +34,8 @@
 #include <wx/statbox.h>
 #include <wx/valnum.h>
 #include <algorithm>
+#include <chrono>
+#include <set>
 #include <map>
 #include <cmath>
 
@@ -272,6 +274,8 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
       routing_.OnStop(e);
     else {
       RefreshPassage();
+      if (r->GetConfiguration().UseGrib && routing_.SavedForecastPending())
+        return;
       if (!readiness_.CanCalculate()) {
         ShowChecks();
         return;
@@ -300,7 +304,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
     weather_routing::ShowFocusedPlanningHelp(this, weather_routing::PlanningHelpTopic::Navigation);
   });
   Bind(wxEVT_TIMER, [this](wxTimerEvent&) {
-    if (IsShownOnScreen()) RefreshPassage();
+    if (IsShownOnScreen() && IsEnabled()) RefreshPassage();
   });
   refresh_.Start(1000);
   EnsurePassage();
@@ -481,12 +485,14 @@ void PassagePanel::RefreshPassage() {
     }
   }
   boat_->SetLabel(sectionStatus(1) + L" • " + boat);
+  const bool restoringForecast = c.UseGrib && routing_.SavedForecastPending();
   wxString weather =
-      c.UseGrib ? provider.Summary() + "\n" + provider.Details()
+      restoringForecast ? _("Loading saved forecast…")
+      : c.UseGrib ? provider.Summary() + "\n" + provider.Details()
       : climate ? _("Typical seasonal conditions, not a weather forecast")
                 : _("No wind source selected");
   if (climate) weather += "\n" + weather_routing::BundledClimatology::Source();
-  if (!readiness_.sections[2].items.empty() &&
+  if (!restoringForecast && !readiness_.sections[2].items.empty() &&
       !weather.Contains(readiness_.sections[2].items.front().title))
     weather += "\n" + readiness_.sections[2].items.front().title;
   if (c.UsesCumulativeClimatology())
@@ -522,7 +528,8 @@ void PassagePanel::RefreshPassage() {
                                  readiness_.Blockers()), readiness_.Blockers()));
   calculate_->SetLabel(running ? _("Cancel calculation")
                                : _("Calculate route"));
-  calculate_->Enable(running || readiness_.CanCalculate());
+  calculate_->Enable(running ||
+                     (!restoringForecast && readiness_.CanCalculate()));
   for (auto* control : mutableControls_) control->Enable(!running);
   RefreshResults(current, running);
   if (!running && current->Finished() && readiness_.CanCalculate())
@@ -1137,19 +1144,20 @@ void PassagePanel::EditRoute() {
       ++index;
     }
   }
-  std::vector<RouteMapPosition> choices(RouteMap::Positions.begin(),
-                                        RouteMap::Positions.end());
-  for (const auto& guid : GetWaypointGUIDArray()) {
-    PlugIn_Waypoint mark;
-    if (!GetSingleWaypoint(guid, &mark)) continue;
-    bool duplicate = false;
-    for (const auto& p : choices) duplicate = duplicate || p.GUID == guid;
-    if (!duplicate)
-      choices.emplace_back(mark.m_MarkName, mark.m_lat, mark.m_lon, guid);
-  }
+  std::vector<RouteMapPosition> choices;
   wxDialog dialog(this, wxID_ANY, _("Define passage"), wxDefaultPosition,
                   wxDefaultSize, wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
   const bool linked = !c.RouteGUID.empty() || c.IsMultiLegGenerated;
+  wxArrayString savedNames;
+  std::set<wxString> knownGuids;
+  if (!linked) {
+    for (const auto& point : RouteMap::Positions) {
+      choices.push_back(point);
+      if (!point.GUID.empty()) knownGuids.insert(point.GUID);
+      savedNames.Add(point.Name + (point.GUID.empty() ? wxString()
+                                                    : _(" (waypoint)")));
+    }
+  }
   auto* top = new wxBoxSizer(wxVERTICAL);
   Text(
       &dialog, top,
@@ -1164,9 +1172,8 @@ void PassagePanel::EditRoute() {
     grid->Add(
         new wxStaticText(&dialog, wxID_ANY, i ? _("Destination") : _("Start")),
         0, wxALIGN_CENTER_VERTICAL);
-    name[i] = new wxComboBox(&dialog, wxID_ANY, i ? c.End : c.Start);
-    for (const auto& p : choices)
-      name[i]->Append(p.Name + (p.GUID.empty() ? wxString() : _(" (waypoint)")));
+    name[i] = new wxComboBox(&dialog, wxID_ANY, i ? c.End : c.Start,
+                             wxDefaultPosition, wxDefaultSize, savedNames);
     grid->Add(name[i], 1, wxEXPAND);
     grid->Add(
         new wxStaticText(&dialog, wxID_ANY, _(L"Latitude (north +, south −)")),
@@ -1235,6 +1242,42 @@ void PassagePanel::EditRoute() {
          _("These waypoints follow the OpenCPN route. Edit that route on the "
            "chart to change its waypoints. A continuous passage starts at its "
            "first leg."));
+  wxTimer waypointTimer(&dialog);
+  wxArrayString waypointGuids;
+  std::size_t waypointIndex = 0;
+  bool haveWaypointGuids = false;
+  if (!linked) {
+    // The stock host's GUID lookup scans its waypoint list. Keep that work on
+    // the host thread, in brief slices after the editor can accept input.
+    auto* waypointStatus = Text(&dialog, top, _("Loading OpenCPN waypoints…"));
+    dialog.Bind(wxEVT_TIMER, [&](wxTimerEvent&) {
+      if (!haveWaypointGuids) {
+        waypointGuids = GetWaypointGUIDArray();
+        haveWaypointGuids = true;
+      }
+      const auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
+      wxArrayString labels;
+      while (waypointIndex < waypointGuids.GetCount() && labels.GetCount() < 24 &&
+             std::chrono::steady_clock::now() < deadline) {
+        const auto& guid = waypointGuids[waypointIndex++];
+        if (!knownGuids.insert(guid).second) continue;
+        PlugIn_Waypoint mark;
+        if (!GetSingleWaypoint(guid, &mark)) continue;
+        choices.emplace_back(mark.m_MarkName, mark.m_lat, mark.m_lon, guid);
+        labels.Add(mark.m_MarkName + _(" (waypoint)"));
+      }
+      if (!labels.IsEmpty()) {
+        name[0]->Append(labels);
+        name[1]->Append(labels);
+      }
+      if (waypointIndex == waypointGuids.GetCount()) {
+        waypointTimer.Stop();
+        waypointStatus->SetLabel(wxEmptyString);
+      }
+    }, waypointTimer.GetId());
+    waypointTimer.Start(25);
+  }
   top->Add(dialog.CreateButtonSizer(wxOK | wxCANCEL), 0, wxEXPAND | wxALL, 12);
   dialog.SetSizerAndFit(top);
   dialog.SetMinSize(wxSize(620, -1));

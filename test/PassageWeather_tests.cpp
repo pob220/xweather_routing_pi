@@ -62,6 +62,19 @@ TEST(PassageWeather, FailedReplacementKeepsSelectedForecast) {
   EXPECT_EQ(w.Path(), path);
   EXPECT_TRUE(w.HasWind(w.FirstWindTime(), 53.4, -5.5));
 }
+TEST(PassageWeather, CancelledRestoreKeepsPreviouslyLoadedForecast) {
+  weather_routing::PassageWeather weather;
+  wxString error;
+  const auto active = source + "/ci/testdata/irish-sea-uniform-wind.grb";
+  const auto replacement = source + "/ci/testdata/farallon-ccsds.grb2";
+  ASSERT_TRUE(weather.Open(active, error));
+  const auto identity = weather.Identity();
+  const std::atomic_bool stop{true};
+  EXPECT_FALSE(weather.Open(replacement, error, std::nullopt, &stop));
+  EXPECT_EQ(weather.Path(), active);
+  EXPECT_EQ(weather.Identity(), identity);
+  EXPECT_TRUE(weather.HasWind(weather.FirstWindTime(), 53.4, -5.5));
+}
 TEST(PassageWeather, WorldForecastOutsideDepartureKeepsPreviousFile) {
   weather_routing::PassageWeather weather;
   wxString error;

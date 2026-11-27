@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <atomic>
 #include <filesystem>
 #include <cstdint>
 #include <memory>
@@ -54,7 +55,8 @@ private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
-std::string ShorelineSha256(const std::filesystem::path& path);
+std::string ShorelineSha256(const std::filesystem::path& path,
+                            const std::atomic_bool* stop = nullptr);
 // Hash the uncompressed payload, enforce its exact length, and atomically
 // install a new destination only after complete validation. Never extracts
 // filenames.

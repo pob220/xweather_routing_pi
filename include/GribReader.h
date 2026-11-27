@@ -36,6 +36,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
 #include <wx/string.h>
+#include <atomic>
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -51,7 +52,7 @@ public:
   GribReader();
   GribReader(const GribReader&) = delete;
   GribReader& operator=(const GribReader&) = delete;
-  GribReader(const wxString fname);
+  GribReader(const wxString fname, const std::atomic_bool* stop = nullptr);
   ~GribReader();
 
   void openFile(const wxString fname);
@@ -132,6 +133,10 @@ private:
   int dewpointDataStatus;
   std::size_t retainedBytes;
   bool resourceLimitExceeded;
+  const std::atomic_bool* stop_ = nullptr;
+  bool Stopped() const {
+    return stop_ && stop_->load(std::memory_order_relaxed);
+  }
 
   std::map<std::string, std::vector<GribRecord *> *> mapGribRecords;
 

@@ -29,6 +29,7 @@ class ResultsWorkspace : public wxDialog {
   struct Embedded { wxDialog* dialog; wxPanel* page; wxSizer* contents; };
   void Embed(wxDialog& dialog, const wxString& name);
   void Select(int index);
+  void RefreshActivePage();
   void SaveGeometry();
   WeatherRouting& routing_;
   wxChoice* passages_{};

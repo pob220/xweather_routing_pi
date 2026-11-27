@@ -319,6 +319,10 @@ def main():
     shutil.copytree(WORK / 'host', portable)
     run(sys.executable, ROOT / 'ci/test-windows-host.py', portable,
         archives[0], ARTIFACTS / 'runtime', '--host-version', pin['host_version'])
+    if pin['host_version'].startswith('5.15') and identity:
+        run(sys.executable, ROOT / 'ci/test-windows-stabilization.py', portable,
+            ARTIFACTS / 'responsiveness',
+            ROOT / 'ci/testdata/irish-sea-uniform-wind.grb')
     launcher = WORK / 'launch-test.cmd'
     launcher.write_text('@echo off\nset WR_OPEN_PASSAGE_PLANNER=1\n'
                         'set WR_HEADLESS_ROUTE_TEST=\nset WR_HEADLESS_DATA_DIR=\n'

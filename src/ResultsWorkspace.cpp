@@ -83,6 +83,10 @@ ResultsWorkspace::ResultsWorkspace(WeatherRouting& routing)
   outer->Add(footer, 0, wxEXPAND);
   SetSizer(outer);
   passages_->Bind(wxEVT_CHOICE, [this](wxCommandEvent&) { Select(passages_->GetSelection()); });
+  pages_->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& event) {
+    if (event.GetEventObject() == pages_) RefreshActivePage();
+    event.Skip();
+  });
   Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent&) { SaveGeometry(); Hide(); });
   auto* config = GetOCPNConfigObject();
   config->SetPath("/PlugIns/xWeatherRouting2/ResultsWorkspace");
@@ -132,6 +136,7 @@ ResultsWorkspace::~ResultsWorkspace() {
 void ResultsWorkspace::ClearRouteReferences() {
   if (table_) table_->SetRouteMap(nullptr);
   routing_.m_PlotDialog.SetRouteMapOverlay(nullptr);
+  routing_.m_ReportDialog.SetRouteMapOverlays({});
   routes_.clear();
 }
 
@@ -155,14 +160,19 @@ void ResultsWorkspace::RefreshSelection() {
   refreshing_ = true;
   auto* current = routing_.FirstCurrentRouteMap();
   routes_.clear();
-  passages_->Clear();
+  wxArrayString names;
   int selected = wxNOT_FOUND;
   for (auto* item : routing_.m_WeatherRoutes) {
     if (item->routemapoverlay == current) selected = routes_.size();
     routes_.push_back(item->routemapoverlay);
     const auto c = item->routemapoverlay->GetConfiguration();
-    passages_->Append(c.Start + " to " + c.End);
+    names.Add(c.Start + " to " + c.End);
   }
+  const auto displayed = passages_->GetStrings();
+  bool sameNames = displayed.GetCount() == names.GetCount();
+  for (size_t i = 0; sameNames && i < names.GetCount(); ++i)
+    sameNames = displayed.Item(i) == names.Item(i);
+  if (!sameNames) passages_->Set(names);
   passages_->SetSelection(selected);
   const auto routes = routing_.CurrentRouteMaps();
   selection_->SetLabel(routes.size() > 1
@@ -170,10 +180,25 @@ void ResultsWorkspace::RefreshSelection() {
       : current ? _("Results for the selected passage") : _("Select a passage in Routes"));
   selection_->Wrap(std::max(300, GetClientSize().x - 20));
   selection_->SetMinSize(wxSize(1, -1));
-  table_->SetRouteMap(current);
-  routing_.m_PlotDialog.SetRouteMapOverlay(current);
-  routing_.m_StatisticsDialog.SetRouteMapOverlays(routes);
-  routing_.m_ReportDialog.SetRouteMapOverlays(routes);
+  RefreshActivePage();
+  Layout();
+  refreshing_ = false;
+}
+
+void ResultsWorkspace::RefreshActivePage() {
+  auto* current = routing_.FirstCurrentRouteMap();
+  switch (pages_->GetSelection()) {
+    case 0: table_->SetRouteMap(current); return;
+    case 1: routing_.m_PlotDialog.SetRouteMapOverlay(current); return;
+    case 2:
+      routing_.m_StatisticsDialog.SetRouteMapOverlays(routing_.CurrentRouteMaps());
+      return;
+    case 3:
+      routing_.m_ReportDialog.SetRouteMapOverlays(routing_.CurrentRouteMaps());
+      return;
+    case 5: break;
+    default: return;
+  }
   wxString safety = _("No passage selected.");
   if (current) {
     const auto c = current->GetConfiguration();
@@ -182,16 +207,15 @@ void ResultsWorkspace::RefreshSelection() {
     safety += _("These are requested settings. The final validation record below reports what was checked. Shoreline checks alone do not establish charted-depth safety.\n\n");
     safety += current->GetDiagnostics().Text();
   }
-  safety_->ChangeValue(safety);
-  Layout();
-  refreshing_ = false;
+  if (safety_->GetValue() != safety) safety_->ChangeValue(safety);
 }
 
 void ResultsWorkspace::Open(size_t page) {
-  RefreshSelection();
-  if (page < pages_->GetPageCount()) pages_->SetSelection(page);
+  if (page < pages_->GetPageCount()) pages_->ChangeSelection(page);
   weather_routing::KeepPlanningDialogVisible(this);
-  Show(true); Raise();
+  Show(true);
+  Raise();
+  RefreshSelection();
 }
 
 void ResultsWorkspace::SaveGeometry() {
@@ -206,6 +230,7 @@ void ResultsWorkspace::UpdateTimeHighlight(wxDateTime time) {
 }
 
 bool ResultsWorkspace::RunHostContract() {
+  pages_->ChangeSelection(0);
   RefreshSelection();
   bool passed = pages_->GetPageCount() == 6 &&
       table_->GetRouteMap() == routing_.FirstCurrentRouteMap();
@@ -219,6 +244,7 @@ bool ResultsWorkspace::RunHostContract() {
     pages_->SetSelection(i); Layout();
     passed &= routing_.FirstCurrentRouteMap() == saved;
   }
+  pages_->SetSelection(0);
   if (routes_.size() > 1) {
     Select((passages_->GetSelection() + 1) % routes_.size());
     passed &= table_->GetRouteMap() == routing_.FirstCurrentRouteMap();

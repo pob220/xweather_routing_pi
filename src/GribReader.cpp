@@ -33,7 +33,9 @@ GribReader::GribReader() : file(nullptr), fileSize(0), retainedBytes(0), resourc
   dewpointDataStatus = NO_DATA_IN_FILE;
 }
 //-------------------------------------------------------------------------------
-GribReader::GribReader(const wxString fname) : GribReader() {
+GribReader::GribReader(const wxString fname, const std::atomic_bool* stop)
+    : GribReader() {
+  stop_ = stop;
   ok = false;
   dewpointDataStatus = NO_DATA_IN_FILE;
   if (fname != "") {
@@ -41,6 +43,7 @@ GribReader::GribReader(const wxString fname) : GribReader() {
   } else {
     clean_all_vectors();
   }
+  stop_ = nullptr;
 }
 //-------------------------------------------------------------------------------
 GribReader::~GribReader() {
@@ -137,6 +140,7 @@ void GribReader::readAllGribRecords() {
   bool is_v2 = false;
 
   do {
+    if (Stopped()) return;
     id++;
     // use the previously seen record type first
     // a miss with compressed file is really slow as
@@ -482,12 +486,14 @@ void GribReader::copyMissingWaveRecords() {
 void GribReader::readGribFileContent() {
   fileSize = zu_filesize(file);
   readAllGribRecords();
+  if (Stopped()) return;
   createListDates();
   if (resourceLimitExceeded) return;
   //    hoursBetweenRecords = computeHoursBeetweenGribRecords();
   // XXX should it be done after reading all files, rather than per file?
   if (getNumberOfGribRecords(GRB_WIND_GUST, LV_GND_SURF, 0) == 0) {
     for (auto date : setAllDates) {
+      if (Stopped()) return;
       GribRecord* recX = getGribRecord(GRB_WIND_GUST_VX, LV_GND_SURF, 0, date);
       if (recX == nullptr) continue;
 
@@ -744,6 +750,7 @@ double GribReader::computeDewPoint(double lon, double lat, time_t now) {
 // Lecture complète d'un fichier GRIB
 //-------------------------------------------------------------------------------
 void GribReader::openFile(const wxString fname) {
+  if (Stopped()) return;
   grib_debug("Open file: %s", (const char*)fname.utf8_str());
   if (file) { zu_close(file); file = nullptr; }
   fileName = fname;
@@ -762,17 +769,17 @@ void GribReader::openFile(const wxString fname) {
   readGribFileContent();
 
   // Look for compressed files with alternate extensions
-  if (!ok && !resourceLimitExceeded) {
+  if (!ok && !resourceLimitExceeded && !Stopped()) {
     if (file != nullptr) { zu_close(file); file = nullptr; }
     file = zu_open_wx(fname, "rb", ZU_COMPRESS_BZIP);
     if (file != nullptr) readGribFileContent();
   }
-  if (!ok && !resourceLimitExceeded) {
+  if (!ok && !resourceLimitExceeded && !Stopped()) {
     if (file != nullptr) { zu_close(file); file = nullptr; }
     file = zu_open_wx(fname, "rb", ZU_COMPRESS_GZIP);
     if (file != nullptr) readGribFileContent();
   }
-  if (!ok && !resourceLimitExceeded) {
+  if (!ok && !resourceLimitExceeded && !Stopped()) {
     if (file != nullptr) { zu_close(file); file = nullptr; }
     file = zu_open_wx(fname, "rb", ZU_COMPRESS_NONE);
     if (file != nullptr) readGribFileContent();

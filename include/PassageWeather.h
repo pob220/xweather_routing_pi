@@ -16,7 +16,8 @@ namespace weather_routing {
 class PassageWeather {
 public:
   bool Open(const wxString& path, wxString& error,
-            std::optional<time_t> plannedDeparture = std::nullopt);
+            std::optional<time_t> plannedDeparture = std::nullopt,
+            const std::atomic_bool* stop = nullptr);
   std::unique_ptr<GribRecordSet> Frame(time_t time) const;
   bool HasWind(time_t time, double lat, double lon) const;
   bool HasData(int index, time_t time, double lat, double lon) const;

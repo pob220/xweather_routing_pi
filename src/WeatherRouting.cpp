@@ -1693,32 +1693,25 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       wxEVT_COMMAND_BUTTON_CLICKED,
       wxCommandEventHandler(WeatherRouting::OnExportRouteAsGPX), NULL, this);
 
+  wxArrayString savedForecastPaths;
   wxString previousForecast;
   pConf->SetPath("/PlugIns/xWeatherRouting2");
-  pConf->Read("PassageGribFile",&previousForecast);
-  if(previousForecast.empty()) {
-    // Adopt a previously selected shared forecast without opening another
-    // plugin's dialog. Its actual wind fields and time range are validated by
-    // our reader; never infer suitability from the presence of a filename.
-    for(const auto& path:{"/Settings/xGRIB/FileNames","/Settings/GRIB/FileNames"}) {
+  pConf->Read("PassageGribFile", &previousForecast);
+  if (!previousForecast.empty()) {
+    savedForecastPaths.Add(previousForecast);
+  } else {
+    for (const auto& path : {"/Settings/xGRIB/FileNames", "/Settings/GRIB/FileNames"}) {
       pConf->SetPath(path);
-      wxString entry,value;long cookie=0;
-      for(bool more=pConf->GetFirstEntry(entry,cookie);more;more=pConf->GetNextEntry(entry,cookie)) {
-        pConf->Read(entry,&value);
-        if(!wxFileExists(value))continue;
-        wxString error;
-        if(m_PassageWeather->Open(value,error)){previousForecast=value;break;}
+      wxString entry, value;
+      long cookie = 0;
+      for (bool more = pConf->GetFirstEntry(entry, cookie); more;
+           more = pConf->GetNextEntry(entry, cookie)) {
+        if (pConf->Read(entry, &value) && !value.empty())
+          savedForecastPaths.Add(value);
       }
-      if(!previousForecast.empty())break;
     }
     pConf->SetPath("/PlugIns/xWeatherRouting2");
   }
-  if (!m_PassageWeather->Loaded() && !previousForecast.empty() && wxFileExists(previousForecast)) {
-    wxString error;
-    m_PassageWeather->Open(previousForecast,error);
-  }
-  if (m_PassageWeather->Loaded())
-    m_ConfigurationDialog.m_GribTimelineTime = wxDateTime(m_PassageWeather->FirstWindTime());
 #ifndef __OCPN__ANDROID__
   auto* notebook = new wxAuiNotebook(this, wxID_ANY, wxDefaultPosition,
       wxDefaultSize, wxAUI_NB_TOP | wxAUI_NB_SCROLL_BUTTONS);
@@ -1764,10 +1757,15 @@ WeatherRouting::WeatherRouting(wxWindow* parent, weather_routing_pi& plugin)
       nullptr, this);
   m_androidLayoutTimer.Start(1000);
 #endif
+  if (EnvString("WR_HEADLESS_ROUTE_TEST").empty())
+    BeginSavedForecastRestore(std::move(savedForecastPaths));
 }
 
 WeatherRouting::~WeatherRouting() {
   m_ShuttingDown = true;
+  m_SavedForecastTimer.Stop();
+  m_CancelSavedForecast.store(true, std::memory_order_relaxed);
+  if (m_SavedForecastWorker.joinable()) m_SavedForecastWorker.join();
 #ifndef __OCPN__ANDROID__
   delete m_ResultsWorkspace;
   m_ResultsWorkspace = nullptr;
@@ -1933,6 +1931,79 @@ WeatherRouting::~WeatherRouting() {
   WeatherDataProvider::SetInternalForecast({});
 }
 
+void WeatherRouting::BeginSavedForecastRestore(wxArrayString paths) {
+  if (paths.IsEmpty()) return;
+  std::packaged_task<std::shared_ptr<weather_routing::PassageWeather>()> load(
+      [paths = std::move(paths), stop = &m_CancelSavedForecast] {
+        auto forecast = std::make_shared<weather_routing::PassageWeather>();
+        for (const auto& path : paths) {
+          if (stop->load(std::memory_order_relaxed)) break;
+          wxString error;
+          if (wxFileExists(path) && forecast->Open(path, error, std::nullopt, stop))
+            return forecast;
+        }
+        return std::shared_ptr<weather_routing::PassageWeather>{};
+      });
+  try {
+    m_SavedForecast = load.get_future();
+    m_SavedForecastWorker = std::thread(std::move(load));
+  } catch (const std::system_error& error) {
+    m_SavedForecast = {};
+    wxLogWarning("Could not start saved forecast restore: %s",
+                 wxString::FromUTF8(error.what()));
+    return;
+  }
+  m_SavedForecastTimer.SetOwner(this);
+  Bind(wxEVT_TIMER, &WeatherRouting::FinishSavedForecastRestore, this,
+       m_SavedForecastTimer.GetId());
+  m_SavedForecastTimer.Start(100);
+  wxLogMessage("WR_SAVED_FORECAST loading");
+}
+
+bool WeatherRouting::SavedForecastPending() const {
+  return m_SavedForecast.valid() &&
+         !m_CancelSavedForecast.load(std::memory_order_relaxed);
+}
+
+void WeatherRouting::FinishSavedForecastRestore(wxTimerEvent&) {
+  if (m_ShuttingDown || !m_SavedForecast.valid() ||
+      m_SavedForecast.wait_for(std::chrono::seconds(0)) !=
+          std::future_status::ready) return;
+  // A running calculation owns its weather inputs until it finishes.
+  if (SavedForecastPending() &&
+      (!m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() ||
+       m_RoutePreparationDepth || m_DeferredRoutingStartPending)) return;
+
+  m_SavedForecastTimer.Stop();
+  const bool restore = SavedForecastPending();
+  try {
+    auto forecast = m_SavedForecast.get();
+    if (restore && forecast) {
+      InstallPassageForecast(std::move(forecast));
+      wxLogMessage("WR_SAVED_FORECAST restored");
+    } else if (restore) {
+      wxLogMessage("WR_SAVED_FORECAST unavailable");
+    }
+  } catch (const std::exception& error) {
+    wxLogWarning("Could not restore saved forecast: %s",
+                 wxString::FromUTF8(error.what()));
+  }
+  m_SavedForecastWorker.join();
+  if (restore && m_PassagePanel && m_PassagePanel->IsShownOnScreen() &&
+      m_PassagePanel->IsEnabled())
+    m_PassagePanel->RefreshPassage();
+}
+
+void WeatherRouting::InstallPassageForecast(
+    std::shared_ptr<weather_routing::PassageWeather> forecast) {
+  m_PassageWeather = std::move(forecast);
+  WeatherDataProvider::SetInternalForecast(m_PassageWeather);
+  if (m_GribTimelineFrameCache) m_GribTimelineFrameCache->Clear();
+  m_GribTimelineCacheBatchActive = false;
+  m_ConfigurationDialog.m_GribTimelineTime =
+      wxDateTime(m_PassageWeather->FirstWindTime());
+}
+
 weather_routing::PassageWeather& WeatherRouting::PassageForecast() {
   return *m_PassageWeather;
 }
@@ -2002,10 +2073,10 @@ bool WeatherRouting::OpenPassageForecast(
     error = _("Cancel the active calculation before changing its forecast.");
     return false;
   }
-  if (!m_PassageWeather->Open(path, error, plannedDeparture)) return false;
-  if (m_GribTimelineFrameCache) m_GribTimelineFrameCache->Clear();
-  m_GribTimelineCacheBatchActive=false;
-  m_ConfigurationDialog.m_GribTimelineTime = wxDateTime(m_PassageWeather->FirstWindTime());
+  auto forecast = std::make_shared<weather_routing::PassageWeather>();
+  if (!forecast->Open(path, error, plannedDeparture)) return false;
+  m_CancelSavedForecast.store(true, std::memory_order_relaxed);
+  InstallPassageForecast(std::move(forecast));
   if (auto* route=FirstCurrentRouteMap()) {
     auto c=route->GetConfiguration();
     if(c.UseGrib) ApplyPassageConfiguration(c);
@@ -2135,9 +2206,10 @@ weather_routing::PassageInputs WeatherRouting::InspectPassageInputs(
         c.UseGrib &&
         provider.HasData(Idx_SEACURRENT_VX, time, c.StartLat, c.StartLon) &&
         provider.HasData(Idx_SEACURRENT_VY, time, c.StartLat, c.StartLon);
-    if (!running && c.ClimatologyType != RouteMapConfiguration::DISABLED) {
-      std::lock_guard<std::recursive_mutex> lock(
-          ClimatologyThreadGuard::InvocationMutex());
+    std::unique_lock<std::recursive_mutex> climateLock(
+        ClimatologyThreadGuard::InvocationMutex(), std::defer_lock);
+    if (!running && c.ClimatologyType != RouteMapConfiguration::DISABLED &&
+        climateLock.try_lock()) {
       double direction = 0, speed = 0;
       if (c.ClimatologyType == RouteMapConfiguration::AVERAGE)
         climateWindReady =
@@ -2157,6 +2229,7 @@ weather_routing::PassageInputs WeatherRouting::InspectPassageInputs(
             input.currentsAvailable ||
             RouteMap::ClimatologyData(1, sample, c.StartLat, c.StartLon,
                                       direction, speed);
+      climateLock.unlock();
     }
     input.climatologyWind = climate && climateWindReady;
     double distance = DistGreatCircle_Plugin(c.StartLat, c.StartLon, c.EndLat, c.EndLon);
@@ -13847,6 +13920,11 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   ScopedRoutePreparation route_preparation(m_RoutePreparationDepth);
 
   RouteMapConfiguration configuration = routemapoverlay->GetConfiguration();
+  if (configuration.UseGrib && SavedForecastPending()) {
+    RecordChartSafetyPreparationFailure(
+        routemapoverlay, _("The saved forecast is still loading. Calculate again when it is ready."));
+    return;
+  }
   const bool routeByArrival =
       configuration.TimeMode ==
       RouteMapConfiguration::ROUTE_BY_ARRIVAL_TIME;

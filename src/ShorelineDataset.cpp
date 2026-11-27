@@ -607,12 +607,14 @@ bool ShorelineDataset::WithinLandMargin(double lat1, double lon1, double lat2,
   }
 }
 
-std::string ShorelineSha256(const std::filesystem::path& path) {
+std::string ShorelineSha256(const std::filesystem::path& path,
+                            const std::atomic_bool* stop) {
   std::ifstream in(path, std::ios::binary);
   if (!in) throw std::runtime_error("Cannot read shoreline file");
   Sha256 hash;
   std::array<unsigned char, 65536> buf;
   while (in) {
+    if (stop && stop->load(std::memory_order_relaxed)) return {};
     in.read(reinterpret_cast<char*>(buf.data()), buf.size());
     hash.Add(buf.data(), static_cast<std::size_t>(in.gcount()));
   }

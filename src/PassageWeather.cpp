@@ -62,9 +62,11 @@ wxString UTC(time_t t) {
 }  // namespace
 
 bool PassageWeather::Open(const wxString& path, wxString& error,
-                          std::optional<time_t> plannedDeparture) {
+                          std::optional<time_t> plannedDeparture,
+                          const std::atomic_bool* stop) {
   try {
-    auto next = std::make_unique<GribReader>(path);
+    auto next = std::make_unique<GribReader>(path, stop);
+    if (stop && stop->load(std::memory_order_relaxed)) return false;
     if (!next->isOk()) {
       error = next->isResourceLimitExceeded()
                   ? _("This GRIB exceeds the weather reader's memory limit. "
@@ -104,11 +106,14 @@ bool PassageWeather::Open(const wxString& path, wxString& error,
         return false;
       }
     }
+    auto hash = ShorelineSha256(std::filesystem::u8path(path.ToUTF8().data()),
+                                stop);
+    if (hash.empty() || (stop && stop->load(std::memory_order_relaxed)))
+      return false;
     reader_ = std::move(next);
     fields_ = std::move(fields);
     path_ = path;
-    identity_ = "grib-sha256:" +
-                ShorelineSha256(std::filesystem::u8path(path.ToUTF8().data()));
+    identity_ = "grib-sha256:" + std::move(hash);
     error.clear();
     return true;
   } catch (const std::exception& e) {
