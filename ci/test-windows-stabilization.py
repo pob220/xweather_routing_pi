@@ -42,7 +42,7 @@ def test(host, output, forecast):
     if not config.has_section(section):
         config.add_section(section)
     config.set(section, 'PassageGribFile', forecast.as_posix())
-    with (profile / 'opencpn.ini').open('w', encoding='utf-8') as stream:
+    with (profile / 'opencpn.conf').open('w', encoding='utf-8') as stream:
         config.write(stream, space_around_delimiters=False)
     ET.ElementTree(ET.Element('OpenCPNWeatherRoutingConfiguration',
                               version='1.10', creator='Responsiveness test')).write(
