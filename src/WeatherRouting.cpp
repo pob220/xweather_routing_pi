@@ -3542,6 +3542,8 @@ void WeatherRouting::RecordChartSafetyPreparationFailure(
   if (reason.IsEmpty()) return;
   m_ChartSafetyPreparationFailure = reason;
   if (route) {
+    route->SetError(reason);
+    m_RunDiagnostics.Report(route->GetDiagnostics().Text());
     m_PreparingChartSafetyRoutes.erase(route);
     UpdateRouteMap(route);
   }
@@ -3554,6 +3556,8 @@ bool WeatherRouting::ValidateRoutingEndpoints(
     bool useChartSafety, bool enforceChartSafety) {
   using weather_routing::EndpointSurface;
   using weather_routing::RoutingEndpointProbe;
+  using weather_routing::chart_safety_host::GetPrewarmInterruption;
+  using weather_routing::chart_safety_host::PrewarmInterruption;
   if (!route || configuration.chart_safety_scout_preview ||
       !configuration.DetectLand)
     return true;
@@ -3568,13 +3572,18 @@ bool WeatherRouting::ValidateRoutingEndpoints(
       !std::isfinite(endpoints.EndLat) || !std::isfinite(endpoints.EndLon) ||
       std::abs(endpoints.StartLat) > 90 || std::abs(endpoints.EndLat) > 90) {
     const wxString invalid = _("Endpoint checking requires valid start and destination coordinates.");
-    route->SetError(invalid);
     RecordChartSafetyPreparationFailure(route, invalid);
     return false;
   }
   const bool charts = useChartSafety && enforceChartSafety;
+  if (m_ChartSafetyComputeProgressActive)
+    UpdateRoutingProgress(_("Checking route endpoints"),
+        charts ? _("Checking the start and destination against loaded charts.")
+               : _("Checking the start and destination against the selected GSHHG shoreline."));
   std::shared_ptr<weather_routing::ShorelineDataset> shoreline;
   wxString shorelineSource, shorelineError;
+  wxString checkpoint = charts ? _("preparing chart evidence")
+                               : _("opening GSHHG shoreline data");
   if (charts) {
     const double latitudes[] = {endpoints.StartLat, endpoints.EndLat};
     const double longitudes[] = {endpoints.StartLon, endpoints.EndLon};
@@ -3605,12 +3614,15 @@ bool WeatherRouting::ValidateRoutingEndpoints(
   }
 
   wxString failures, warnings;
+  auto interruption = GetPrewarmInterruption();
   for (const bool isStart : {true, false}) {
+    if (interruption != PrewarmInterruption::None) break;
     const double latitude = isStart ? endpoints.StartLat : endpoints.EndLat;
     const double longitude = weather_routing::CanonicalChartLongitude(
         isStart ? endpoints.StartLon : endpoints.EndLon);
     const wxString role = isStart ? _("Start") : _("Destination");
     const wxString name = isStart ? endpoints.Start : endpoints.End;
+    checkpoint = isStart ? _("checking the start") : _("checking the destination");
     const auto query = [&](double margin) -> RoutingEndpointProbe {
       if (!std::isfinite(latitude) || !std::isfinite(longitude) ||
           std::abs(latitude) > 90)
@@ -3675,6 +3687,8 @@ bool WeatherRouting::ValidateRoutingEndpoints(
     };
     const auto assessment = weather_routing::AssessRoutingEndpoint(
         endpoints.SafetyMarginLand, query);
+    interruption = GetPrewarmInterruption();
+    if (interruption != PrewarmInterruption::None) break;
     const auto& evidence = assessment.Evidence();
     const wxString source = wxString::FromUTF8(evidence.source.c_str());
     wxString detail = wxString::Format(
@@ -3715,11 +3729,32 @@ bool WeatherRouting::ValidateRoutingEndpoints(
         assessment.Blocked() ? 1 : 0, assessment.WarnAboutMargin() ? 1 : 0, source);
   }
   const bool headless = !EnvString("WR_HEADLESS_ROUTE_TEST").empty();
-  if (weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
-    failures = _("Endpoint checking was stopped.");
+  if (interruption != PrewarmInterruption::None) {
+    wxString reason;
+    switch (interruption) {
+      case PrewarmInterruption::InteractiveStop:
+        reason = _("the routing window requested a stop");
+        break;
+      case PrewarmInterruption::ExternalStop:
+        reason = _("the external planning request was cancelled");
+        break;
+      case PrewarmInterruption::Deadline:
+        reason = _("the preparation time limit expired");
+        break;
+      case PrewarmInterruption::None:
+        break;
+    }
+    const auto detail = wxString::Format(
+        _("Endpoint checking stopped while %s because %s."), checkpoint, reason);
+    if (!failures.empty()) failures += "\n\n";
+    failures += detail;
+    route->AddDiagnostic({"setup.endpoint_interrupted",
+        weather_routing::DiagnosticSeverity::Error,
+        _("Endpoint checking was interrupted"), detail, {}, {}, true});
+    wxLogMessage("WR_ENDPOINT_PREFLIGHT interrupted=%d checkpoint=\"%s\"",
+                 static_cast<int>(interruption), checkpoint);
   }
   if (!failures.empty()) {
-    route->SetError(failures);
     RecordChartSafetyPreparationFailure(route, failures);
     if (!headless && m_EndpointPreflightDecisions.emplace(
             "error:" + failures, false).second) {
@@ -3755,7 +3790,6 @@ bool WeatherRouting::ValidateRoutingEndpoints(
     }
     if (!found->second) {
       const wxString cancelled = _("Calculation cancelled after the endpoint shore-margin warning.");
-      route->SetError(cancelled);
       RecordChartSafetyPreparationFailure(route, cancelled);
       return false;
     }
@@ -3806,7 +3840,6 @@ bool WeatherRouting::ValidateChartSafetyEndpoints(
       endpoint_prewarm.prewarm_base_tiles_reused);
   if (weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
     const wxString cancelled = _("Chart safety preparation was stopped.");
-    route->SetError(cancelled);
     RecordChartSafetyPreparationFailure(route, cancelled);
     return false;
   }
@@ -3828,7 +3861,6 @@ bool WeatherRouting::ValidateChartSafetyEndpoints(
                                 &endpoint_failure))
     return true;
 
-  route->SetError(endpoint_failure);
   RecordChartSafetyPreparationFailure(route, endpoint_failure);
   return false;
 }
@@ -5331,10 +5363,48 @@ void WeatherRouting::CompleteHeadlessSingleRouteTest(bool timed_out,
     if (lifecyclePass < 4) {
       wxSetEnv("WR_HEADLESS_LIFECYCLE_CONTRACT",
                wxString::Format("%ld", lifecyclePass + 1));
+      if (lifecyclePass == 1) {
+        RouteMapConfiguration incomplete;
+        if (!AddConfiguration(incomplete)) {
+          FinishHeadlessRouteTestProcess(5);
+          return;
+        }
+        auto* invalid = m_WeatherRoutes.back()->routemapoverlay;
+        BeginChartSafetyComputeProgress(false, {invalid});
+        Start(invalid);
+        FinishChartSafetyComputeProgressIfDone();
+        const bool rejected =
+            !RouteComputationActive(invalid) &&
+            invalid->GetError().Contains(
+                _("Start and destination positions are missing or invalid")) &&
+            m_RoutingProgressCurrentStage == _("Cannot compute route") &&
+            m_RunDiagnostics.Text().Contains(invalid->GetError());
+        DeleteRouteMaps({invalid});
+        wxLogMessage(
+            "WR_ROUTE_LIFECYCLE missing_endpoints_reported=%d", rejected);
+        if (!rejected) {
+          FinishHeadlessRouteTestProcess(5);
+          return;
+        }
+      }
       wxCommandEvent compute;
       OnCompute(compute);
+      if (lifecyclePass == 1) {
+        StopAll();
+        if (RouteComputationActive(selected_route) ||
+            !weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
+          FinishHeadlessRouteTestProcess(5);
+          return;
+        }
+        OnCompute(compute);
+      }
+      // A timer event queued by the preceding batch can arrive before the
+      // deferred start of this batch, especially while chart preparation yields.
+      wxTimerEvent pendingTick(m_tCompute);
+      OnComputationTimer(pendingTick);
       if (!selected_route->m_bEndRouteVisible ||
-          !RouteComputationActive(selected_route)) {
+          !RouteComputationActive(selected_route) ||
+          weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
         FinishHeadlessRouteTestProcess(5);
         return;
       }
@@ -10351,11 +10421,6 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     AdvanceMultiLegSequence(routemapoverlay);
     AdvanceMultiLegDepartureOptimization(routemapoverlay);
   }
-  FinishChartSafetyComputeProgressIfDone();
-  if (m_RunningRouteMaps.empty() && m_WaitingRouteMaps.empty() &&
-      !m_ActiveMultiLegSequence && !m_ActiveMultiLegDepartureOptimization &&
-      !m_DeferredRoutingStartPending && m_RunDiagnostics.Active())
-    FinishRoutingProgress(_("Computation finished"), _("See the retained route reports for individual outcomes."));
   if (!completedRouteMaps.empty()) SetEnableConfigurationMenu();
   advanceMs += sectionTimer.Time();
 
@@ -10451,7 +10516,7 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
       m_RunningRouteMaps.push_back(routemapoverlay);
     else {
       routemapoverlay->ReleaseRoutingWorker();
-      routemapoverlay->SetError(error);
+      RecordChartSafetyPreparationFailure(routemapoverlay, error);
       if (EnvString("WR_HEADLESS_ROUTE_TEST").empty() &&
           m_WaitingRouteMaps.empty() && m_RunningRouteMaps.empty()) {
         WR_MessageDialog mdlg(this,
@@ -10528,7 +10593,11 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
   }
 
   UpdateDepartureChartCompletion();
-  if (m_RunningRouteMaps.size()) {
+  // A deferred start or a chart preparation which yielded to the event
+  // loop still owns the batch even while both worker queues are empty.
+  const bool preparing =
+      m_RoutePreparationDepth > 0 || m_DeferredRoutingStartPending;
+  if (!m_RunningRouteMaps.empty() || !m_WaitingRouteMaps.empty() || preparing) {
     // A native worker blocks while a GRIB or chart request is serviced on the
     // GUI thread.  The historical fixed 25 ms poll imposed up to 40 round
     // trips per second even when a cached request itself took microseconds.
@@ -10545,7 +10614,13 @@ void WeatherRouting::OnComputationTimer(wxTimerEvent&) {
     return;
   }
 
-  StopAll();
+  FinishChartSafetyComputeProgressIfDone();
+  if (!m_ActiveMultiLegSequence && !m_ActiveMultiLegDepartureOptimization &&
+      m_RunDiagnostics.Active())
+    FinishRoutingProgress(_("Computation finished"),
+                          _("See the retained route reports for individual outcomes."));
+  CancelMultiLegSequence();
+  FinishComputeBatch();
 }
 
 void WeatherRouting::OnHideConfigurationTimer(wxTimerEvent&) {
@@ -13765,7 +13840,8 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
     m_ChartSafetyPreparationCancelled.store(false,
                                              std::memory_order_relaxed);
   if (weather_routing::ShorelineManager::Busy()) {
-    routemapoverlay->SetError(_("Close shoreline data management before computing."));
+    RecordChartSafetyPreparationFailure(
+        routemapoverlay, _("Close shoreline data management before computing."));
     return;
   }
   ScopedRoutePreparation route_preparation(m_RoutePreparationDepth);
@@ -13921,6 +13997,23 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
       weather_routing::PassageShorelineSummary(
           configuration.SelectedShorelineResolution(), configuration.DetectLand);
   routemapoverlay->BeginDiagnosticRun(std::move(setupDiagnostics));
+  const auto validPosition = [](double lat, double lon) {
+    return std::isfinite(lat) && std::isfinite(lon) && std::abs(lat) <= 90;
+  };
+  const bool validStart = validPosition(configuration.StartLat,
+                                        configuration.StartLon);
+  const bool validEnd = validPosition(configuration.EndLat, configuration.EndLon);
+  if (!validStart || !validEnd) {
+    const auto title = !validStart && !validEnd
+        ? _("Start and destination positions are missing or invalid")
+        : !validStart ? _("Start position is missing or invalid")
+                      : _("Destination position is missing or invalid");
+    const auto action = _("Open Edit route and select valid start and destination positions.");
+    routemapoverlay->AddDiagnostic({"setup.invalid_endpoints",
+        weather_routing::DiagnosticSeverity::Error, title, {}, action, {}, true});
+    RecordChartSafetyPreparationFailure(routemapoverlay, title + "\n" + action);
+    return;
+  }
   // Route analysis follows the supplied waypoint sequence, including valid
   // return passages. Only a routing leg is a single start/destination pair.
   std::optional<weather_routing::RouteDiagnostic> positionIssue;
@@ -13939,18 +14032,11 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
   }
   if (positionIssue) {
     routemapoverlay->AddDiagnostic(*positionIssue);
-    routemapoverlay->SetError(positionIssue->title);
+    RecordChartSafetyPreparationFailure(routemapoverlay, positionIssue->title);
     wxLogMessage("WR_ROUTE_PREFLIGHT code=setup.coincident_waypoints detail=%s",
                  positionIssue->title + " " + positionIssue->detail);
     return;
   }
-  // Ensure we have valid start coordinates
-  if (std::isnan(configuration.StartLat) ||
-      std::isnan(configuration.StartLon)) {
-    routemapoverlay->SetError(_("Invalid start position"));
-    return;
-  }
-
   if (configuration.DeltaTime <= 0) {
     routemapoverlay->SetError(_("Zero Time Step"));
     return;
@@ -14141,7 +14227,6 @@ void WeatherRouting::Start(RouteMapOverlay* routemapoverlay) {
 
   if (weather_routing::chart_safety_host::PrewarmCancellationRequested()) {
     const wxString cancelled = _("Chart safety preparation was stopped.");
-    routemapoverlay->SetError(cancelled);
     RecordChartSafetyPreparationFailure(routemapoverlay, cancelled);
     return;
   }
@@ -14527,6 +14612,7 @@ void WeatherRouting::Stop(RouteMapOverlay* routemapoverlay) {
 
 void WeatherRouting::StopAll() {
   m_ChartSafetyPreparationCancelled.store(true, std::memory_order_relaxed);
+  m_tCompute.Stop();
   CancelDeferredRoutingStart();
   CancelMultiLegSequence();
 
@@ -14550,6 +14636,14 @@ void WeatherRouting::StopAll() {
 
   delete progressdialog;
 
+  for (auto* route : m_RunningRouteMaps)
+    m_RunDiagnostics.Report(route->GetDiagnostics().Text());
+  if (m_RunDiagnostics.Active())
+    FinishRoutingProgress(_("Stopped"), _("Route computations stopped."));
+  FinishComputeBatch();
+}
+
+void WeatherRouting::FinishComputeBatch() {
   for (RouteMapOverlay* route : m_RunningRouteMaps)
     if (route) route->ReleaseGribTimelineFrameReference();
   for (RouteMapOverlay* route : m_WaitingRouteMaps)
@@ -14559,8 +14653,6 @@ void WeatherRouting::StopAll() {
     if (weatherroute && weatherroute->routemapoverlay)
       weatherroute->routemapoverlay->ReleaseGribTimelineFrameReference();
 
-  for (auto* route : m_RunningRouteMaps)
-    m_RunDiagnostics.Report(route->GetDiagnostics().Text());
   m_RunningRouteMaps.clear();
   m_WaitingRouteMaps.clear();
   ReleaseGribTimelineCacheBatch();
@@ -14580,8 +14672,6 @@ void WeatherRouting::StopAll() {
   m_ChartSafetyComputeProgressTotalRoutes = 0;
   m_ChartSafetyComputeProgressStartedRoutes = 0;
   m_ChartSafetyComputeProgressCompletedRoutes = 0;
-  if (m_RunDiagnostics.Active())
-    FinishRoutingProgress(_("Stopped"), _("Route computations stopped."));
   CloseRoutingProgress();
 
   SetEnableConfigurationMenu();

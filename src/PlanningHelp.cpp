@@ -148,7 +148,7 @@ wxString PlanningHelpText(PlanningHelpTopic topic) {
           "calculations are independent.");
     case PlanningHelpTopic::Performance:
       return _(
-          "Boat and polar library selects or imports a boat. Edit polars opens "
+          "Boat and polar library selects or imports a boat. Edit boat and polars opens "
           "the existing boat/polar editor; Boat details edits profile "
           "information. Changes affect the selected passage.\n\n"
           "Wind strength, upwind/downwind factors, night factor and manoeuvre "

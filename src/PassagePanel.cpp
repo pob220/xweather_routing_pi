@@ -154,7 +154,7 @@ PassagePanel::PassagePanel(wxWindow* parent, WeatherRouting& routing)
                                     _("Import boat / polar"),
                                     [this] { ChooseBoat(); }));
   mutableControls_.push_back(
-      Button(content_, boatActions, _("Edit polars"), [this] {
+      Button(content_, boatActions, _("Edit boat and polars"), [this] {
         EnsurePassage();
         routing_.m_ConfigurationDialog.EditBoat();
       }));

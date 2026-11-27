@@ -3,6 +3,7 @@
 #include <limits>
 #include <vector>
 
+#include "ChartSafetyHost.h"
 #include "RoutingEndpointPreflight.h"
 
 namespace {
@@ -92,5 +93,29 @@ TEST(RoutingEndpointPreflight, InvalidMarginCannotCertifyAnEndpoint) {
     EXPECT_EQ(calls, 0u);
     EXPECT_TRUE(result.Blocked());
   }
+}
+
+TEST(RoutingEndpointPreflight, InterruptionsRetainTheirSource) {
+  using namespace weather_routing::chart_safety_host;
+  std::atomic_bool interactive{false};
+  std::atomic_bool external{false};
+  SetInteractivePrewarmCancellationFlag(&interactive);
+  SetPrewarmCancellationFlag(&external);
+  EXPECT_EQ(GetPrewarmInterruption(), PrewarmInterruption::None);
+
+  interactive.store(true);
+  EXPECT_EQ(GetPrewarmInterruption(), PrewarmInterruption::InteractiveStop);
+  interactive.store(false);
+  external.store(true);
+  EXPECT_EQ(GetPrewarmInterruption(), PrewarmInterruption::ExternalStop);
+  external.store(false);
+  SetPrewarmDeadline(std::chrono::steady_clock::now() - std::chrono::seconds(1));
+  EXPECT_EQ(GetPrewarmInterruption(), PrewarmInterruption::Deadline);
+  EXPECT_TRUE(PrewarmCancellationRequested());
+
+  SetPrewarmDeadline({});
+  SetPrewarmCancellationFlag(nullptr);
+  SetInteractivePrewarmCancellationFlag(nullptr);
+  EXPECT_FALSE(PrewarmCancellationRequested());
 }
 }  // namespace

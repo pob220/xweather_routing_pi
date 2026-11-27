@@ -760,6 +760,7 @@ private:
   void Stop(RouteMapOverlay* routemapoverlay);
   /* Stop the computation of all routes. */
   void StopAll();
+  void FinishComputeBatch();
 
   void CancelMultiLegSequence();
   void AdvanceMultiLegSequence(RouteMapOverlay* completedRoute);

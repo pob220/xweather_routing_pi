@@ -64,6 +64,8 @@ std::vector<std::pair<long, long>> AtlasCoverageTiles(
 void SetPrewarmCancellationFlag(const std::atomic_bool* flag);
 /** Install the independent cancellation flag used by interactive routing. */
 void SetInteractivePrewarmCancellationFlag(const std::atomic_bool* flag);
+enum class PrewarmInterruption { None, InteractiveStop, ExternalStop, Deadline };
+PrewarmInterruption GetPrewarmInterruption();
 bool PrewarmCancellationRequested();
 // A zero time point disables the cooperative preparation deadline.
 void SetPrewarmDeadline(std::chrono::steady_clock::time_point deadline);

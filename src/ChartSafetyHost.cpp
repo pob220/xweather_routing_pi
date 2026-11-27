@@ -806,18 +806,25 @@ void SetPrewarmDeadline(std::chrono::steady_clock::time_point deadline) {
       std::memory_order_release);
 }
 
-bool PrewarmCancellationRequested() {
+PrewarmInterruption GetPrewarmInterruption() {
   const auto* flag =
       g_prewarm_cancellation.load(std::memory_order_acquire);
+  if (flag && flag->load(std::memory_order_relaxed))
+    return PrewarmInterruption::ExternalStop;
   const auto* interactive_flag =
       g_interactive_prewarm_cancellation.load(std::memory_order_acquire);
+  if (interactive_flag && interactive_flag->load(std::memory_order_relaxed))
+    return PrewarmInterruption::InteractiveStop;
   const auto deadline = g_prewarm_deadline_ms.load(std::memory_order_acquire);
+  if (deadline == 0) return PrewarmInterruption::None;
   const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now().time_since_epoch()).count();
-  return (flag && flag->load(std::memory_order_relaxed)) ||
-         (interactive_flag &&
-          interactive_flag->load(std::memory_order_relaxed)) ||
-         (deadline != 0 && now >= deadline);
+  return now >= deadline ? PrewarmInterruption::Deadline
+                         : PrewarmInterruption::None;
+}
+
+bool PrewarmCancellationRequested() {
+  return GetPrewarmInterruption() != PrewarmInterruption::None;
 }
 
 bool CheckSegment(double lat1, double lon1, double lat2, double lon2,
