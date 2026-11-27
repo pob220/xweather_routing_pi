@@ -1,6 +1,7 @@
 """Exercise the packaged 2.x planner with saved data in a native Windows host."""
 import argparse
 import configparser
+from contextlib import closing
 import ctypes
 from ctypes import wintypes
 import json
@@ -14,20 +15,24 @@ import uuid
 import xml.etree.ElementTree as ET
 
 
-def make_waypoints(path):
-    namespace = 'http://www.opencpn.org'
-    ET.register_namespace('opencpn', namespace)
-    root = ET.Element('gpx', version='1.1', creator='Planner responsiveness test',
-                      xmlns='http://www.topografix.com/GPX/1/1')
-    for index in range(6000):
-        mark = ET.SubElement(root, 'wpt', lat=str(20 + index / 10000),
-                             lon='-40')
-        ET.SubElement(mark, 'name').text = f'Saved mark {index + 1}'
-        ET.SubElement(mark, 'sym').text = 'diamond'
-        extensions = ET.SubElement(mark, 'extensions')
-        ET.SubElement(extensions, f'{{{namespace}}}guid').text = str(uuid.UUID(int=index + 1))
-        ET.SubElement(extensions, f'{{{namespace}}}viz').text = '0'
-    ET.ElementTree(root).write(path, encoding='utf-8', xml_declaration=True)
+def make_waypoint_database(source, destination):
+    # Start from the schema of the tested host. Seed a populated profile
+    # before launch so its legacy GPX migration cannot overlap the UI check.
+    with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as host_db:
+        with closing(sqlite3.connect(destination)) as db:
+            host_db.backup(db)
+            with db:
+                db.executemany("""
+                    INSERT INTO routepoints
+                      (guid, lat, lon, Name, Symbol, description, TideStation,
+                       Type, Time, RangeRingsColour, visibility, viz_name, isolated)
+                    VALUES (?, ?, ?, ?, 'diamond', '', '', 'type', '',
+                            '#FFFFFF', 0, 0, 1)
+                    """, (
+                        (str(uuid.UUID(int=index + 1)), 20 + index / 10000,
+                         -40, f'Saved mark {index + 1}')
+                        for index in range(6000)
+                    ))
 
 
 def test(host, output, forecast):
@@ -38,7 +43,7 @@ def test(host, output, forecast):
     # With --configdir, OpenCPN discovers plug-ins in that profile's plugins
     # directory. Install the already extracted package there as well.
     shutil.copytree(host / 'plugins', profile / 'plugins')
-    make_waypoints(profile / 'navobj.xml')
+    make_waypoint_database(host / 'navobj.db', profile / 'navobj.db')
     config = configparser.RawConfigParser(strict=False)
     config.optionxform = str
     config.read(host / 'opencpn.ini', encoding='utf-8-sig')
@@ -164,13 +169,6 @@ def test(host, output, forecast):
             wait_for('saved forecast restore', lambda: host_log.exists() and
                      'WR_SAVED_FORECAST restored' in host_log.read_text(
                          encoding='utf-8', errors='replace'), 15)
-            with sqlite3.connect((profile / 'navobj.db').as_uri() + '?mode=ro',
-                                 uri=True, timeout=2) as db:
-                mark_count = db.execute(
-                    "SELECT count(*) FROM routepoints WHERE name LIKE 'Saved mark %'"
-                ).fetchone()[0]
-            if mark_count != 6000:
-                raise RuntimeError(f'Expected 6000 saved waypoints, found {mark_count}')
         finally:
             main = next((hwnd for hwnd, title in windows()
                          if title.startswith('OpenCPN ')), None)
@@ -183,8 +181,15 @@ def test(host, output, forecast):
                 process.wait()
             if host_log.exists():
                 shutil.copy2(host_log, output / 'opencpn.log')
+    with closing(sqlite3.connect((profile / 'navobj.db').as_uri() + '?mode=ro',
+                                 uri=True)) as db:
+        mark_count = db.execute(
+            "SELECT count(*) FROM routepoints WHERE name LIKE 'Saved mark %'"
+        ).fetchone()[0]
+    if mark_count != 6000:
+        raise RuntimeError(f'Expected 6000 saved waypoints, found {mark_count}')
     (output / 'responsiveness.json').write_text(
-        json.dumps({'profile_waypoints': 6000, 'seconds': timings}, indent=2) + '\n')
+        json.dumps({'profile_waypoints': mark_count, 'seconds': timings}, indent=2) + '\n')
 
 
 if __name__ == '__main__':
