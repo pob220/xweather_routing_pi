@@ -38,11 +38,7 @@ commands:
       - run:
           name: << parameters.step_name >>
           shell: cmd.exe
-          command: |
-            call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-            if errorlevel 1 exit /b 1
-            python << parameters.script >>
-            exit /b %errorlevel%
+          command: ci\circleci-run-amd64-python.bat << parameters.script >>
           no_output_timeout: 45m
 
   retain-artifacts:
